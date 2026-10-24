@@ -79,9 +79,10 @@ REGIONS = {
         },
         # Names follow the spec's county mix, scaled to 96: Hispanic 29, Vietnamese 12, Chinese 12, Filipino 10, Indian 2,
         # Korean 2, White 19, Black 5, Pacific Islander 2, other 3. Languages: en 72, es 10, vi 7, zh 7.
+        # No name word is a common English word ("Do"): the re-plan step swaps a name word that one patient has for the ID.
         "names": [(n, "es") for n in ("María Hernández", "José Ramírez", "Guadalupe Torres", "Jesús Mendoza", "Esperanza Morales",
                                       "Rigoberto Sánchez", "Consuelo Vargas", "Ignacio Herrera", "Graciela Domínguez", "Ernesto Villalobos")]
-                 + [(n, "vi") for n in ("Thanh Nguyen", "Hoa Tran", "Minh Pham", "Dung Vo", "Phuong Dang", "Hung Bui", "Mai Do")]
+                 + [(n, "vi") for n in ("Thanh Nguyen", "Hoa Tran", "Minh Pham", "Dung Vo", "Phuong Dang", "Hung Bui", "Mai Doan")]
                  + [(n, "zh") for n in ("Liu Mei", "Zhou Jian", "Wu Hong", "Zhang Hui", "Lin Fang", "Ma Jun", "Xu Ping")]
                  + [(n, "en") for n in (
                      "Carmen Gutiérrez", "Manuel Ortiz", "Rosa Navarro", "Alfredo Castillo", "Yolanda Ruiz", "Raúl Fuentes", "Teresa Aguilar",

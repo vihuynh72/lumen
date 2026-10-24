@@ -177,7 +177,7 @@ def _template(facts):
             message = f"{when}, {clinic}. {{name}}, your treatment has moved. {ride}"
             callback = " Questions? Call 555-0100."
         elif lang == "es":
-            ride = f"Salga de casa a las {pickup}." if own else f"Un transporte le recoge a las {pickup}."
+            ride = f"Salga de casa a las {pickup}" if own else f"Un transporte le recoge a las {pickup}"  # pickup ends in "a. m." or "p. m."
             message = f"{when}, {clinic}. {{name}}, su tratamiento cambió. {ride}"
             callback = " ¿Preguntas? Llame al 555-0100."
         elif lang == "vi":  # wording from the tour's Vietnamese template

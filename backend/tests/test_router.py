@@ -271,6 +271,22 @@ def test_text_fallback_ends_at_the_english_template(monkeypatch):
     assert {lang for r in plan["patients"] for lang in r["messages"]} == {"en"}
 
 
+def test_english_template_comes_from_the_patients_own_clinic(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=bedrock_blocked, template_plan_text=bedrock_blocked))
+    call("POST", "/alert", {"notice_text": SC_NOTICE}, region="santaclara")
+    plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")[1]
+    seed = store.load_seed("santaclara")
+    names = {c["id"]: c["name"] for c in seed["clinics"]}
+    own = {p["id"]: p["clinic_id"] for p in seed["patients"]}
+    moves = [r for r in plan["patients"] if r["messages"]]
+    assert {own[r["patient_id"]] for r in moves} == {"C11", "C12", "C17"}  # Silver Creek and Santa Teresa patients too
+    for r in moves:
+        text = r["messages"]["en"]
+        assert f"this is {names[own[r['patient_id']]]}." in text
+        assert ("your usual clinic" in text) == (r["action"] == "early_session"), text
+
+
 def test_replan_gets_the_seed_clinics(monkeypatch):
     seen = {}
 

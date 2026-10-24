@@ -160,7 +160,7 @@ def write_text(plan, seed, sources, only_ids=None):
         return out
     except Exception as exc:
         log(step="text", fallback=True, source="text_fallback", reason=repr(exc)[:300])
-        return text_fallback.fill(plan, seed["clinics"], only_ids)
+        return text_fallback.fill(plan, seed["clinics"], only_ids, {p["id"]: p["clinic_id"] for p in seed["patients"] if "clinic_id" in p})
 
 
 def demo_now(event):

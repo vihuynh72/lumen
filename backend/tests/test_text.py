@@ -771,7 +771,7 @@ def test_template_messages_pass_the_model_output_validator(monkeypatch, inputs):
         facts = facts_for(module, row, clinics, langs)
         checked = {key: row[key] for key in ("patient_id", "reason_text", "messages")}
         assert module._row_error(checked, facts) is None, row["patient_id"]
-        assert all(message.count("{name}") == 1 for message in row["messages"].values())
+        assert all(message.count("{name}") == 1 and ".." not in message for message in row["messages"].values())
 
 
 @pytest.mark.parametrize("ride,line", [("family", "Vui lòng rời nhà trước 5:04 sáng."),

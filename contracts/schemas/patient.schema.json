@@ -64,7 +64,7 @@
         3,
         4
       ],
-      "description": "Usual shift at the home clinic. 1 = 06:00, 2 = 10:30, 3 = 15:00, 4 = late 19:30."
+      "description": "Usual shift at the patient's clinic. 1 = 06:00, 2 = 10:30, 3 = 15:00, 4 = late 19:30."
     },
     "hours": {
       "type": "number",

@@ -64,6 +64,13 @@ def test_pin_keeps_the_chair_through_a_cut():
     assert result["P003"]["action"] == "hospital"
 
 
+def test_a_pin_at_the_patients_own_clinic_is_an_early_session():
+    seeds = {**SEEDS, "patients": [{**p, "clinic_id": "C02"} if p["id"] == "P004" else p for p in SEEDS["patients"]]}
+    t = build_tools("PSPS-DEMO-01", PLAN1, seeds)
+    assert t["pin_patient"]("P004", "C02", "2026-10-28", 1)["action"] == "early_session"  # its own clinic, not the home clinic
+    assert t["pin_patient"]("P003", "C02", "2026-10-28", 1)["action"] == "transfer"
+
+
 def test_pin_to_a_new_slot_recomputes_pickup():
     t = tools()
     out = t["pin_patient"]("P003", "C02", "2026-10-28", 1)
