@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements-dev.txt
+      - name: pytest
+        working-directory: backend
+        run: |
+          code=0
+          python -m pytest -q || code=$?
+          # Exit code 5 means "no tests collected": green until the lane adds tests.
+          if [ "$code" -eq 5 ]; then echo "No backend tests yet"; exit 0; fi
+          exit "$code"
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: app
+        run: |
+          if [ -f frontend/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.app.outputs.present != 'true'
+        run: echo "frontend/package.json not found yet; skipping"
+      - if: steps.app.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - if: steps.app.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci && npm run typecheck && npm run build
+
+  data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install jsonschema
+      - name: validate seed
+        run: |
+          if [ ! -f scripts/validate_seed.py ]; then echo "scripts/validate_seed.py not found yet; skipping"; exit 0; fi
+          python scripts/validate_seed.py
