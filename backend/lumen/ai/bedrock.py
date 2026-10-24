@@ -28,7 +28,10 @@ def _invoke(client, request):
     try:
         return client.converse(**request)
     except ClientError as error:
-        if error.response["Error"]["Code"] != "ThrottlingException":
+        if error.response["Error"]["Code"] not in (
+            "ThrottlingException", "ServiceUnavailableException",
+            "InternalServerException", "ModelNotReadyException",
+        ):
             raise
         sleep(0.25)
         return client.converse(**request)
@@ -41,6 +44,7 @@ def converse(model_id: str, system: str, messages: list, tools: list | None = No
     ``system`` is plain text; messages and tools use Converse format. A tool
     name forces that tool; None selects auto. Log one metrics line per wrapper
     call (including retry time); token counts are None when AWS returns no usage.
+    A response with no usage raises KeyError.
     """
     started = perf_counter()
     usage = {"input_tokens": None, "output_tokens": None}
