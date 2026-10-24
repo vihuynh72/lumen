@@ -31,8 +31,18 @@ def get_json(key):
     return json.loads(body)
 
 
-def put_json(key, data):
-    s3().put_object(Bucket=bucket(), Key=key, Body=json.dumps(data, ensure_ascii=False).encode(), ContentType="application/json")
+class VersionTaken(Exception):
+    """Another request already wrote this plan version."""
+
+
+def put_json(key, data, if_none_match=False):
+    extra = {"IfNoneMatch": "*"} if if_none_match else {}  # S3 conditional write: fail if the key exists
+    try:
+        s3().put_object(Bucket=bucket(), Key=key, Body=json.dumps(data, ensure_ascii=False).encode(), ContentType="application/json", **extra)
+    except Exception as exc:
+        if if_none_match and getattr(exc, "response", {}).get("Error", {}).get("Code") in ("PreconditionFailed", "ConditionalRequestConflict"):
+            raise VersionTaken(key) from exc
+        raise
 
 
 def list_objects(prefix):
@@ -78,8 +88,9 @@ def plan_versions(event_id):
     return sorted(int(m.group(1)) for m in found if m)
 
 
-def save_plan(plan):
-    put_json(f"plans/{plan['event_id']}/plan.v{plan['version']}.json", plan)
+def save_plan(plan, new=False):
+    """new=True: refuse to overwrite an existing version (two edits on the same version)."""
+    put_json(f"plans/{plan['event_id']}/plan.v{plan['version']}.json", plan, if_none_match=new)
 
 
 def latest_plan(event_id):

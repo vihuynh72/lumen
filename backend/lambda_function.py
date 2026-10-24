@@ -1,6 +1,7 @@
 """Lumen API: one Lambda function URL. Routes on method and path (contracts/api.md)."""
 
 import base64
+import binascii
 import hmac
 import json
 import logging
@@ -169,7 +170,7 @@ def plan(body):
     }
     new = timed(timing, "text", write_text, new, seed)
     timing["total"] = round((time.perf_counter() - start) * 1000)
-    timed(timing, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))
+    timed({}, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))  # logged, not in timing_ms: total is final
     return with_names(new, patients)
 
 
@@ -202,7 +203,7 @@ def replan_route(body):
     new["summary"] = result["summary"]
     timing["total"] = round((time.perf_counter() - start) * 1000)
     new["timing_ms"] = timing
-    store.save_plan(new)
+    save_new_version(new, "replan")
     return {"plan": with_names(new, seed["patients"]), "diff": result["diff"], "summary": result["summary"]}
 
 
@@ -210,15 +211,19 @@ def approve_route(body):
     event_id, old = latest(body, "approve")
     try:
         new = approve.apply(old, body.get("patient_ids", []), body.get("edits", []), clock(store.load_event(event_id)))
+    except approve.UnknownPatient as exc:
+        raise ApiError(404, str(exc), "approve") from exc
     except ValueError as exc:
         raise ApiError(400, str(exc), "approve") from exc
-    store.save_plan(new)
+    save_new_version(new, "approve")
     return with_names(new, store.load_seed()["patients"])
 
 
 def voice_route(body):
     event_id, plan = latest(body, "voice")
     patient_id, lang = body.get("patient_id"), body.get("lang")
+    if not isinstance(patient_id, str) or not isinstance(lang, str) or lang not in voice.VOICES:
+        raise ApiError(400, "patient_id and lang (en, es or zh) are required", "voice")
     row = next((r for r in plan["patients"] if r["patient_id"] == patient_id), None)
     if row is None:
         raise ApiError(404, f"no patient {patient_id} in the plan", "voice")
@@ -230,6 +235,14 @@ def voice_route(body):
         row["audio"][lang] = key
         store.save_plan(plan)
     return {"url": voice.presign(key)}
+
+
+def save_new_version(plan, step):
+    """Write v(N+1) only if no other request wrote it first; the loser gets 409 instead of overwriting."""
+    try:
+        store.save_plan(plan, new=True)
+    except store.VersionTaken as exc:
+        raise ApiError(409, "the plan changed while you edited it; reload and try again", step) from exc
 
 
 def reset(_body):
@@ -253,11 +266,9 @@ def lambda_handler(event, context):
         if route is None:
             raise ApiError(404, f"no route {method} {path}", "router")
         raw = event.get("body") or "{}"
-        if event.get("isBase64Encoded"):
-            raw = base64.b64decode(raw).decode()
         try:
-            body = json.loads(raw)
-        except json.JSONDecodeError:
+            body = json.loads(base64.b64decode(raw).decode() if event.get("isBase64Encoded") else raw)
+        except (json.JSONDecodeError, UnicodeDecodeError, binascii.Error):
             body = None
         if not isinstance(body, dict):
             raise ApiError(400, "the body must be a JSON object", path.strip("/") or "router")

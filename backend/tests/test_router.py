@@ -170,3 +170,38 @@ def test_approve_then_voice(monkeypatch):
     row = next(r for r in store.latest_plan("PSPS-DEMO-01")["patients"] if r["patient_id"] == pid)
     assert row["audio"] == {"en": f"audio/PSPS-DEMO-01/{pid}.en.mp3"}
     assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": "all"})[0] == 400
+
+
+def test_replan_after_a_decline_uses_template_text(monkeypatch):
+    monkeypatch.setattr(router, "replan_with_bedrock", lambda *a: (_ for _ in ()).throw(RuntimeError("throttled")))
+    plan = plan_v1()
+    move = next(r for r in plan["patients"] if r["action"] == "transfer" and r["clinic_id"] != "C02")
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": [], "edits": [{"patient_id": move["patient_id"], "status": "declined"}]})
+    status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})
+    assert status == 200, body
+    declined = next(r for r in body["plan"]["patients"] if r["patient_id"] == move["patient_id"])
+    assert declined["slot"] is None and declined["messages"] == {} and move["patient_id"] in body["plan"]["overflow"]
+
+
+def test_two_edits_on_the_same_version_conflict(monkeypatch):
+    plan_v1()
+    old = store.latest_plan("PSPS-DEMO-01")
+    monkeypatch.setattr(store, "latest_plan", lambda event_id: old)  # both requests read v1
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]})[0] == 200
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]}) == (
+        409, {"error": "the plan changed while you edited it; reload and try again", "step": "approve"})
+
+
+def test_field_errors_are_4xx():
+    plan_v1()
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": "P003"})[0] == 400
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": "P003", "lang": ["en"]})[0] == 400
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["P999"]})[0] == 404
+    event = {"requestContext": {"http": {"method": "POST"}}, "rawPath": "/approve", "headers": {"x-demo-key": "k3y"},
+             "body": "//79", "isBase64Encoded": True}
+    assert router.lambda_handler(event, None)["statusCode"] == 400
+
+
+def test_plan_timing_total_covers_every_reported_step():
+    t = plan_v1()["timing_ms"]
+    assert "save" not in t and t["total"] >= sum(v for k, v in t.items() if k != "total")

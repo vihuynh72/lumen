@@ -49,15 +49,20 @@ def build_tools(event_id, plan, seeds):
         return found
 
     def check_slot(date, shift):
-        datetime.fromisoformat(date)
-        if shift not in (1, 2, 3, 4):
-            raise ValueError(f"shift must be 1 to 4, not {shift!r}")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(date)) or type(shift) is not int or shift not in (1, 2, 3, 4):
+            raise ValueError(f"need a date YYYY-MM-DD and a shift 1 to 4, not {date!r} and {shift!r}")
+
+    def locked_in(clinic_id, date, shift):
+        return sum(1 for r in work["rows"] if (r["pinned"] or r["status"] == "confirmed") and r["status"] != "declined"
+                   and r["clinic_id"] == clinic_id and r["slot"] == {"date": date, "shift": shift})
 
     def set_clinic_capacity(clinic_id, date, shift, chairs):
         clinic = dialysis_clinic(clinic_id)
         check_slot(date, shift)
-        if not isinstance(chairs, int) or chairs < 0:
+        if type(chairs) is not int or chairs < 0:
             raise ValueError("chairs must be a whole number of 0 or more")
+        if chairs < locked_in(clinic_id, date, shift):
+            raise ValueError(f"{clinic_id} {date} shift {shift} holds {locked_in(clinic_id, date, shift)} pinned or confirmed patients")
         slot = next((s for s in clinic["slots"] if (s["date"], s["shift"]) == (date, shift)), None)
         if slot is None:
             clinic["slots"].append({"date": date, "shift": shift, "open_chairs": chairs})
@@ -70,7 +75,10 @@ def build_tools(event_id, plan, seeds):
         r = row(patient_id)
         clinic = dialysis_clinic(clinic_id)
         check_slot(date, shift)
+        if not any((s["date"], s["shift"]) == (date, shift) for s in clinic["slots"]):
+            raise ValueError(f"{clinic_id} has no slot on {date} shift {shift}")
         if (r["clinic_id"], r["slot"]) != (clinic_id, {"date": date, "shift": shift}):
+            changed_clinics.add(clinic_id)  # re-match the slot's other patients so the pin can take a chair
             minutes = drive[patient_id][clinic_id]["minutes"]
             start = session_start(datetime.fromisoformat(date).date(), shift)
             r.update(action="early_session" if clinic["home"] else "transfer", clinic_id=clinic_id,
@@ -110,21 +118,31 @@ def build_tools(event_id, plan, seeds):
 
 def replan_by_rules(instruction, plan, tools, clinics):
     """Rule-based re-plan for "(clinic name) can only take N more". Used until, or when, Bedrock replan() fails."""
-    m = re.match(r"^\s*(?P<name>.+?)\s+can only take (?P<n>\d+|\w+) more\b", instruction, re.IGNORECASE)
+    m = re.match(r"^\s*(?P<name>.+?)\s+can only take (?P<n>\d+|\w+) more(\s+patients?)?\W*$", instruction, re.IGNORECASE)
     n = m and (int(m.group("n")) if m.group("n").isdigit() else NUMBERS.get(m.group("n").lower()))
-    clinic = m and next((c for c in clinics if c["kind"] == "dialysis" and m.group("name").lower() in c["name"].lower()), None)
-    if n is None or clinic is None:
+    if n is None:
         raise ValueError("the rule-based re-plan understands only '(clinic name) can only take N more'")
-    # N more = at most N visiting patients at that clinic across all slots, in rank order (contracts/api.md)
-    keep = sorted((r for r in plan["patients"] if r["clinic_id"] == clinic["id"] and r["slot"]), key=lambda r: r["rank"])[:n]
+    name = m.group("name").strip().lower()
+    hits = [c for c in clinics if c["kind"] == "dialysis" and name in c["name"].lower()]
+    exact = [c for c in hits if c["name"].lower() == name]
+    if len(exact or hits) != 1:
+        found = ", ".join(c["name"] for c in hits) or "no clinic"
+        raise ValueError(f"'{m.group('name').strip()}' matches {found}; use the full clinic name")
+    clinic = (exact or hits)[0]
+    # N more = at most N visiting patients at that clinic across all slots: pinned and confirmed rows first, then rank order
+    keep = sorted((r for r in plan["patients"] if r["clinic_id"] == clinic["id"] and r["slot"] and r["status"] != "declined"),
+                  key=lambda r: (not (r["pinned"] or r["status"] == "confirmed"), r["rank"]))[:n]
     for s in clinic["slots"]:
         tools["set_clinic_capacity"](clinic["id"], s["date"], s["shift"],
                                      sum(1 for r in keep if (r["slot"]["date"], r["slot"]["shift"]) == (s["date"], s["shift"])))
     result = tools["rerun_matching"]()
     diff = tools["diff_plans"]()
-    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id"}
-    to_staff = {d["patient_id"] for d in diff if d["field"] == "action" and d["to"] == "hospital"}
-    plural = lambda k, word: f"{k} {word}" + ("" if k == 1 else "s")  # noqa: E731
-    summary = (f"{clinic['name']} can take only {plural(n, 'more patient')}, so {plural(len(moved), 'patient')} move to other chairs or the staff call list. "
-               f"{plural(len(to_staff), 'more patient')} now need a staff call.")
+    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id" and d["from"] == clinic["id"]}
+    to_staff = set(result["overflow"]) - set(plan["overflow"])
+
+    def count(k, noun, one, many):
+        return f"{k} {noun}{'' if k == 1 else 's'} {one if k == 1 else many}"
+
+    summary = (f"{clinic['name']} can take only {n} more, so {count(len(moved), 'patient', 'moves', 'move')} to other chairs or the staff call list. "
+               f"{count(len(to_staff), 'more patient', 'needs', 'need')} a staff call.")
     return {"plan": {**plan, **result}, "diff": diff, "summary": summary}
