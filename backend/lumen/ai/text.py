@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
 import json
 import logging
@@ -9,6 +10,10 @@ import os
 from pathlib import Path
 import re
 import unicodedata
+from threading import Lock
+from time import monotonic
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from lumen.ai import bedrock
 
@@ -175,25 +180,68 @@ def _template(facts):
     return result
 
 
-def _batch(model, facts, fallback_ids):
+class _BudgetExhausted(Exception):
+    """A local limit, not an AWS failure."""
+
+
+class _Budget:
+    def __init__(self):
+        self.deadline = monotonic() + 20
+        self.calls = 0
+        self.lock = Lock()
+
+    def acquire(self, reserve=True):
+        with self.lock:
+            if monotonic() >= self.deadline:
+                raise _BudgetExhausted("deadline")
+            if reserve:
+                if self.calls >= 30:
+                    raise _BudgetExhausted("call_limit")
+                self.calls += 1
+
+    def call(self, model, payload):
+        # Reserve the initial attempt even when converse is replaced by a test stub.
+        self.acquire()
+        first = True
+
+        def before_attempt():
+            nonlocal first
+            self.acquire(reserve=not first)
+            first = False
+
+        # Recheck the deadline at the SDK boundary; count adapter retries too.
+        with bedrock.attempt_guard(before_attempt):
+            return _call(model, payload)
+
+
+@dataclass
+class _BatchResult:
+    rows: dict
+    errors: dict
+    failures: list
+
+
+def _batch(model, facts, budget):
     good, errors = {}, {}
     for attempt in range(2):
         payload = {"patients": facts, **({"errors": errors} if attempt else {})}
-        response = _call(model, payload)
+        try:
+            response = budget.call(model, payload)
+        except _BudgetExhausted as error:
+            return _BatchResult(good, {row["patient_id"]: str(error) for row in facts}, [])
+        except (ClientError, BotoCoreError, TimeoutError) as error:
+            return _BatchResult(good, {row["patient_id"]: type(error).__name__ for row in facts}, [error])
         if isinstance(response, dict) and response.get("stop_reason") == "max_tokens" and len(facts) > 1:
             middle = len(facts) // 2
-            return {**_batch(model, facts[:middle], fallback_ids), **_batch(model, facts[middle:], fallback_ids)}
+            left, right = (_batch(model, part, budget) for part in (facts[:middle], facts[middle:]))
+            return _BatchResult({**good, **left.rows, **right.rows}, {**left.errors, **right.errors},
+                                left.failures + right.failures)
         valid, errors = _validated(response, facts)
         good.update(valid)
         if not errors:
-            return good
-    for facts_row in facts:
-        pid = facts_row["patient_id"]
-        if pid not in good:
-            good[pid] = _template(facts_row)
-            fallback_ids.add(pid)
-            logger.warning("text fallback patient_id=%s error=%s", pid, errors.get(pid, "missing_row"))
-    return good
+            break
+    return _BatchResult(good, errors, [])
+
 
 
 def _reason(codes):
@@ -283,7 +331,8 @@ def _summary(plan):
 
 
 def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | None = None) -> dict:
-    """Return an independent plan copy, rewriting only selected rows when requested."""
+    """Return a plan copy; start at most 30 attempts within 20s. In-flight calls finish."""
+    budget = _Budget()
     model = os.getenv("BEDROCK_MODEL_FAST", "").strip()
     if not model:
         raise ValueError("BEDROCK_MODEL_FAST is required for plan text")
@@ -291,15 +340,25 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
     selected = [row for row in result["patients"] if only_ids is None or row["patient_id"] in only_ids]
     by_clinic = {clinic["id"]: clinic for clinic in clinics}
     facts = [_facts(row, by_clinic, langs.get(row["patient_id"], "en")) for row in selected]
-    fallback_ids = set()
+    template_rows = 0
     if facts:
         batches = [facts[start:start + 10] for start in range(0, len(facts), 10)]
         with ThreadPoolExecutor(max_workers=4) as pool:
-            by_id = {pid: row for batch in pool.map(lambda rows: _batch(model, rows, fallback_ids), batches)
-                     for pid, row in batch.items()}
-        for row in selected:
-            row.update({key: by_id[row["patient_id"]][key] for key in ("reason_text", "messages")})
+            outcomes = list(pool.map(lambda rows: _batch(model, rows, budget), batches))
+        by_id = {pid: row for batch in outcomes for pid, row in batch.rows.items()}
+        failures = [error for batch in outcomes for error in batch.failures]
+        if failures and not by_id:
+            logger.info("text generation bedrock_rows=0 template_rows=0")
+            raise failures[0]
+        errors = {pid: error for batch in outcomes for pid, error in batch.errors.items()}
+        for row, row_facts in zip(selected, facts):
+            pid = row["patient_id"]
+            if pid not in by_id:
+                by_id[pid] = _template(row_facts)
+                template_rows += 1
+                logger.warning("text fallback patient_id=%s error=%s", pid, errors[pid])
+            row.update({key: by_id[pid][key] for key in ("reason_text", "messages")})
     if only_ids is None:
         result["summary"] = _summary(result)
-    logger.info("text generation bedrock_rows=%d template_rows=%d", len(facts) - len(fallback_ids), len(fallback_ids))
+    logger.info("text generation bedrock_rows=%d template_rows=%d", len(facts) - template_rows, template_rows)
     return result
