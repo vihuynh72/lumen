@@ -379,9 +379,12 @@ def test_check_uses_model_sentences_that_pass_and_never_clears_a_block(monkeypat
     assert issues[0] == {"patient_id": "P005", "facility_id": "C04", "severity": "block", "code": "hbv_no_isolation",
                          "text": "This one is fine now.", "source": "bedrock"}  # reworded, still a block
     assert body["explained_by"] == "bedrock"
-    assert [i["source"] for i in issues[1:3]] == ["template", "template"]  # empty and 31-word sentences are dropped
-    assert [i["text"] for i in issues[1:3]] == [i["text"] for i in template["issues"][1:3]]
-    assert all(i["source"] == "bedrock" for i in issues[3:] if "soft" not in i)
+    sent = seen["payload"]["issues"]  # blocks first, then one example per warning kind, at most 12
+    assert 3 <= len(sent) <= 12 and sent[0]["code"] == "hbv_no_isolation"
+    assert len({i["code"] for i in sent[1:]}) == len(sent) - 1
+    reworded = [i for i in issues if i["source"] == "bedrock"]
+    assert len(reworded) == len(sent) - 2  # the empty and the 31-word sentences are dropped; the rest keep template text
+    assert all(i["text"] == "This one is fine now." or i["text"].startswith("Plain sentence") for i in reworded)
     assert [(i["patient_id"], i["code"], i["source"]) for i in issues if i.get("soft")] == [(spanish, "language_unconfirmed", "template")]
     assert body["counts"]["warning"] == template["counts"]["warning"] + 1
 
