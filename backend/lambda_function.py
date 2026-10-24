@@ -195,6 +195,7 @@ def plan(body):
         "patients": matched["patients"], "overflow": matched["overflow"], "audit": [], "summary": "",
     }
     new = timed(timing, "text", write_text, new, seed, sources)
+    new["ai_sources"] = sources  # the Bedrock text step may return a copy made before it set its source
     timing["total"] = round((time.perf_counter() - start) * 1000)
     timed({}, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))  # logged, not in timing_ms: total is final
     return with_names(new, patients)
