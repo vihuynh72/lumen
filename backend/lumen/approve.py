@@ -7,6 +7,10 @@ ACTOR = "Rosa"
 EDIT_STATUSES = ("approved", "confirmed", "declined", "no_answer")
 
 
+class UnknownPatient(ValueError, LookupError):
+    """An ID that is not in the plan: the router answers 404."""
+
+
 def apply(plan, patient_ids, edits, now):
     """A new plan version; the input plan is not changed. Raises ValueError on a bad request."""
     start = time.perf_counter()
@@ -15,8 +19,10 @@ def apply(plan, patient_ids, edits, now):
     rows = {r["patient_id"]: r for r in new["patients"]}
 
     def row(pid):
-        if not isinstance(pid, str) or pid not in rows:
-            raise ValueError(f"unknown patient {pid}")
+        if not isinstance(pid, str):
+            raise ValueError(f"patient IDs must be strings, not {pid!r}")
+        if pid not in rows:
+            raise UnknownPatient(f"unknown patient {pid}")
         return rows[pid]
 
     def audit(change):

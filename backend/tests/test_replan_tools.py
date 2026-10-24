@@ -94,7 +94,7 @@ def test_replan_by_rules_matches_the_fixture():
     result = replan_by_rules("DaVita Folsom Dialysis can only take one more", PLAN1, tools(), SEEDS["clinics"])
     assert result["diff"] == REPLAN["diff"]
     assert result["plan"]["overflow"] == PLAN2["overflow"]
-    assert "1 patient move" in result["summary"]
+    assert "1 patient moves" in result["summary"]
 
 
 def test_replan_by_rules_rejects_other_instructions():
@@ -108,3 +108,39 @@ def test_diff_rows_flat_shape():
     new = copy.deepcopy(PLAN1["patients"])
     new[0]["status"] = "approved"
     assert diff_rows(PLAN1["patients"], new) == [{"patient_id": new[0]["patient_id"], "field": "status", "from": "draft", "to": "approved"}]
+
+
+def test_rules_keep_a_confirmed_lower_ranked_row():
+    plan = copy.deepcopy(PLAN1)
+    p4 = next(r for r in plan["patients"] if r["patient_id"] == "P004")
+    p4["status"] = "confirmed"  # P004 ranks below P003 at the same C02 slot
+    t = build_tools("PSPS-DEMO-01", plan, SEEDS)
+    result = replan_by_rules("DaVita Folsom Dialysis can only take one more", plan, t, SEEDS["clinics"])
+    by = rows(result["plan"])
+    assert by["P004"]["clinic_id"] == "C02" and by["P003"]["action"] == "hospital"
+
+
+def test_rules_reject_ambiguous_or_extra_text():
+    for text in ("DaVita can only take one more",
+                 "DaVita Folsom Dialysis can only take one more, and Orangevale none"):
+        with pytest.raises(ValueError):
+            replan_by_rules(text, PLAN1, tools(), SEEDS["clinics"])
+    assert replan_by_rules("davita folsom dialysis can only take 1 more patient.", PLAN1, tools(), SEEDS["clinics"])["diff"]
+
+
+def test_rules_summary_counts_and_grammar():
+    summary = replan_by_rules("DaVita Folsom Dialysis can only take one more", PLAN1, tools(), SEEDS["clinics"])["summary"]
+    assert "1 patient moves" in summary and "1 more patient needs a staff call" in summary
+
+
+def test_pin_needs_a_real_slot_and_capacity_respects_locks():
+    t = tools()
+    with pytest.raises(ValueError):
+        t["pin_patient"]("P003", "C02", "2026-11-05", 1)
+    with pytest.raises(ValueError):
+        t["set_clinic_capacity"]("C02", "2026-10-29T06:00", 1, 1)
+    with pytest.raises(ValueError):
+        t["set_clinic_capacity"]("C02", "2026-10-29", 1, True)
+    t["pin_patient"]("P004", "C02", "2026-10-29", 1)
+    with pytest.raises(ValueError):
+        t["set_clinic_capacity"]("C02", "2026-10-29", 1, 0)

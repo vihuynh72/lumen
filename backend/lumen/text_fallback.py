@@ -31,7 +31,7 @@ def fill(plan, clinics, only_ids=None):
     """Return a copy of the plan with template messages on moves (only_ids limits the rows) and a summary."""
     rows = []
     for r in plan["patients"]:
-        if (only_ids is None or r["patient_id"] in only_ids) and r["action"] in MOVES:
+        if (only_ids is None or r["patient_id"] in only_ids) and r["action"] in MOVES and r["slot"]:
             r = {**r, "messages": {"en": message(r, clinics)}}
         rows.append(r)
     count = {a: sum(1 for r in rows if r["action"] == a) for a in ("early_session", "transfer", "hospital")}

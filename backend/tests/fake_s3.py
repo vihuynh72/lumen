@@ -8,12 +8,18 @@ class NoSuchKey(Exception):
     response = {"Error": {"Code": "NoSuchKey"}}
 
 
+class PreconditionFailed(Exception):
+    response = {"Error": {"Code": "PreconditionFailed"}}
+
+
 class FakeS3:
     def __init__(self):
         self.objects = {}
         self._clock = itertools.count()
 
-    def put_object(self, Bucket, Key, Body, ContentType=None):
+    def put_object(self, Bucket, Key, Body, ContentType=None, IfNoneMatch=None):
+        if IfNoneMatch == "*" and Key in self.objects:
+            raise PreconditionFailed(Key)
         self.objects[Key] = (Body if isinstance(Body, bytes) else Body.encode(), next(self._clock))
 
     def get_object(self, Bucket, Key):
