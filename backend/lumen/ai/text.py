@@ -73,7 +73,12 @@ def _language_ok(message, facts, lang):
 def _message_error(message, facts, lang):
     if not isinstance(message, str):
         return "message_type"
-    if message.count("{name}") != 1 or not re.search(r"(?<![\w{}])\{name\}(?![\w{}])", message):
+    if message.count("{name}") != 1:
+        return "name_placeholder"
+    before, after = message.split("{name}")
+    neighbors = before[-1:] + after[:1]
+    if any(not (c.isspace() or (unicodedata.category(c).startswith("P") and c not in "{}_"))
+           for c in neighbors):
         return "name_placeholder"
     if (len(message) > 80 if lang == "zh" else len(message.split()) >= 40):
         return "message_length"
