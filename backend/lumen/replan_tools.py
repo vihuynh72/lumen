@@ -1,0 +1,130 @@
+"""Re-plan tools (team rules, Rule 3). AI's replan() decides when to call them; this module decides what they do."""
+
+import copy
+import re
+from datetime import datetime, timedelta
+
+from lumen import store
+from lumen.affected import find_affected, session_start
+from lumen.geo import drive_minutes
+from lumen.match import match
+
+DIFF_FIELDS = ("action", "clinic_id", "slot", "drive_minutes", "drive_source", "pickup_time", "book_today", "flags", "status", "pinned")
+DECISION = ("action", "clinic_id", "slot")
+RANK_FIELDS = ("patient_id", "rank", "urgency", "difficulty", "reasons")
+NUMBERS = {"no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def diff_rows(old_rows, new_rows):
+    """Flat diff, one entry per changed field per patient (contracts/schemas/replan.schema.json)."""
+    old = {r["patient_id"]: r for r in old_rows}
+    return [{"patient_id": r["patient_id"], "field": f, "from": old[r["patient_id"]][f], "to": r[f]}
+            for r in new_rows if r["patient_id"] in old for f in DIFF_FIELDS if old[r["patient_id"]][f] != r[f]]
+
+
+def build_tools(event_id, plan, seeds):
+    """The five functions replan() calls. They share one working copy of the slots and rows."""
+    event = store.load_event(event_id)
+    if event is None:
+        raise LookupError(f"no event {event_id}")
+    clinics = copy.deepcopy(seeds["clinics"])
+    patients, rules = seeds["patients"], seeds["rules"]
+    now = datetime.fromisoformat(event["issued_at"]) + timedelta(minutes=30)  # the plan's demo clock, as in /plan
+    affected = find_affected(event, clinics, patients, seeds["outage_area"], now, rules["modes"])
+    drive = drive_minutes(patients, clinics)
+    old_rows = {r["patient_id"]: r for r in plan["patients"]}
+    work = {"rows": copy.deepcopy(plan["patients"]), "overflow": list(plan["overflow"])}
+    changed_clinics, touched = set(), set()
+
+    def row(patient_id):
+        found = next((r for r in work["rows"] if r["patient_id"] == patient_id), None)
+        if found is None:
+            raise ValueError(f"no patient {patient_id} in the plan")
+        return found
+
+    def dialysis_clinic(clinic_id):
+        found = next((c for c in clinics if c["id"] == clinic_id and c["kind"] == "dialysis"), None)
+        if found is None:
+            raise ValueError(f"no dialysis clinic {clinic_id}")
+        return found
+
+    def check_slot(date, shift):
+        datetime.fromisoformat(date)
+        if shift not in (1, 2, 3, 4):
+            raise ValueError(f"shift must be 1 to 4, not {shift!r}")
+
+    def set_clinic_capacity(clinic_id, date, shift, chairs):
+        clinic = dialysis_clinic(clinic_id)
+        check_slot(date, shift)
+        if not isinstance(chairs, int) or chairs < 0:
+            raise ValueError("chairs must be a whole number of 0 or more")
+        slot = next((s for s in clinic["slots"] if (s["date"], s["shift"]) == (date, shift)), None)
+        if slot is None:
+            clinic["slots"].append({"date": date, "shift": shift, "open_chairs": chairs})
+        else:
+            slot["open_chairs"] = chairs
+        changed_clinics.add(clinic_id)
+        return {"clinic_id": clinic_id, "date": date, "shift": shift, "open_chairs": chairs}
+
+    def pin_patient(patient_id, clinic_id, date, shift):
+        r = row(patient_id)
+        clinic = dialysis_clinic(clinic_id)
+        check_slot(date, shift)
+        if (r["clinic_id"], r["slot"]) != (clinic_id, {"date": date, "shift": shift}):
+            minutes = drive[patient_id][clinic_id]["minutes"]
+            start = session_start(datetime.fromisoformat(date).date(), shift)
+            r.update(action="early_session" if clinic["home"] else "transfer", clinic_id=clinic_id,
+                     slot={"date": date, "shift": shift}, drive_minutes=minutes, drive_source=drive[patient_id][clinic_id]["source"],
+                     pickup_time=(start - timedelta(minutes=minutes + rules["pickup_buffer_minutes"])).isoformat(),
+                     book_today=r["ride"] == "paratransit", flags=[f for f in r["flags"] if f == "long_gap_after"],
+                     reason_text=None, messages={}, audio={})
+            # shortcut: long_gap_after is kept from the old slot, not recomputed; match recomputes it for unpinned rows
+        r["pinned"] = True
+        touched.add(patient_id)
+        return {k: r[k] for k in ("patient_id", "action", "clinic_id", "slot", "pinned")}
+
+    def decline_patient(patient_id):
+        row(patient_id)["status"] = "declined"
+        touched.add(patient_id)
+        return {"patient_id": patient_id, "status": "declined"}
+
+    def rerun_matching():
+        # Lock every chair the instruction did not touch, so only rows at a changed clinic (and touched rows) move.
+        locked = [r for r in work["rows"] if r["pinned"] or r["status"] in ("confirmed", "declined")
+                  or (r["slot"] and r["clinic_id"] not in changed_clinics and r["patient_id"] not in touched)]
+        ranked = [{k: r[k] for k in RANK_FIELDS} for r in sorted(work["rows"], key=lambda r: r["rank"])]
+        result = match(ranked, affected, patients, clinics, rules, drive, locked)
+        for r in result["patients"]:
+            old = old_rows.get(r["patient_id"])
+            if old and all(r[k] == old[k] for k in DECISION):  # same chair: keep its text and status
+                r.update({k: old[k] for k in ("reason_text", "messages", "audio", "status")})
+        work["rows"], work["overflow"] = result["patients"], result["overflow"]
+        return {"patients": work["rows"], "overflow": work["overflow"]}
+
+    def diff_plans():
+        return diff_rows(plan["patients"], work["rows"])
+
+    return {"set_clinic_capacity": set_clinic_capacity, "pin_patient": pin_patient, "decline_patient": decline_patient,
+            "rerun_matching": rerun_matching, "diff_plans": diff_plans}
+
+
+def replan_by_rules(instruction, plan, tools, clinics):
+    """Rule-based re-plan for "(clinic name) can only take N more". Used until, or when, Bedrock replan() fails."""
+    m = re.match(r"^\s*(?P<name>.+?)\s+can only take (?P<n>\d+|\w+) more\b", instruction, re.IGNORECASE)
+    n = m and (int(m.group("n")) if m.group("n").isdigit() else NUMBERS.get(m.group("n").lower()))
+    clinic = m and next((c for c in clinics if c["kind"] == "dialysis" and m.group("name").lower() in c["name"].lower()), None)
+    if n is None or clinic is None:
+        raise ValueError("the rule-based re-plan understands only '(clinic name) can only take N more'")
+    # N more = at most N visiting patients at that clinic across all slots, in rank order (contracts/api.md)
+    keep = sorted((r for r in plan["patients"] if r["clinic_id"] == clinic["id"] and r["slot"]), key=lambda r: r["rank"])[:n]
+    for s in clinic["slots"]:
+        tools["set_clinic_capacity"](clinic["id"], s["date"], s["shift"],
+                                     sum(1 for r in keep if (r["slot"]["date"], r["slot"]["shift"]) == (s["date"], s["shift"])))
+    result = tools["rerun_matching"]()
+    diff = tools["diff_plans"]()
+    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id"}
+    to_staff = {d["patient_id"] for d in diff if d["field"] == "action" and d["to"] == "hospital"}
+    plural = lambda k, word: f"{k} {word}" + ("" if k == 1 else "s")  # noqa: E731
+    summary = (f"{clinic['name']} can take only {plural(n, 'more patient')}, so {plural(len(moved), 'patient')} move to other chairs or the staff call list. "
+               f"{plural(len(to_staff), 'more patient')} now need a staff call.")
+    return {"plan": {**plan, **result}, "diff": diff, "summary": summary}
