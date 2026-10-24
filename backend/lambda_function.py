@@ -15,6 +15,7 @@ from lumen.affected import find_affected
 from lumen.geo import drive_minutes
 from lumen.match import match
 from lumen.notice import parse_fallback
+from lumen.rank_fallback import rank_by_rules
 from lumen.replan_tools import build_tools, replan_by_rules
 
 try:
@@ -60,8 +61,13 @@ def parse_with_bedrock(text):
 
 
 def rank(affected, patients, rules, drive):
-    from lumen.ai.rank import rank_patients
-    return rank_patients(affected, patients, rules, drive)
+    """AI-lane rank_patients; the rule-based rank (master plan 8.4) when it fails or has not landed."""
+    try:
+        from lumen.ai.rank import rank_patients
+        return rank_patients(affected, patients, rules, drive)
+    except Exception as exc:
+        log(step="rank", fallback=True, reason=repr(exc)[:300])
+        return rank_by_rules(affected, patients, rules, drive)
 
 
 def replan_with_bedrock(instruction, plan, tools):
