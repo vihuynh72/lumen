@@ -270,3 +270,11 @@ def test_diff_tool_result_contains_exact_diff_and_summary_facts(monkeypatch, set
     assert content["diff"] == diff
     assert content["summary_facts"] == {"changed_rows": 1, "clinics": ["C02", "H01"],
                                          "new_actions": {"hospital": 1}}
+
+
+def test_missing_context_signal_falls_back_instead_of_returning_unchanged_plan(monkeypatch, setup):
+    plan, tools, calls, _, _ = setup
+    replan, seen = install(monkeypatch, [turn(text="REPLAN_CONTEXT_UNAVAILABLE"), turn(text=GOOD)])
+    with pytest.raises(RuntimeError, match="context"):
+        replan("DaVita Folsom Dialysis can only take four more", plan, tools)
+    assert calls == [] and len(seen) == 1
