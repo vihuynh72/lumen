@@ -1,19 +1,18 @@
 """Every contract fixture and seed file validates, and the fixture plans obey the plan rules."""
 
 import json
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
 
+from lumen.affected import point_in_polygon
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = ROOT / "contracts" / "schemas"
 FIXTURES = ROOT / "contracts" / "fixtures"
 SEED = ROOT / "data" / "seed"
-sys.path.insert(0, str(ROOT / "scripts"))
-from validate_seed import point_in_polygon  # noqa: E402
 
 SHIFT_START = {1: (6, 0), 2: (10, 30), 3: (15, 0), 4: (19, 30)}
 
