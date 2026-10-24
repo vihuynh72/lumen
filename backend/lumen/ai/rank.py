@@ -7,7 +7,7 @@ WITHIN_HOURS = 36
 
 def _facts(patient: dict, home_in_outage: bool, starts_within_36h: bool) -> dict:
     """Which rules.json keys apply to this patient. Keys with no entry here never fire."""
-    flags = patient.get("flags", [])
+    flags = patient["flags"]
     return {
         "session_in_window": True,  # only patients with an affected session are ranked
         "session_within_36h": starts_within_36h,
@@ -36,7 +36,7 @@ def rank_patients(affected: dict, patients: list, rules: dict, drive: dict | Non
     """
     now = datetime.fromisoformat(affected["now"])
     closed = set(affected["closed_clinic_ids"])
-    home = affected.get("home_in_outage", {})
+    home = affected["home_in_outage"]
     first_start: dict[str, datetime] = {}
     for session in affected["sessions"]:
         start = datetime.fromisoformat(session["start"])
@@ -48,7 +48,7 @@ def rank_patients(affected: dict, patients: list, rules: dict, drive: dict | Non
         start = first_start.get(patient["id"])
         if start is None:
             continue
-        facts = _facts(patient, bool(home.get(patient["id"])), start - now <= timedelta(hours=WITHIN_HOURS))
+        facts = _facts(patient, bool(home[patient["id"]]), start - now <= timedelta(hours=WITHIN_HOURS))
         urgency_reasons = [key for key in rules["urgency"] if facts.get(key)]
         difficulty_reasons = [key for key in rules["difficulty"] if facts.get(key)]
         urgency = sum(rules["urgency"][key] for key in urgency_reasons)

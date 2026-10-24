@@ -6,9 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from lumen.ai.rank import rank_patients
+from lumen.ai.rank import _facts, rank_patients
+from lumen.geo import estimate
+from lumen.rank_fallback import rank_by_rules
 
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "fixtures"
+SEED_RULES = json.loads((Path(__file__).resolve().parents[2] / "data" / "seed" / "rules.json").read_text())
 STATE = json.loads((FIXTURES / "state.json").read_text())
 AFFECTED = json.loads((FIXTURES / "affected.json").read_text())
 PLAN1 = json.loads((FIXTURES / "plan.v1.json").read_text())
@@ -26,7 +29,8 @@ def affected(*sessions, home=(), closed=("C01",)):
     """sessions: (patient_id, hours after the demo clock the session starts)."""
     rows = [{"patient_id": pid, "clinic_id": "C01", "start": (NOW + timedelta(hours=h)).isoformat(),
              "end": (NOW + timedelta(hours=h + 4)).isoformat()} for pid, h in sessions]
-    return {**AFFECTED, "sessions": rows, "closed_clinic_ids": list(closed), "home_in_outage": {pid: True for pid in home}}
+    return {**AFFECTED, "sessions": rows, "closed_clinic_ids": list(closed),
+            "home_in_outage": {pid: pid in home for pid, _ in sessions}}  # like find_affected: one entry per patient
 
 
 def order(ranked):
@@ -129,7 +133,8 @@ def test_unaffected_and_unknown_patients_are_not_ranked():
 
 def test_patient_with_two_sessions_uses_the_earliest():
     pts = [patient("A"), patient("B")]
-    ranked = rank_patients(affected(("A", 80), ("A", 10), ("B", 20)), pts, RULES)
+    # earliest-wins: A's 10 h session counts, so A outranks B (last-wins would score A on 80 h and put B first)
+    ranked = rank_patients(affected(("A", 10), ("A", 80), ("B", 20)), pts, RULES)
     assert order(ranked) == ["A", "B"] and "session_within_36h" in ranked[0]["reasons"]
 
 
@@ -152,3 +157,38 @@ def test_router_calls_rank_patients_without_the_fallback(capsys):
     import lambda_function as router
     assert router.rank(AFFECTED, PATIENTS, RULES, None) == rank_patients(AFFECTED, PATIENTS, RULES)
     assert "fallback" not in capsys.readouterr().out
+
+
+def test_every_rules_json_key_has_a_predicate():
+    keys = set(SEED_RULES["urgency"]) | set(SEED_RULES["difficulty"])
+    assert keys <= set(_facts(patient("A"), False, False))
+    assert keys <= set(RULES["urgency"]) | set(RULES["difficulty"])  # the fixture's rules carry the same keys
+
+
+def test_missing_flags_or_home_in_outage_raises():
+    no_flags = {k: v for k, v in patient("A").items() if k != "flags"}
+    with pytest.raises(KeyError):
+        rank_patients(affected(("A", 5)), [no_flags], RULES)
+    with pytest.raises(KeyError):
+        rank_patients({k: v for k, v in affected(("A", 5)).items() if k != "home_in_outage"}, [patient("A")], RULES)
+    with pytest.raises(KeyError):
+        rank_patients({**affected(("A", 5)), "home_in_outage": {}}, [patient("A")], RULES)
+
+
+def parity_world():
+    """40 single-session patients with varied attributes and distinct session times."""
+    rng = random.Random(7)
+    pts = [patient(f"P{i:03d}", ride=rng.choice(["self", "family", "paratransit", "medical_van", "wheelchair_van"]),
+                   language=rng.choice(["en", "es", "zh"]), mobility=rng.choice(["walks", "walker", "wheelchair"]),
+                   lives_alone=rng.random() < 0.4, flags=rng.sample(["heart_failure", "missed_recently"], rng.randint(0, 2)),
+                   home={"lat": 38.7 + rng.random() / 5, "lng": -120.9 + rng.random() / 5}) for i in range(1, 41)]
+    hours = rng.sample(range(1, 400), len(pts))
+    return affected(*[(p["id"], h / 4) for p, h in zip(pts, hours)], home=[p["id"] for p in pts if rng.random() < 0.3]), pts
+
+
+def test_matches_the_rule_fallback_on_single_session_sets():
+    clinics = [{"id": "C01", "lat": 38.73, "lng": -120.8}, {"id": "C02", "lat": 38.9, "lng": -120.6},
+               {"id": "C03", "lat": 38.6, "lng": -121.0}]
+    for aff, pts in [(AFFECTED, PATIENTS), parity_world()]:
+        drive = estimate(pts, STATE["clinics"] if pts is PATIENTS else clinics)
+        assert rank_patients(aff, pts, RULES, drive) == rank_by_rules(aff, pts, RULES, drive)
