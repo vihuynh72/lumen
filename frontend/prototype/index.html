@@ -3,153 +3,126 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lumen</title>
+<title>Lumen · Care through a power shutoff</title>
 <link rel="icon" href="data:,">
-<meta name="description" content="Lumen turns a PG&amp;E power shutoff notice into a patient-by-patient dialysis plan that staff approve.">
-<!-- first visit follows the system theme; the toggle saves a choice that wins after that -->
+<meta name="description" content="Lumen helps people who depend on electricity get through planned power shutoffs. The demo plans a dialysis clinic’s patients through a PG&amp;E Public Safety Power Shutoff.">
+<!-- same theme rule as the console: a saved choice wins, else the system setting -->
 <script>(function(){var t;try{t=localStorage.getItem('lumenTheme')}catch(e){}if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})()</script>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;600&family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="app.css">
-<link rel="stylesheet" href="review.css">
-<link rel="stylesheet" href="timeline.css">
-<!-- mapKey: Amazon Location API key, public by design: tiles only, referrer-restricted to localhost:5173 and the Amplify URL -->
-<script>window.LUMEN_CONFIG={api:'https://7nkmh6ezx4unlwxzfjh3gy5lci0brirr.lambda-url.us-east-2.on.aws/', mapKey:'v1.public.eyJqdGkiOiIxZDMwMTg3Ny00OGZiLTQzMjItOTUyZS1lYWVlYzM4YWM2MWEifRQn7mCoI7ZUKDIw21KFAof_ct3Gtf_T9BEDaxxk0KbBtz8iE9S2uhjC28mENWcWBKfK85wLZIWnOSbwdOC8XAOGoN6NzQ2UEaWOYWY-Kj5o4Y68Gsh6YEjKCa1eg2y36_YqqyOWuSUYrqqlrn0Gbc0ObMiy27nCSXfmxO9uH1f1UJDLROpKSC9vK6JXNletxiDeFqQHy51FUPzBxrScCkprbVZ734GDmcOd_x4yNeRJrtY_hZtWXVicMlMGSbiv44KdHeQrJ23SFbqEWOxfExvUeyupfgwzsc6T8-plvC0WTP6oXdvL17hS7917kVn9ZQVaLvYdxdrf2g60M712e0k.NjAyMWJkZWUtMGMyOS00NmRkLThjZTMtODEyOTkzZTUyMTBi'}</script>
-<script src="map.js" defer></script>
-<script src="tour.js" defer></script>
-<script src="review.js" defer></script>
-<script src="timeline.js" defer></script>
-<script src="app.js" defer></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="landing.css">
+<script src="landing.js" defer></script>
 </head>
 <body>
-<svg width="0" height="0" class="sprite" aria-hidden="true">
-  <symbol id="i-play" viewBox="0 0 16 16"><path d="M5 3.5l8 4.5-8 4.5z"/></symbol>
-  <symbol id="i-ck" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></symbol>
-  <symbol id="i-x" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></symbol>
-  <symbol id="i-send" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
-  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M4.5 6.5L8 10l3.5-3.5"/></symbol>
-  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13.5 9.6A5.75 5.75 0 1 1 6.4 2.5a4.6 4.6 0 0 0 7.1 7.1z"/></symbol>
-  <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.75"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></symbol>
-  <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.25" cy="10.75" r="2.75"/><path d="M7.2 8.8L13.5 2.5M11.25 4.75l1.75 1.75M9.5 6.5l1.5 1.5"/></symbol>
-  <symbol id="i-home" viewBox="0 0 16 16"><path d="M2.5 7.5L8 3l5.5 4.5M4 6.5V13h8V6.5"/></symbol>
-  <symbol id="i-list" viewBox="0 0 16 16"><path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.75 4h.01M2.75 8h.01M2.75 12h.01"/></symbol>
-  <symbol id="i-drop" viewBox="0 0 16 16"><path d="M8 2.2C6.2 4.6 4.2 7.1 4.2 9.6a3.8 3.8 0 0 0 7.6 0C11.8 7.1 9.8 4.6 8 2.2z" fill="currentColor" fill-opacity=".18"/></symbol>
-  <symbol id="i-h" viewBox="0 0 16 16"><path d="M5 3.8v8.4M11 3.8v8.4M5 8h6"/></symbol>
-  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
-  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></symbol>
+<svg class="sprite" width="0" height="0" aria-hidden="true">
+  <symbol id="i-lr" viewBox="0 0 24 24"><path d="M9 6.5L3.5 12 9 17.5M15 6.5l5.5 5.5-5.5 5.5"/></symbol>
 </svg>
 
-<header class="top">
-  <h1 class="logo"><i aria-hidden="true"></i>Lumen</h1>
-  <span class="sep" aria-hidden="true"></span>
-  <div class="home"><span class="nm" id="homeName">DaVita Cameron Park Dialysis</span><span class="tag n">Home</span></div>
-  <span class="sep" aria-hidden="true"></span>
-  <label class="selw"><span class="vh">County</span>
-    <select id="region">
-      <option value="eldorado">El Dorado County · live</option>
-      <option value="santaclara">Santa Clara County · illustrative tour</option>
-    </select><svg class="i"><use href="#i-chev"/></svg></label>
-  <span class="tag am" id="tourTag" hidden>Illustrative tour</span>
-  <span class="spacer"></span>
-  <span class="chip" id="chip"><span class="dot" aria-hidden="true"></span><span id="chipT">No shutoff notice</span></span>
-  <button class="btn sec planbtn" id="planTog" type="button" aria-expanded="false" aria-controls="panel"><svg class="i"><use href="#i-list"/></svg>Plan</button>
-  <button class="btn q ico" id="themeTog" type="button" aria-label="Switch to dark theme"><svg class="i"><use href="#i-moon"/></svg></button>
-  <button class="btn q ico" id="keyTog" type="button" aria-label="Demo key"><svg class="i"><use href="#i-key"/></svg></button>
-  <button class="btn q" id="reset" type="button" popovertarget="resetPop">Reset</button>
-  <button class="btn pri" id="run" type="button"><svg class="i fill"><use href="#i-play"/></svg>Run demo</button>
+<!-- The seam: one night seen twice. The .n blocks are the night without Lumen (the live, accessible copy);
+     landing.js adds a lit copy of each (.d, aria-hidden) and clips the two at the seam. -->
+<header class="hero" id="top">
+  <div class="sky" aria-hidden="true"></div>
+  <nav class="nav" aria-label="Main">
+    <a class="logo" href="#top" data-side><i aria-hidden="true"></i>Lumen</a>
+    <a class="nl wide" href="#how" data-side>How it works</a>
+    <a class="nl wide" href="#clinics" data-side>For clinics</a>
+    <span class="spacer"></span>
+    <button class="nl wide" type="button" data-soon data-side>Request a demo</button>
+    <button class="signin" type="button" data-soon data-side>Sign in</button>
+  </nav>
+
+  <div class="stage">
+    <div class="split hl" data-copy>
+      <h1 class="n"><span>When the power goes out,</span> <span>some people can’t wait.</span></h1>
+    </div>
+
+    <div class="split ln" data-copy>
+      <p class="n lede">Dialysis, home oxygen, ventilators, medicine that must stay cold. For people who depend on power, a shutoff is <b>a medical emergency</b>. Without a plan, it is an evening of phone calls.</p>
+    </div>
+
+    <div class="split calls" data-copy>
+      <ol class="n" aria-label="The same evening, call by call">
+        <li style="--i:0" data-day="Early · Tue 10:30 AM" data-k="early"><span class="nm">Maria Delgado</span><span class="dt">Spanish, wheelchair</span><span class="st">not reached</span><span class="vh">. With Lumen: comes in early, Tuesday 10:30 AM.</span></li>
+        <li style="--i:1" data-day="Early · Tue 6 AM" data-k="early"><span class="nm">James Whitfield</span><span class="dt">drives himself</span><span class="st">voicemail</span><span class="vh">. With Lumen: comes in early, Tuesday 6 AM.</span></li>
+        <li style="--i:2" data-day="Orangevale · Thu 6 AM" data-k="move"><span class="nm">Chen Wei</span><span class="dt">Chinese, walker</span><span class="st">not reached</span><span class="vh">. With Lumen: DaVita Orangevale, Thursday 6 AM.</span></li>
+        <li style="--i:3" data-day="Orangevale · Thu 6 AM" data-k="move"><span class="nm">Linda Park</span><span class="dt">lives alone</span><span class="st">busy</span><span class="vh">. With Lumen: DaVita Orangevale, Thursday 6 AM.</span></li>
+        <li style="--i:4" data-day="Hospital · you call" data-k="call"><span class="nm">Robert Haines</span><span class="dt">medical van</span><span class="st">no answer</span><span class="vh">. With Lumen: you call him, and the hospital is told.</span></li>
+        <li style="--i:5" data-day="35 more planned" data-k="more"><span class="nm">35 more</span><span class="dt">every one a call</span><span class="st">not started</span><span class="vh">. With Lumen: 35 more planned.</span></li>
+      </ol>
+    </div>
+
+    <div class="split ld" data-copy>
+      <p class="n lede">Lumen finds who is at risk, plans their care before the lights go out, and <b>tells everyone the moment you approve</b>. Shown here with a dialysis clinic and 40 synthetic patients.</p>
+    </div>
+
+    <div class="acts">
+      <a class="btn pri" href="console.html">Try the live demo</a>
+      <button class="btn sec" type="button" data-soon>Request a demo</button>
+    </div>
+
+    <div class="scene">
+      <div class="split map" role="img" aria-label="Map of the El Dorado clinics. DaVita Cameron Park has no power. Blue routes lead its patients to DaVita Folsom, DaVita Orangevale and DaVita Sunset.">
+        <div class="n"></div><div class="d"></div>
+      </div>
+      <p class="tag" data-side>Demo data. Synthetic patients.</p>
+    </div>
+  </div>
+
+  <div class="seam" aria-hidden="true"></div>
+  <div class="grab" aria-hidden="true"></div>
+  <div class="knob" role="slider" tabindex="0" aria-label="Compare the night without Lumen and with Lumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="50% without Lumen, 50% with Lumen"><svg class="i" aria-hidden="true"><use href="#i-lr"/></svg></div>
 </header>
 
-<div class="app">
-  <aside class="rail" id="rail" aria-labelledby="railH">
-    <div class="rail-h">
-      <div><h2 id="railH" tabindex="-1">Shutoff response</h2><p class="sub" id="railSub">Not started</p></div>
-      <button class="btn pausebtn" id="pause" type="button" hidden>Pause</button>
-      <button class="btn railtog" id="railTog" type="button" aria-expanded="false" aria-controls="railBody">Steps<svg class="i"><use href="#i-chev"/></svg></button>
-    </div>
-    <div class="rail-body" id="railBody">
-      <ol class="phases" id="phases"></ol>
-      <form class="cmd" id="replan">
-        <label for="instr">Re-plan in plain words</label>
-        <textarea id="instr" rows="2" placeholder="Tell Lumen what changed" disabled></textarea>
-        <div class="cmd-r">
-          <div class="suggs" id="suggs" role="group" aria-label="Examples"><button type="button" class="sugg" disabled>DaVita Folsom can only take 4 more</button><button type="button" class="sugg" disabled>Maria Delgado declined</button></div>
-          <button type="submit" class="send" id="send" aria-label="Send the re-plan instruction" disabled><svg class="i"><use href="#i-send"/></svg></button>
-        </div>
-      </form>
-    </div>
-    <p class="vh" id="live" aria-live="polite"></p>
-  </aside>
+<main>
+  <section class="how" id="how" aria-labelledby="howT">
+    <h2 class="vh" id="howT">How it works</h2>
+    <ol class="steps">
+      <li style="--i:0;--b:var(--red)"><span class="bar" aria-hidden="true"></span><b>Shutoff notice arrives</b><span>PG&amp;E: Tue 6 PM to Thu noon</span></li>
+      <li style="--i:1;--b:var(--slate)"><span class="bar" aria-hidden="true"></span><b>Lumen finds who is at risk</b><span>40 dialysis patients</span></li>
+      <li style="--i:2;--b:var(--blue)"><span class="bar" aria-hidden="true"></span><b>A plan for each person</b><span>36 chairs, 4 calls</span></li>
+      <li style="--i:3;--b:var(--amber)"><span class="bar" aria-hidden="true"></span><b>You approve once</b><span>nothing is sent until then</span></li>
+      <li style="--i:4;--b:var(--green)"><span class="bar" aria-hidden="true"></span><b>Everyone is told</b><span>patients, clinics, hospital</span></li>
+    </ol>
+  </section>
 
-  <div class="rsz" data-side="rail" role="separator" aria-orientation="vertical" aria-label="Resize steps panel" aria-controls="rail" aria-valuemin="280" aria-valuemax="480" aria-valuenow="336" tabindex="0"></div>
-  <div class="rsz" data-side="panel" role="separator" aria-orientation="vertical" aria-label="Resize plan panel" aria-controls="panel" aria-valuemin="340" aria-valuemax="640" aria-valuenow="380" tabindex="0"></div>
-  <main class="map" id="main" aria-label="Map of the home clinic and its power grid">
-    <div id="map"></div>
-    <div class="banner" id="banner" role="alert" hidden><span id="bannerT"></span><button class="btn q ico sm" id="bannerX" type="button" aria-label="Dismiss the message"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <div class="ncard" id="notice" role="status" hidden>
-      <p class="ncard-t" id="noticeT"></p>
-      <p class="ncard-a" id="noticeA"></p>
-      <p class="ncard-s"><span class="tag n" id="noticeS">Simulated PG&amp;E notice</span></p>
+  <section class="facts" aria-labelledby="whyT">
+    <h2 class="vh" id="whyT">Why it matters</h2>
+    <div class="fact">
+      <p class="big">After Hurricane Sandy, patients who got dialysis early had <b>28% lower odds of dying</b> within 30 days.</p>
+      <p class="so">When there is time, Lumen moves treatment earlier.</p>
     </div>
-    <!-- data-s: the first run stage that draws it; data-x: the stage that replaces it; data-w: shown only when that is on the map (app.js legend()) -->
-    <details class="legend" id="legend">
-      <summary>Legend<svg class="i"><use href="#i-chev"/></svg></summary>
-      <dl>
-        <dt>Power</dt>
-        <dd><span><i class="sw feed"></i>Live feeder (illustrative)</span><span data-s="2"><i class="sw ln dead"></i>No power (simulated)</span><span><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line</span><span><i class="sw sub"></i>Substation</span></dd>
-        <dt data-s="1">Area</dt>
-        <dd data-s="1"><span><i class="sw zone"></i>Shutoff area (illustrative)</span><span data-s="2"><i class="sw zone off"></i>Darker while the power is off</span></dd>
-        <dt>Places</dt>
-        <dd><span><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic</span><span><i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic</span><span><i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</span><span data-s="2"><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>No power</span><span data-s="4"><i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Takes patients</span><span data-s="0" data-w="county"><i class="sw ln county"></i>County line</span></dd>
-        <dt data-s="3">Patients</dt>
-        <dd data-s="3"><span data-s="3" data-x="4"><i class="sw dot" style="--c:var(--map-affected)"></i>Treatment in the shutoff</span><span data-s="4"><i class="sw dot" style="--c:var(--map-transfer)"></i>Moves</span><span data-s="4"><i class="sw dot" style="--c:var(--map-early)"></i>Comes in early</span><span data-s="4"><i class="sw dot" style="--c:var(--map-staff)"></i>Staff call</span><span data-s="4" data-w="notice"><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span></dd>
-        <dt data-s="4">Routes</dt>
-        <dd data-s="4"><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>To a clinic with chairs</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Staff call</span><span data-s="4" data-w="changed"><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed</span><span data-s="4" data-w="straight"><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Road route not available</span></dd>
-      </dl>
-      <p class="lgnote">Lines and substations: OpenStreetMap. Patient homes: synthetic.</p>
-      <button class="lgbtn" id="animTog" type="button">Pause animation</button>
-    </details>
-    <div class="tlbar" id="timeline"></div>
-    <div class="ctl">
-      <button class="btn sec" id="wholeBtn" type="button" title="Whole plan" hidden><svg class="i"><use href="#i-fit"/></svg><span class="lb">Whole plan</span></button>
-      <button class="btn sec" id="homeBtn" type="button" title="Home clinic"><svg class="i"><use href="#i-home"/></svg><span class="lb">Home</span></button>
-      <button class="btn sec m" id="d3" type="button" aria-pressed="true" aria-label="3D view">3D</button>
+    <div class="fact">
+      <p class="big"><b>92% of hospitals</b> saw dialysis patients arrive from other clinics without their records.</p>
+      <p class="so">Lumen sends each patient’s sheet to the new clinic first.</p>
     </div>
-  </main>
+    <p class="src">Source: <a href="https://files.asprtracie.hhs.gov/documents/aspr-tracie-ta-dialysis-hurricane-sandy-lessons-learned-07015-508.pdf">ASPR TRACIE, dialysis lessons from Hurricane Sandy</a></p>
+  </section>
 
-  <aside class="panel" id="panel" aria-label="Home clinic and plan"></aside>
-</div>
-
-<div id="keyPop" class="pop" popover role="dialog" aria-labelledby="keyH">
-  <h2 id="keyH">Demo key</h2>
-  <p class="err" id="keyMsg" hidden></p>
-  <form id="keyForm">
-    <label for="keyInput">Key for the live API</label>
-    <div class="keyrow">
-      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" aria-describedby="keyMsg">
-      <button class="btn sec ico" id="keyShow" type="button" aria-pressed="false" aria-label="Show the key"><svg class="i"><use href="#i-eye"/></svg></button>
+  <section class="clinics" id="clinics" aria-labelledby="clinicsT">
+    <div>
+      <h2 id="clinicsT">Be ready before the next shutoff.</h2>
+      <p>Lumen starts from the PG&amp;E notice your clinic already gets. See one full shutoff with demo patients: the notice, the plan, one approval, everyone told.</p>
     </div>
-    <button class="btn pri" type="submit">Save</button>
+    <div class="acts2">
+      <a class="btn pri" href="console.html">Try the live demo</a>
+      <button class="btn sec" type="button" data-soon>Request a demo</button>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span class="logo"><i aria-hidden="true"></i>Lumen</span>
+  <p>Demo data. Synthetic patients. Simulated PG&amp;E notice.</p>
+</footer>
+
+<dialog class="soon" id="soon" aria-labelledby="soonT" aria-describedby="soonP">
+  <h2 id="soonT">Coming soon</h2>
+  <p id="soonP">Lumen is a demo for now. Clinic sign-in opens with our first pilot.</p>
+  <form method="dialog" class="acts3">
+    <a class="btn pri" href="console.html">Try the live demo</a>
+    <button class="btn sec">Close</button>
   </form>
-  <p class="small">Ask the team for the demo key. It never goes in the repo.</p>
-</div>
-
-<div id="resetPop" class="pop" popover role="dialog" aria-label="Reset the demo" aria-describedby="resetQ">
-  <p id="resetQ">Reset the demo? This deletes the notice and the patient plan.</p>
-  <div class="pop-b">
-    <button class="btn danger" id="resetGo" type="button">Reset</button>
-    <button class="btn sec" type="button" popovertarget="resetPop" popovertargetaction="hide" autofocus>Cancel</button>
-  </div>
-</div>
-
-<div id="runPop" class="pop" popover role="dialog" aria-label="Start over" aria-describedby="runQ">
-  <p id="runQ">Start over? This deletes the patient plan, its approvals and voice notes.</p>
-  <div class="pop-b">
-    <button class="btn danger" id="runGo" type="button">Start over</button>
-    <button class="btn sec" type="button" popovertarget="runPop" popovertargetaction="hide" autofocus>Cancel</button>
-  </div>
-</div>
+</dialog>
 </body>
 </html>

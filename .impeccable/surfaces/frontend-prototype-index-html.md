@@ -5,32 +5,23 @@ primary_target: "frontend/prototype/index.html"
 related_targets: []
 ---
 
-# Lumen app screen (frontend/prototype)
+# Lumen landing page (frontend/prototype/index.html)
 
-Scope: the single working screen of Lumen. Mode: Operate.
-Audience and job: the manager of DaVita Cameron Park Dialysis (home clinic C01) plans patient treatment through a PG&E shutoff, then approves it. Secondary: judges watching a recorded run at 1920 x 1080.
-Content: live API (El Dorado County) plus an illustrative Santa Clara tour computed in the page. OSM power lines and substations, illustrative feeders, synthetic patients.
-Constraints: static files, no build step, Amplify manual upload, demo key in the page, Amazon Location tiles when a key exists, OpenFreeMap otherwise.
-Unresolved: Amazon Location API key (needs geo-maps permission for lumen-cli or a console-created key).
+Scope: the first screen anyone sees; the console is console.html. Mode: Persuade.
+Audience and job: hackathon judges and dialysis clinic administrators. In ten seconds they should feel why a power shutoff is dangerous for people who depend on electricity (dialysis, home oxygen, ventilators, cold medicine) and see that Lumen handles it; the demo is a dialysis clinic. Action: Try the live demo.
+Proof and content: the real El Dorado clinic network (CMS positions), synthetic patients labeled as such, two sourced facts (Hurricane Sandy: early dialysis, 28% lower odds of dying within 30 days; 92% of hospitals saw transient patients arrive without records).
+Constraints: static files, no build step, CDN libraries allowed, Atkinson faces, Lumen palette, no invented metrics, Request a demo and Sign in open a Coming soon dialog that collects nothing.
 
 ## Direction contract
 
-THESIS: The screen is a run sheet. A dark left rail logs the AI run step by step, the map shows what each step changed on the home grid, and the right panel holds the plan the manager approves. It refuses the KPI-tile dashboard and the marketing hero.
+THESIS: One night, seen twice. A seam splits the first viewport: the shutoff night without Lumen (dark, the clinic gone red, a fading list of unreached patients) and the same patients with Lumen (light, routes flowing to clinics with free chairs). It refuses the split hero of copy beside a product screenshot and the centered headline over three feature cards.
 
-OWN-WORLD: The incumbent world: Atkinson Hyperlegible Next for all UI, Atkinson Hyperlegible Mono only for times, counts and IDs. Green-tinted neutrals (paper #FBFCFB, ground #E6EBE8, ink #13201C), a near-black green rail #15211D, amber #E39A1E only for the primary action and the running step, red for power off, blue for transfers, green for powered and confirmed. Light by default (office daylight), dark on toggle. Facilities are extruded real building outlines under pin labels. Live feeders carry a moving current dash. Dead lines turn dashed red-gray.
+OWN-WORLD: Lumen's world. The near-black green #15211D is the night half, paper #F1F4F2 and #FBFCFB the day half, ink #13201C. Amber #E39A1E only for the primary action and the seam handle; red #C2362F for the dark clinic; blue #2457C5 for routes; green #23784A for clinics with chairs. Atkinson Hyperlegible Next 800 for display, Mono for names and times in the call list. The network is drawn from real positions: nodes, edges, flowing dashes.
 
-STORY: The manager sees the home clinic and its grid, presses Run demo, and watches each step land in the rail while the map shows the shutoff area, the dead feeders, the closed clinic, the affected patients and their new destinations. Then the manager reviews the plan, re-plans in plain words, approves, confirms a patient and plays the voice note.
+STORY: The visitor feels an evening of 40 unanswered calls, sees the same night resolved, drags the seam to compare, reads five short bars on how it works, and presses Try the live demo.
 
-FIRST VIEWPORT: A 56 px top bar holds Lumen, the home clinic with a Home tag, the region select, the event countdown, Run demo (amber) and Reset. A 336 px dark left rail holds "AI run" with seven phases on a connector line, the active phase raised, and an instruction box at the bottom. The map fills the center at full height, with the camera tilted 50 degrees over the home clinic, the legend bottom-left and the controls bottom-right. A 380 px paper right panel holds the home clinic status, then the plan counts, Approve all and the patient rows.
+FIRST VIEWPORT: Nav (Lumen mark, How it works, For clinics, Request a demo, Sign in). A 76px two-line headline crossing the seam: "When the power goes out," on the night, "some people can't wait." on the day. Under it Try the live demo (amber) and Request a demo. Left: the night lede and the fading call list. Right: the lede and the live network, routes flowing into labeled clinics. The amber seam with a round handle at 50%. The five-bar how-it-works strip anchors the bottom. Signature interaction: drag the seam (pointer and keyboard) to reveal more night or more day. Motion grammar: one entrance (call rows fade in, the clinic turns red, the seam sweeps to center, routes trace), then a calm idle loop of flowing dashes; reduced motion shows the finished frame.
 
-FORM: Run rail, position 1 of my ordered structural list (dealt hand index 1). seed:325b73432be7cf66. Signature move: the rail is the AI run log. Each phase lights when its API answer lands and shows its AWS service, its true source (model, rules fallback or rules) and its server time, and the map camera moves to what that phase changed. Raise from the gate-board challenger: a re-plan reranks plan rows in place, and changed rows hold amber until the manager acknowledges them.
+FORM: Dark side, lit side (before and after with a draggable seam), position 5 on the ordered list, dealt as the lead; seed:b4e8883581e5fa8f.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
-
-## Extension 2 (user feedback, Oct 23 night)
-
-The map stops drawing a web. Patients gather at their closed clinic, and one road route per destination funnels them out (Amazon Location Service routes), each labeled with patients, road minutes and miles. Clicking a patient draws that patient's own road route. A pop-out review panel covering almost the whole screen holds the full patient table for approval. The rail and plan panel resize by drag or keyboard. A timeline at the bottom of the map plays a simulated outage: grid live, power off at Tue 6 PM inside the shutoff area, patients flow out along the roads, power back Thu noon. One county at a time; day and night both first-class. More voice languages through Amazon Translate plus Polly. Binding details: CONTRACT-v2 (E1-E10).
-
-## Extension 3 (user feedback, Oct 23, 11:40 PM)
-
-Simple for daily use. The rail is "Shutoff response" in plain step names with no service, source, model or timing labels anywhere. No version numbers. The run is the timeline: notice received, shutoff area, zoom into the clinic as it loses power, zoom out, routes traced live along the roads to each receiving clinic while its chair count fills, then the run waits for staff, who open the full-screen approval list. A Check the plan step and card show what to fix and what to look at. Voice notes go out in bulk from the list, one per patient, with the skipped patients named before anything is sent. Capacity is visible ("16 of 18 chairs", "Full"). The patient card is one sentence, one leave/drive line and one reason line. Routes are computed live from Amazon Location on every run. Binding details: CONTRACT-v3 (R1-R7).

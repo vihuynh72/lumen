@@ -1,7 +1,16 @@
 /* Lumen map: window.LumenMap on MapLibre GL JS 4.7.1 (global maplibregl).
    Contracts: CONTRACT.md "Map module", CONTRACT-v2 E1/E2/E7-E9, CONTRACT-v3 R3 (capacity labels), R4 (route traces),
    R6 (one status per label, no ranks), R7 (road lines come only from the app's live Amazon Location results),
-   R8 (a selection shows one path only), R9 (the visible search that builds the plan). */
+   R8 (a selection shows one path only), R9 (the visible search that builds the plan).
+   CONTRACT-v5 section 6, with no new API: the map reads the run from the calls it already gets.
+   - The grid (power lines, substations, feeders, kV labels) shows only while the clinic loses power: it fades in as
+     flyHome3D lands, and fades out when setPatients brings the homes (also setFlows with a plan, setPower(false), setRegion).
+     Grid lines follow setPower only; setScene still darkens the shutoff area.
+   - The plan is on the map once setFlows, setCapacity or setPatients (a row with an action) carries it. Then: homes fade out
+     except the selected patient and a route selection's patients; the county outline fades out; no chair bars; route
+     badges only on a route with no road ("Road route not available"; traceRoutes' item label is no longer drawn); once the
+     search is over, clinics that take nobody and an unused hospital hide. Receiving clinics read "name · N patients",
+     plus "Full" when full. */
 (() => {
   'use strict';
 
@@ -17,6 +26,11 @@
   const FUNNEL_STEPS = 6 * DASH.length; // funnel 0..1 runs the dash cycle 6 times along every route
   const TOO_FAR = 40;            // road minutes
   const FIT_PAD = 48;
+  const FADE_MS = 500;           // v5 fades: the grid in and out, the homes and the county outline out
+  // Grid layers and their full opacity; lm-subs' icon opacity depends on power, so applyFx writes it apart.
+  const GRID = [['lm-trans-line', 'line-opacity', 0.85], ['lm-trans-dead-casing', 'line-opacity', 1], ['lm-trans-dead', 'line-opacity', 1],
+    ['lm-feeder-casing', 'line-opacity', 1], ['lm-feeder-live', 'line-opacity', 0.32], ['lm-feeder-flow', 'line-opacity', 1], ['lm-feeder-dead', 'line-opacity', 1],
+    ['lm-trans-label', 'text-opacity', 1], ['lm-subs', 'text-opacity', 1], ['lm-feeder-label', 'text-opacity', 1]];
   // [pitch, bearing] per kind of view while 3D is on; flat views use [0, 0].
   const VIEW3D = { home: [55, -20], over: [40, -15], near: [50, -15] };
   const DROP = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2C6.2 4.6 4.2 7.1 4.2 9.6a3.8 3.8 0 0 0 7.6 0C11.8 7.1 9.8 4.6 8 2.2z" fill="currentColor" fill-opacity=".18"/></svg>';
@@ -35,6 +49,7 @@
   const is = (k) => ['==', ['get', k], true];
   const isLine = (l) => Array.isArray(l) && l.length > 1;
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const calls = (n) => `${n} ${n === 1 ? 'needs' : 'need'} a phone call`;
   // Non-breaking space keeps a number with its unit ("21 min", "15.1 mi", "5:28 AM") wherever a line wraps.
   const keep = (s) => String(s || '').replace(/(\d) (?=(min|mi|AM|PM)\b)/g, '$1 ');
 
@@ -49,8 +64,10 @@
   // R9 search graph: nodes { k: source|facility, src, id, a, b (points), hosp, open, used, ok, d (distance), e (edge 0..1),
   // s (circle 0..1), st ''|'form'|'ok'|'no', done }; ring = frontier radius around c; gone = edges a road trace replaced.
   const G = { raf: 0, done: null, nodes: [], ring: 0, c: null, gone: new Set() };
+  // v5 fades, each 0..1: grid = the grid (on only while the clinic loses power), pats = homes other than a selection, county.
+  const FX = { v: { grid: 0, pats: 1, county: 1 }, to: { grid: 0, pats: 1, county: 1 }, raf: 0, t: 0 };
   const S = { theme: 'light', region: null, facilities: [], status: {}, dead: false, outage: null, patients: null,
-    flows: null, recv: {}, early: {}, sel: null, pr: null, scene: null, cap: {}, iso: null,
+    flows: null, recv: {}, early: {}, sel: null, pr: null, scene: null, cap: {}, iso: null, grid: false, gridT: 0,
     trace: [], // drawn routes from traceRoutes: { k, item, action, line, road, cum, n, label, p (0..1 drawn) }
     is3D: false, anim: true, pad: { top: 0, right: 0, bottom: 0, left: 0 } };
   const D = { trans: EMPTY, subs: EMPTY, feeders: EMPTY, county: EMPTY, fp: [], center: {} };
@@ -138,16 +155,17 @@
     map.addImage('lm-badge', badgeIcon(), { pixelRatio: 2, stretchX: [[12, 36]], stretchY: [[12, 36]], content: [10, 7, 38, 41] });
 
     // Under the basemap labels: county outline, power-off mask, outage fill, grid, outline, buildings.
-    add({ id: 'lm-county-line', type: 'line', source: 'lm-county', layout: { 'line-join': 'round' }, paint: { 'line-color': T.ink, 'line-opacity': S.theme === 'dark' ? 0.32 : 0.45, 'line-width': z(8, 1.25, 13, 2.25), 'line-dasharray': [4, 2.5] } }, before);
+    add({ id: 'lm-county-line', type: 'line', source: 'lm-county', layout: { 'line-join': 'round' }, paint: { 'line-color': T.ink, 'line-width': z(8, 1.25, 13, 2.25), 'line-dasharray': [4, 2.5] } }, before);
     add({ id: 'lm-outage-mask', type: 'fill', source: 'lm-outage', paint: { 'fill-color': T.mask, 'fill-opacity': 0, 'fill-opacity-transition': fade } }, before);
     add({ id: 'lm-outage-fill', type: 'fill', source: 'lm-outage', paint: { 'fill-color': T.outage, 'fill-opacity': 0, 'fill-opacity-transition': fade } }, before);
     const w = ['get', 'w'], tw = (k) => z(8, ['+', k, ['*', 1, w]], 11, ['+', k, ['*', 1.6, w]], 14, ['+', k, ['*', 2, w]], 17, ['+', k, ['*', 3, w]]);
-    add({ id: 'lm-trans-line', type: 'line', source: 'lm-trans', layout: round, paint: { 'line-color': T.trans, 'line-opacity': 0.85, 'line-width': tw(0) } }, before);
+    // Grid opacity and visibility come from applyFx (v5: the grid shows only while the clinic loses power).
+    add({ id: 'lm-trans-line', type: 'line', source: 'lm-trans', layout: round, paint: { 'line-color': T.trans, 'line-width': tw(0) } }, before);
     // Dead lines are solid and opaque over a halo casing, so they never read as a second dashed shutoff edge.
     add({ id: 'lm-trans-dead-casing', type: 'line', source: 'lm-trans', layout: round, paint: { 'line-color': T.halo, 'line-width': tw(3.5) } }, before);
     add({ id: 'lm-trans-dead', type: 'line', source: 'lm-trans', layout: round, paint: { 'line-color': T.dead, 'line-width': tw(0.6) } }, before);
     add({ id: 'lm-feeder-casing', type: 'line', source: 'lm-feeders', layout: round, paint: { 'line-color': T.halo, 'line-width': z(10, 4.5, 15, 8.5) } }, before);
-    add({ id: 'lm-feeder-live', type: 'line', source: 'lm-feeders', layout: round, paint: { 'line-color': T.power, 'line-opacity': 0.32, 'line-width': z(10, 1.8, 15, 3.4) } }, before);
+    add({ id: 'lm-feeder-live', type: 'line', source: 'lm-feeders', layout: round, paint: { 'line-color': T.power, 'line-width': z(10, 1.8, 15, 3.4) } }, before);
     add({ id: 'lm-feeder-flow', type: 'line', source: 'lm-feeders', layout: { 'line-join': 'round' }, paint: { 'line-color': T.power, 'line-width': z(10, 1.8, 15, 3.4), 'line-dasharray': DASH[0], 'line-dasharray-transition': fade } }, before);
     add({ id: 'lm-feeder-dead', type: 'line', source: 'lm-feeders', layout: round, paint: { 'line-color': T.dead, 'line-width': z(10, 2.2, 15, 4) } }, before);
     add({ id: 'lm-outage-line', type: 'line', source: 'lm-outage', layout: { 'line-join': 'round' }, paint: { 'line-color': T.outage, 'line-width': z(8, 1.25, 14, 2), 'line-opacity': 0, 'line-opacity-transition': fade } }, before);
@@ -205,10 +223,9 @@
     add({ id: 'lm-pr-line', type: 'line', source: 'lm-pr', filter: ['!', is('straight')], layout: round, paint: { 'line-color': act, 'line-width': 5 } });
     add({ id: 'lm-pr-straight', type: 'line', source: 'lm-pr', filter: is('straight'), layout: { 'line-join': 'round' }, paint: { 'line-color': act, 'line-width': 4, 'line-dasharray': STRAIGHT_DASH } });
     add({ id: 'lm-pat-ring', type: 'circle', source: 'lm-pat', filter: is('sel'), paint: { 'circle-radius': z(8, 7, 14, 10), 'circle-color': T.ink, 'circle-opacity': 0, 'circle-stroke-color': T.ink, 'circle-stroke-width': 2 } });
-    // Home dots stay small and faint (no lines from homes); the selected patient's dot is full strength.
-    const dot = ['case', is('sel'), 1, ['==', ['get', 'action'], ''], 0.85, 0.55];
+    // Home dots stay small (no lines from homes); the selected patient's dot is full strength; opacity comes from applyFx.
     add({ id: 'lm-pat', type: 'circle', source: 'lm-pat', layout: { 'circle-sort-key': ['case', ['get', 'sel'], 1, 0] }, paint: { 'circle-radius': z(8, 3, 14, 5.5), 'circle-color': act,
-      'circle-opacity': dot, 'circle-stroke-color': T.halo, 'circle-stroke-opacity': dot, 'circle-stroke-width': 1.25 } });
+      'circle-stroke-color': T.halo, 'circle-stroke-width': 1.25 } });
 
     add({ id: 'lm-trans-label', type: 'symbol', source: 'lm-trans', minzoom: 12, filter: ['has', 'kv'],
       layout: { 'symbol-placement': 'line', 'symbol-spacing': 420, 'text-field': ['get', 'kv'], 'text-font': fontR, 'text-size': 10.5, 'text-offset': [0, -0.8], 'text-letter-spacing': 0.02 },
@@ -248,6 +265,8 @@
   const waiting = (f) => !!G.raf && G.nodes.some((n) => n.id === f.id && n.st !== 'ok' && n.st !== 'no');
   const statusOf = (f) => { const st = rawStatus(f); return (st === 'closed' && S.scene && S.scene.power !== 'off') || (st === 'receiving' && waiting(f)) ? 'normal' : st; };
   const isDead = () => (S.scene ? S.scene.power === 'off' : S.dead);
+  // v5: the plan is on the map (the app's mapStage 4): routes, capacity, or homes that carry an action.
+  const planned = () => !!((S.flows && S.flows.length) || Object.keys(S.cap).length || (S.patients || []).some((p) => p && p.action));
   const facPt = (f) => f && (D.center[f.id] || [f.lng, f.lat]); // pin the building when its footprint is known
   const facById = (id) => id != null && S.facilities.find((x) => x.id === id);
   // The facility at a coordinate: exact match first, else the first within ~200 m.
@@ -293,11 +312,12 @@
       facs: new Set([i.fromId, i.toId]) };
   }
 
+  // v5: with a plan, only a selection keeps its homes (keep); the others fade out (FX pats), then leave the source.
   function renderPatients() {
-    const pr = S.pr && S.pr.id, I = isoSet();
-    setSrc('lm-pat', fc((S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat) && (!I || I.pats.has(p.id))).map((p) => {
-      const sel = p.id === S.sel || p.id === pr; // R6: no rank tags; only the selected patient is named
-      return point([p.lng, p.lat], { id: p.id, action: p.action || '', sel, txt: sel ? p.label || '' : '' });
+    const pr = S.pr && S.pr.id, I = isoSet(), plan = planned();
+    setSrc('lm-pat', fc((S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat) && (!I || I.pats.has(p.id))).flatMap((p) => {
+      const sel = p.id === S.sel || p.id === pr, keep = !plan || sel || !!I; // R6: no rank tags; only the selected patient is named
+      return keep || FX.v.pats > 0 ? [point([p.lng, p.lat], { id: p.id, action: p.action || '', sel, keep, txt: sel ? p.label || '' : '' })] : [];
     })));
   }
 
@@ -363,8 +383,9 @@
       const k = `${it.fromId}|${it.toId}|${it.action || ''}`, road = isLine(it.line);
       const a = facPt(facById(it.fromId)), b = facPt(facById(it.toId)), line = road ? it.line : a && b ? [a, b] : null;
       const n = Number.isFinite(it.count) ? it.count : (S.flows || []).filter((f) => f && flowKey(f) === k).length || 1;
+      // v5: no "+N" badge (the clinic label has the count); only a straight stand-in line says so on the line
       return { k, item: it, action: it.action || '', line, road, cum: line && measure(line), n,
-        label: keep(it.label || (road ? '' : 'Road route not available')), p: !line || old.has(k) ? 1 : 0 };
+        label: road ? '' : 'Road route not available', p: !line || old.has(k) ? 1 : 0 };
     });
     // R9: the search's straight edge to a node gives way to its road trace; on arrival the node's label shows chairs again.
     const gk = (r) => `${r.item.fromId}|${r.item.toId}`;
@@ -403,10 +424,10 @@
   // ---------- R9 search graph ----------
 
   const graphNode = (id) => G.nodes.filter((n) => n.id === id && n.st && !n.done).pop();
-  // The node's one status: forming "18 open chairs", then "+16 patients" / "4 staff calls", or a gray "Full" / "Not needed".
+  // The node's one status: forming "18 open chairs", then "+16 patients" / "4 need a phone call", or a gray "Full" / "Not needed".
   function nodeText(n) {
     if (n.st === 'form') return n.hosp ? 'Hospital' : n.open > 0 ? plural(n.open, 'open chair') : 'No open chairs';
-    if (n.st === 'ok') return n.hosp ? plural(n.used, 'staff call') : `+${plural(n.used, 'patient')}`;
+    if (n.st === 'ok') return n.hosp ? calls(n.used) : `+${plural(n.used, 'patient')}`;
     return n.open === 0 || (n.open != null && n.used >= n.open) ? 'Full' : 'Not needed';
   }
 
@@ -454,7 +475,9 @@
     mine.forEach((n) => G.gone.delete(n.k));
     G.c = a; G.ring = 0;
     const pts = [a, ...mine.map((n) => n.b)], el = map && map.getContainer(), P = S.pad;
-    const seen = el && pts.every((c) => { const q = map.project(c); return q.x >= P.left + 24 && q.x <= el.clientWidth - P.right - 24 && q.y >= P.top + 24 && q.y <= el.clientHeight - P.bottom - 24; });
+    // In view and not much smaller than a fit (a phone that shows the whole county still zooms in to the search).
+    const fitZ = el && (map.cameraForBounds(pts.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds()), { padding: Math.min(FIT_PAD, el.clientWidth / 5) }) || {}).zoom;
+    const seen = el && !(fitZ > map.getZoom() + 0.75) && pts.every((c) => { const q = map.project(c); return q.x >= P.left + 24 && q.x <= el.clientWidth - P.right - 24 && q.y >= P.top + 24 && q.y <= el.clientHeight - P.bottom - 24; });
     const ringAt = () => Math.max(0, ...mine.map((n) => n.d * n.e)) * 1.06; // the frontier reaches each node as its edge does
     if (reduced()) {
       focus({ facilities: [o.sourceId, ...mine.map((n) => n.id)] });
@@ -520,9 +543,12 @@
     if (run) map.setPaintProperty('lm-flow-run', 'line-dasharray', DASH[Math.floor(f * FUNNEL_STEPS) % DASH.length]);
   }
 
+  // Grid lines follow setPower only (v5): in the run the timeline darkens the area first, then the lines die with the clinic.
+  const gridDead = (k) => ['all', S.dead, ['==', ['get', k], true]];
+
   function applyPower() {
     if (!ready) return;
-    const off = isDead(), dead = (k) => ['all', off, ['==', ['get', k], true]], live = (k) => ['!', dead(k)];
+    const off = isDead(), dead = gridDead, live = (k) => ['!', dead(k)];
     // Power off: the shutoff area goes dark under the grid, buildings and labels.
     map.setPaintProperty('lm-outage-mask', 'fill-opacity-transition', { duration: reduced() ? 0 : 600, delay: 0 });
     map.setPaintProperty('lm-outage-mask', 'fill-opacity', off ? (S.theme === 'dark' ? 0.5 : 0.22) : 0);
@@ -530,13 +556,52 @@
     map.setFilter('lm-feeder-live', live('deenergized')); map.setFilter('lm-feeder-flow', live('deenergized'));
     map.setFilter('lm-feeder-dead', dead('deenergized'));
     map.setLayoutProperty('lm-subs', 'icon-image', ['case', dead('in_outage'), 'lm-sub-dead', 'lm-sub-live']);
-    map.setPaintProperty('lm-subs', 'icon-opacity', ['case', dead('in_outage'), 0.7, 1]);
     map.setPaintProperty('lm-subs', 'text-color', ['case', dead('in_outage'), T.deadInk, T.trans]);
     map.setLayoutProperty('lm-feeder-label', 'text-field', ['case', dead('deenergized'), 'No power: feeder (illustrative)', 'Feeder (illustrative)']);
     map.setPaintProperty('lm-feeder-label', 'text-color', ['case', dead('deenergized'), T.deadInk, T.powerInk]);
     // Real OSM lines drawn dead are a simulation: say so on the line.
     map.setLayoutProperty('lm-trans-label', 'text-field', ['case', dead('in_outage'), ['concat', ['get', 'kv'], ' · no power (simulated)'], ['get', 'kv']]);
     map.setPaintProperty('lm-trans-label', 'text-color', ['case', dead('in_outage'), T.deadInk, T.trans]);
+    applyFx();
+  }
+
+  // ---------- v5 fades: the grid, the homes, the county outline ----------
+
+  function applyFx() {
+    if (!ready) return;
+    const g = FX.v.grid, dot = ['case', is('sel'), 1, is('keep'), 0.85, 0.85 * FX.v.pats];
+    GRID.forEach(([id, p, v]) => { map.setLayoutProperty(id, 'visibility', g > 0 ? 'visible' : 'none'); map.setPaintProperty(id, p, v * g); });
+    map.setPaintProperty('lm-subs', 'icon-opacity', ['*', g, ['case', gridDead('in_outage'), 0.7, 1]]);
+    map.setPaintProperty('lm-county-line', 'line-opacity', (S.theme === 'dark' ? 0.32 : 0.45) * FX.v.county);
+    map.setPaintProperty('lm-pat', 'circle-opacity', dot); map.setPaintProperty('lm-pat', 'circle-stroke-opacity', dot);
+    syncAnim();
+  }
+
+  // Targets from the state: the grid only in the "loses power" scene; homes and county outline gone once the plan shows.
+  function syncFx() {
+    const plan = planned();
+    FX.to = { grid: S.grid ? 1 : 0, pats: plan ? 0 : 1, county: plan ? 0 : 1 };
+    if (!plan && FX.v.pats < 1) { FX.v.pats = 1; applyFx(); renderPatients(); } // the homes come back at once when the plan clears
+    if (reduced() || !ready) {
+      if (FX.raf) cancelAnimationFrame(FX.raf);
+      FX.raf = 0; Object.assign(FX.v, FX.to); applyFx(); renderPatients();
+    } else if (!FX.raf && Object.keys(FX.to).some((k) => FX.v[k] !== FX.to[k])) { FX.t = performance.now(); FX.raf = requestAnimationFrame(stepFx); }
+  }
+
+  function stepFx(now) {
+    const d = (now - FX.t) / FADE_MS, was = FX.v.pats;
+    FX.t = now;
+    Object.keys(FX.to).forEach((k) => { const a = FX.v[k], b = FX.to[k]; FX.v[k] = a < b ? Math.min(b, a + d) : Math.max(b, a - d); });
+    applyFx();
+    if (was > 0 && !FX.v.pats) renderPatients(); // faded out: off the source, so a hidden home cannot be clicked
+    FX.raf = Object.keys(FX.to).some((k) => FX.v[k] !== FX.to[k]) ? requestAnimationFrame(stepFx) : 0;
+  }
+
+  // The "loses power" scene: on after wait ms (flyHome3D, so the grid arrives with the camera), off at once.
+  function gridScene(on, wait = 0) {
+    clearTimeout(S.gridT);
+    if (on && wait) { S.gridT = setTimeout(() => gridScene(true), wait); return; }
+    if (S.grid !== on) { S.grid = on; syncFx(); }
   }
 
   // ---------- feeder current animation ----------
@@ -547,10 +612,10 @@
     if (s !== dashStep && ready && map.getLayer('lm-feeder-flow')) { dashStep = s; map.setPaintProperty('lm-feeder-flow', 'line-dasharray', DASH[s]); }
   }
 
-  // Runs only while wanted: not paused, motion allowed, tab visible, zoomed in enough to see feeders, a live feeder exists.
+  // Runs only while wanted: grid shown, not paused, motion allowed, tab visible, zoomed in enough to see feeders, a live feeder exists.
   function syncAnim() {
-    const want = ready && S.anim && !reduced() && !document.hidden && map.getZoom() >= ANIM_MIN_ZOOM
-      && D.feeders.features.some((f) => !(isDead() && f.properties.deenergized));
+    const want = ready && FX.v.grid > 0 && S.anim && !reduced() && !document.hidden && map.getZoom() >= ANIM_MIN_ZOOM
+      && D.feeders.features.some((f) => !(S.dead && f.properties.deenergized));
     if (want && !raf) raf = requestAnimationFrame(tick);
     else if (!want && raf) { cancelAnimationFrame(raf); raf = 0; }
   }
@@ -583,16 +648,18 @@
 .lm-fac[data-st=closed] .lm-sub{color:var(--red-ink)}
 .lm-fac[data-st=receiving] .lm-sub{color:var(--green-ink)}
 .lm-fac.no-sub .lm-sub{display:none}
-.lm-bar{display:none;min-width:88px;height:4px;margin:3px 0 2px;border-radius:2px;background:var(--line-2);overflow:hidden}
-.lm-bar i{display:block;height:100%;background:var(--map-transfer);transform:scaleX(var(--f,0));transform-origin:left;transition:transform .25s ease-out}
-.lm-fac.has-bar .lm-bar{display:block}
+.lm-cnt{font-weight:500;color:var(--green-ink);font-variant-numeric:tabular-nums}
+.lm-fac.is-narrow .lm-cnt{display:block;margin-top:1px;font-size:11.5px}
+.lm-fac.is-narrow .lm-sep{display:none}
 .lm-fac.is-full .lm-sub{align-self:flex-start;margin-top:2px;padding:0 6px;border:1px solid var(--map-ink);border-radius:999px;color:var(--map-ink);font-weight:600}
 .lm-fac.lbl-left.is-full .lm-sub{align-self:flex-end}
 .lm-early{display:none;align-self:flex-start;margin:2px 0 1px;padding:0 5px;border-radius:4px;background:var(--green-bg);color:var(--green-ink);font-size:11.5px;font-weight:600}
 .lm-fac.lbl-left .lm-early{align-self:flex-end}
 .lm-fac.has-early .lm-early{display:block}
-.lm-fac{transition:opacity .2s ease-out}
+.lm-fac{transition:opacity .4s cubic-bezier(.16,1,.3,1),visibility 0s}
 .lm-fac.lm-dim{opacity:.35}
+/* !important: MapLibre writes each marker's opacity inline */
+.lm-fac.lm-off{opacity:0!important;visibility:hidden;pointer-events:none;transition:opacity .4s ease-out,visibility 0s .4s}
 .lm-call{pointer-events:none;box-sizing:border-box;max-width:260px;display:flex;flex-direction:column;gap:2px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--f-ui);font-size:12.5px;line-height:1.3;box-shadow:var(--shadow)}
 .lm-call-t{font-weight:600}
 .lm-call-n{color:var(--mute)}
@@ -620,32 +687,36 @@
 .maplibregl-ctrl-attrib a{color:inherit}
 .maplibregl-ctrl-scale{border-color:var(--ink-2)}
 :root[data-theme=dark] .maplibregl-ctrl-icon,:root[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1) hue-rotate(180deg)}
-@media (prefers-reduced-motion:reduce){.lm-fac,.lm-pin,.lm-area,.lm-bar i{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
+@media (pointer:coarse){.lm-fac::before{content:"";position:absolute;left:calc(var(--pin) / 2 - 22px);top:calc(var(--pin) / 2 - 22px);width:44px;height:44px}.lm-iso button{min-height:44px}}
+@media (prefers-reduced-motion:reduce){.lm-fac,.lm-fac.lm-off,.lm-pin,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
     document.head.appendChild(css);
   }
 
   // Same rule as the panel's short name (app.js), so the visible pin text is part of its accessible name.
   const shortName = (n) => String(n || '').replace(/\s+Dialysis(\s+(Center|Clinic))?$/i, '');
 
-  // One status per label (R6). setCapacity wins: its text, else on a receiving clinic "16 of 18 chairs" with a fill bar,
-  // or "Full". st is the real status (not the simulated look), so a closed clinic always says what happens to its power.
-  // plan: the status comes from the plan (chairs, staff calls), so the label places before plain clinics.
-  // While the search (R9) visits a facility, its node status wins.
+  // One status per label (R6). setCapacity wins: its text, else a receiving clinic's name gets "· 16 patients" (n) and
+  // its status line says "Full" only when full (v5). st is the real status (not the simulated look), so a closed clinic
+  // always says what happens to its power. plan: the status comes from the plan (patients, phone calls), so the label
+  // places before plain clinics. While the search (R9) visits a facility, its node status wins.
   function status(f, st, n) {
     const g = graphNode(f.id);
     if (g) return { s: nodeText(g), plan: true, sg: g.st };
-    if (waiting(f)) return { s: f.kind === 'hospital' ? 'Hospital' : f.stations ? `${f.stations} stations` : 'Dialysis' };
-    const c = S.cap[f.id], used = c && Number.isFinite(c.used) ? c.used : 0;
+    if (waiting(f)) return { s: f.kind === 'hospital' ? 'Hospital' : f.stations ? `${f.stations} chairs` : 'Dialysis' };
+    const c = S.cap[f.id], used = c && Number.isFinite(c.used) ? c.used : n;
     if (c && c.text) return { s: c.text, plan: true };
-    if (f.kind === 'hospital') { const k = c && Number.isFinite(c.used) ? c.used : n; return k ? { s: `Hospital · ${plural(k, 'staff call')}`, plan: true } : { s: 'Hospital' }; }
-    if (c && Number.isFinite(c.open) && (st === 'receiving' || used > 0)) {
-      if (c.full != null ? c.full : used >= c.open) return { s: 'Full', full: true, plan: true };
-      return { s: `${used} of ${c.open} chairs`, bar: c.open > 0 ? clamp(used / c.open, 0, 1) : 0, plan: true };
+    if (f.kind === 'hospital') return used ? { s: calls(used), plan: true } : { s: 'Hospital' };
+    if (st === 'receiving' || used > 0) {
+      const full = !!c && (c.full != null ? c.full : Number.isFinite(c.open) && used >= c.open);
+      return { s: full ? 'Full' : '', n: plural(used, 'patient'), full, plan: true };
     }
     if (st === 'closed') return { s: S.scene && S.scene.power === 'restored' ? 'Power back' : isDead() ? 'No power' : 'Loses power' };
-    if (st === 'receiving') return { s: 'Receiving' };
-    return { s: f.home ? 'Home clinic' : f.stations ? `${f.stations} stations` : 'Dialysis' };
+    return { s: f.home ? 'Home clinic' : f.stations ? `${f.stations} chairs` : 'Dialysis' };
   }
+
+  // v5: once the plan shows and the search is over, a facility with no part in the plan hides (the hospital too, unused).
+  const idle = (f, raw) => planned() && !G.nodes.length && !f.home && raw !== 'closed' && raw !== 'receiving' && !S.recv[f.id] && !S.early[f.id]
+    && !(S.cap[f.id] && (S.cap[f.id].used > 0 || S.cap[f.id].text || S.cap[f.id].early));
 
   function buildMarkers() {
     markers.forEach((m) => m.marker.remove());
@@ -656,10 +727,10 @@
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'lm-fac';
-      el.innerHTML = `<span class="lm-stem"></span><span class="lm-pin">${f.kind === 'hospital' ? HOSP : DROP}</span><span class="lm-txt"><span class="lm-name"></span><span class="lm-sub"></span><span class="lm-bar"><i></i></span><span class="lm-early"></span></span>`;
+      el.innerHTML = `<span class="lm-stem"></span><span class="lm-pin">${f.kind === 'hospital' ? HOSP : DROP}</span><span class="lm-txt"><span class="lm-name"></span><span class="lm-sub"></span><span class="lm-early"></span></span>`;
       el.addEventListener('click', (e) => { e.stopPropagation(); if (opts.onSelect) opts.onSelect({ type: 'facility', id: f.id }); });
       const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left' }).setLngLat(facPt(f)).addTo(map);
-      markers.push({ f, el, marker, name: el.querySelector('.lm-name'), sub: el.querySelector('.lm-sub'), bar: el.querySelector('.lm-bar i'), early: el.querySelector('.lm-early'), txt: el.querySelector('.lm-txt'), key: '' });
+      markers.push({ f, el, marker, name: el.querySelector('.lm-name'), sub: el.querySelector('.lm-sub'), early: el.querySelector('.lm-early'), txt: el.querySelector('.lm-txt'), key: '' });
     });
     updateMarkers();
   }
@@ -667,35 +738,40 @@
   function updateMarkers() {
     if (!map) return;
     const zm = map.getZoom(), short = zm < 12, noSub = zm < 11, tall = zm >= 14.5, small = zm < 10.5, I = isoSet();
+    const narrow = map.getContainer().clientWidth < 560; // phone: short names, "16 patients" under the name, so labels fit
     markers.forEach((m) => {
-      const f = m.f, raw = rawStatus(f), st = statusOf(f), name = short ? shortName(f.name) : f.name, x = status(f, raw, S.recv[f.id] || 0), sub = x.s;
+      const f = m.f, raw = rawStatus(f), st = statusOf(f), name = short || narrow ? shortName(f.name) : f.name, x = status(f, raw, S.recv[f.id] || 0), sub = x.s;
       const c = S.cap[f.id], early = S.early[f.id] ? (c && c.early) || `${S.early[f.id]} come in early` : '', dim = !!I && !I.facs.has(f.id);
+      // A pin that hides (v5) keeps its last words while it fades out; it is drawn afresh when it comes back.
+      if (idle(f, raw)) { if (!m.off) { m.off = true; m.key = ''; m.el.classList.add('lm-off'); } return; }
+      m.off = false;
       // Status text stays at every zoom, so closed, receiving and capacity never rely on pin color alone.
-      const ns = noSub && !f.home && !x.plan && (raw === 'normal' || sub === 'Hospital');
-      const key = `${st}|${name}|${sub}|${x.bar}|${x.sg}|${early}|${dim}|${ns}|${tall}|${small}`;
+      const ns = !sub || (noSub && !f.home && !x.plan && (raw === 'normal' || sub === 'Hospital'));
+      const key = `${st}|${name}|${x.n}|${sub}|${x.sg}|${early}|${dim}|${ns}|${tall}|${small}|${narrow}`;
       if (key === m.key) return;
       m.key = key;
+      m.el.classList.remove('lm-off');
       m.el.dataset.st = st;
       m.el.classList.toggle('is-home', !!f.home);
       m.el.classList.toggle('is-hosp', f.kind === 'hospital');
       m.el.classList.toggle('no-sub', ns);
       m.el.classList.toggle('is-tall', tall);
       m.el.classList.toggle('is-small', small);
+      m.el.classList.toggle('is-narrow', narrow);
       m.el.classList.toggle('has-early', !!early);
-      m.el.classList.toggle('has-bar', x.bar != null);
       m.el.classList.toggle('is-full', !!x.full);
       m.el.classList.toggle('sg-ok', x.sg === 'ok');
       m.el.classList.toggle('sg-no', x.sg === 'no');
-      if (x.bar != null) m.bar.style.setProperty('--f', x.bar);
       m.el.classList.toggle('lm-dim', dim);
       m.stem = tall ? 30 : small ? 7 : 10;
       m.pin = small ? (f.home ? 26 : 24) : (f.home ? 30 : 26);
       m.marker.setOffset([-m.pin / 2, 0]); // keeps the stem foot on the point
       m.name.textContent = name;
+      if (x.n) { const s = document.createElement('span'); s.className = 'lm-cnt'; s.innerHTML = '<span class="lm-sep"> · </span>'; s.append(x.n); m.name.append(s); }
       m.sub.innerHTML = x.sg === 'ok' ? OK : '';
       m.sub.append(keep(sub));
       m.early.textContent = early;
-      m.el.setAttribute('aria-label', `${f.name}. ${sub}${early ? `. ${early}` : ''}`);
+      m.el.setAttribute('aria-label', [f.name + (x.n ? `, ${x.n}` : ''), sub, early].filter(Boolean).join('. '));
       m.el.style.zIndex = f.home ? 3 : st === 'normal' ? 1 : 2;
       m.rank = f.home ? 0 : raw === 'closed' ? 1 : x.plan || st === 'receiving' ? 2 : 3; // 3: plain clinic or hospital
       m.lw = m.txt.offsetWidth; m.lh = m.txt.offsetHeight;
@@ -705,14 +781,14 @@
 
   // Put each facility label beside its pin, on its current side, else the other side, else slid up or down along the pin,
   // else hide it; never over another pin or an earlier label (pins always stay). Order: home (never hidden), the area label,
-  // labels with a plan status (closed, chairs, staff calls), route badges, then plain clinics.
+  // labels with a plan status (closed, patients, phone calls), route badges, then plain clinics.
   function placeLabels(force) {
     const box0 = map.getContainer(), W = box0.clientWidth, H = box0.clientHeight;
     const items = markers.map((m) => {
-      const p = map.project(m.marker.getLngLat()), tab = p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H ? 0 : -1;
-      if (m.el.tabIndex !== tab) m.el.tabIndex = tab; // no focus stops on pins outside the map
+      const p = map.project(m.marker.getLngLat()), tab = !m.off && p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H ? 0 : -1;
+      if (m.el.tabIndex !== tab) m.el.tabIndex = tab; // no focus stops on hidden pins or pins outside the map
       return { m, p, pin: [p.x - m.pin / 2 - 2, p.y - m.stem - m.pin - 2, p.x + m.pin / 2 + 2, p.y + 3] };
-    });
+    }).filter((i) => !i.m.off); // a hidden pin (v5) takes no room
     // While a selection is shown (R8), faded pins do not push labels away and show no label; the chip is kept clear.
     const faded = (m) => m.el.classList.contains('lm-dim');
     const placed = items.filter((i) => !faded(i.m)).map((i) => i.pin);
@@ -762,8 +838,12 @@
       const at = (l, dy) => (l ? [p.x - m.pin / 2 - 6 - m.lw, top - 1 + dy, p.x - m.pin / 2 - 2, bottom + dy] : [p.x + m.pin / 2 + 2, top - 1 + dy, p.x + m.pin / 2 + 6 + m.lw, bottom + dy]);
       const free = (box) => box[0] >= 0 && box[2] <= W && !placed.some((b) => b !== pin && hit(box, b));
       const L = m.el.classList.contains('lbl-left'), a = (h + m.pin) / 2 - 6; // slid by a, the label still overlaps the pin by 6 px
-      const spot = faded(m) ? null : [[L, m.dy || 0], ...[0, -a / 2, a / 2, -a, a].flatMap((dy) => [[L, dy], [!L, dy]])].find(([l, dy]) => free(at(l, dy)))
-        || (m.f.home ? [at(false, 0)[2] > W, 0] : null);
+      const spots = [[L, m.dy || 0], ...[0, -a / 2, a / 2, -a, a].flatMap((dy) => [[L, dy], [!L, dy]])];
+      // The home label never hides: with no free spot it takes the one covering the least of other pins (a phone's clinics cluster).
+      const cover = (box) => placed.reduce((s, b) => s + (b === pin ? 0 : Math.max(0, Math.min(box[2], b[2]) - Math.max(box[0], b[0])) * Math.max(0, Math.min(box[3], b[3]) - Math.max(box[1], b[1]))), 0);
+      const least = () => spots.filter(([l, dy]) => { const b = at(l, dy); return b[0] >= 0 && b[2] <= W; }).reduce((x, s) => (x && cover(at(...x)) <= cover(at(...s)) ? x : s), null);
+      const spot = faded(m) ? null : spots.find(([l, dy]) => free(at(l, dy)))
+        || (m.f.home ? least() || [at(false, 0)[2] > W, 0] : null);
       if (spot) placed.push(at(...spot));
       m.el.classList.toggle('no-label', !spot);
       m.el.classList.toggle('lbl-left', !!spot && spot[0]);
@@ -789,7 +869,7 @@
       return `Showing ${name}’s route`;
     }
     const f = facById(i.toId), rs = S.trace.filter((r) => isoSet().routes.has(r.k)), n = rs.reduce((t, r) => t + r.n, 0) || isoSet().pats.size;
-    return `Showing ${f ? shortName(f.name) : 'this route'}${n ? ` · ${plural(n, f && f.kind === 'hospital' ? 'staff call' : 'patient')}` : ''}`;
+    return `Showing ${f ? shortName(f.name) : 'this route'}${n ? ` · ${f && f.kind === 'hospital' ? calls(n) : plural(n, 'patient')}` : ''}`;
   }
 
   function renderChip() {
@@ -1016,7 +1096,7 @@
     computeRecv();
     buildMarkers();
     if (ready) { setSrc('lm-trans', D.trans); setSrc('lm-subs', D.subs); setSrc('lm-feeders', D.feeders); setSrc('lm-county', D.county); renderFp(); renderFlows(); }
-    syncAnim();
+    gridScene(false); syncFx();
   }
 
   // Per facility: patients moving in (routes) and patients coming in early (no route; shown on the clinic label).
@@ -1048,8 +1128,8 @@
     const home = S.facilities.find((f) => f.home);
     const bbox = S.region && S.region.bbox;
     const region = () => bbox && fit([[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]], 'over');
-    // The whole affected area: shutoff polygon, home clinic and every affected patient's home.
-    const whole = () => [...coordsOf(S.outage), facPt(home), ...(S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat)).map((p) => [p.lng, p.lat])];
+    // The whole affected area: shutoff polygon, home clinic and every affected patient's home (v5: homes only while shown).
+    const whole = () => [...coordsOf(S.outage), facPt(home), ...(planned() ? [] : S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat)).map((p) => [p.lng, p.lat])];
     if (target === 'home') { // the home building in the middle, with its feeder and the substation that feeds it in view
       if (!home) return region();
       const h = facPt(home), fd = coordsOf(D.feeders.features.find((f) => f.properties.facility_id === home.id));
@@ -1093,15 +1173,17 @@
     setTheme,
     setRegion,
     showOutage(g) { S.outage = g || null; renderOutage(false); showAreaLabel(); },
-    setPower(dead) { S.dead = !!dead; applyPower(); updateMarkers(); syncAnim(); }, // the closed clinic says "No power" once dead
+    // The closed clinic says "No power" once dead; power back on also ends the grid scene (v5).
+    setPower(dead) { S.dead = !!dead; if (!S.dead) gridScene(false); applyPower(); updateMarkers(); },
     setFacilityStatus(statusById) { S.status = { ...(statusById || {}) }; renderFp(); updateMarkers(); },
-    setPatients(list) { S.patients = list || null; computeRecv(); renderPatients(); updateMarkers(); },
+    // v5: the homes arriving end the grid scene.
+    setPatients(list) { S.patients = list || null; if (S.patients && S.patients.length) gridScene(false); computeRecv(); renderPatients(); updateMarkers(); syncFx(); },
     // Who moves: items {id, fromId, toId, from:[lng,lat], to:[lng,lat], action, changed}; ids are optional (found from the
     // coordinates). It marks changed routes and fits 'flows'; it draws no lines. null or [] also clears the traced routes.
     setFlows(list) {
       S.flows = list || null;
-      if (!S.flows || !S.flows.length) { stopTrace(); S.trace = []; clearGraph(); }
-      computeRecv(); renderFlows(); updateMarkers();
+      if (!S.flows || !S.flows.length) { stopTrace(); S.trace = []; clearGraph(); } else gridScene(false);
+      computeRecv(); renderFlows(); updateMarkers(); syncFx();
     },
     // R4: [{fromId, toId, action, line:[[lng,lat]..]|null, count, label}], { stagger, duration, onArrive(item) } -> Promise.
     // The only source of route lines (R7); null line = dashed straight line. [] clears.
@@ -1111,12 +1193,14 @@
     // R8: {type:'patient', id} | {type:'route', fromId, toId} | null. Shows one path only, with a "Show all routes" chip.
     isolate,
     // R3: { [facilityId]: { open, used, full, text, early } }; {} clears. text replaces the status; early replaces "8 come in early".
-    setCapacity(c) { S.cap = c && typeof c === 'object' ? { ...c } : {}; updateMarkers(); },
+    setCapacity(c) { S.cap = c && typeof c === 'object' ? { ...c } : {}; updateMarkers(); syncFx(); },
     // R4 scene 3: tilt into the home clinic; resolves after the flight plus hold ms (at once under reduced motion).
+    // v5: the grid fades in over the second half of the flight and stays until the homes arrive.
     flyHome3D({ hold = 0, duration = 1800 } = {}) {
       if (!S.is3D) { S.is3D = true; if (opts.on3D) opts.on3D(true); }
       const d = reduced() ? 0 : duration;
       focus('home', { duration: d });
+      gridScene(true, d * 0.55);
       return new Promise((r) => setTimeout(r, reduced() ? 0 : d + hold));
     },
     // E2/R8: {id, home, to, line|null, minutes, miles, label, action?, note?}; shows only that route (isolate patient), fits it.

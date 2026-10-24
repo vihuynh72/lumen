@@ -1,67 +1,81 @@
 # Lumen
 
-Lumen turns a PG&E Public Safety Power Shutoff notice into an approved, patient-by-patient plan for a dialysis clinic manager.
+**Lumen turns a PG&E power shutoff notice into a plan for every dialysis patient. Staff approve it with one press, and Lumen tells everyone.**
 
-Spark Hill Hackathon 2026, AWS track.
+Spark Hill Hackathon 2026 · AWS track
+
+## Why it matters
+
+People on dialysis cannot skip a treatment. When a planned shutoff closes their clinic, staff must find each patient another chair before the power goes off.
+
+* After Hurricane Sandy, patients who got dialysis early had **28% lower odds of dying** within 30 days.
+* **92% of hospitals** said dialysis patients from other clinics arrived without their records.
+
+<sub>Source: [ASPR TRACIE, Dialysis lessons learned from Hurricane Sandy](https://files.asprtracie.hhs.gov/documents/aspr-tracie-ta-dialysis-hurricane-sandy-lessons-learned-07015-508.pdf).</sub>
+
+## How it works
+
+<img src="docs/how-it-works.svg" width="100%" alt="How Lumen works, in five steps before the power goes off: PG&E notice arrives. Lumen finds every patient. Nearest open chair. You approve once. Everyone is told.">
+
+Lumen reads, finds and matches. A person approves. Then Lumen tells everyone and shows who still needs a phone call.
+
+## Try it
+
+**[main.d1eh2uukook6ji.amplifyapp.com](https://main.d1eh2uukook6ji.amplifyapp.com/landing.html)**
+
+1. Press **Try the live demo**.
+2. Pick a county and press **Run demo**. You see the notice, the shutoff area, the clinic losing power, the search for chairs and the routes. Then the run waits for you.
+3. Press **Review and approve**, then **Approve and tell everyone**.
+
+The live run asks for a demo key. Ask the team for one.
+
+## How it is built on AWS
+
+**AWS Lambda.** One Python function behind a function URL is the whole API. It reads the notice, finds who is affected, ranks patients, matches chairs, checks the plan, and records every approval and send. Every request needs the demo key.
+
+**Amazon S3.** Holds the seed data and every plan version, so each change is a new version you can trace. Each browser tab works in its own session, so one viewer's run never touches another's.
+
+**Amazon Bedrock.** Runs Qwen2.5-7B-Instruct, which we brought in with Custom Model Import. It reads the PG&E notice, explains the plan check in plain sentences, and turns a typed change ("DaVita Folsom can only take 4 more") into edits that code checks before it applies them. When the model is slow or fails, code does the step.
+
+**Amazon Polly.** Reads each patient's message aloud as a voice note in English, Spanish or Chinese.
+
+**Amazon Location Service.** Draws the map and traces real road routes from the closed clinic to each receiving clinic, in the browser.
+
+**AWS Amplify.** Hosts the web app: static files, no build step.
+
+## What the AI does and does not do
+
+**The model reads.** It reads the notice, explains the plan check, points out patients who may need a call, and reads re-plan requests.
+
+**Rules decide.** Code ranks patients, gives each one the nearest clinic with a free chair at their time, and finds the problems in the plan. Code keeps a model flag only when the patient's facts match it. The model cannot remove a problem or make it less serious.
+
+**People approve.** Nothing goes out until staff approve. Patient names never reach the model: code swaps them for IDs first.
+
+## Honest data
+
+* **Patients are synthetic.** Names, homes and health details are made up.
+* **The PG&E notice is simulated,** and so are the voice notes, clinic sheets and replies. Nothing leaves Lumen.
+* **Dialysis clinics are real.** Names, addresses and stations come from public CMS data. Open chairs are simulated.
+* Power lines and substations come from OpenStreetMap. Feeders and the shutoff area are illustrative.
+* The rules are demo assumptions, not clinical guidance.
+
+## Run it locally
+
+```bash
+python3 -m http.server 5173 -d frontend/prototype
+```
+
+Open http://localhost:5173/landing.html. Use `localhost`, not `127.0.0.1`: the map key works only there. Add the demo key from the team in the console's **Demo** menu.
+
+Backend tests:
+
+```bash
+pip install -r backend/requirements-dev.txt
+cd backend && python -m pytest -q
+```
+
+The API is in [contracts/api.md](contracts/api.md). Deploy and debugging steps are in [docs/operations.md](docs/operations.md).
 
 ## Team
 
-| Lane | Owner |
-| -- | -- |
-| Backend & Data | Vi Huynh |
-| AI | Zayd Bashir |
-| Frontend A, Pitch & Video | Asthra Meadipudi or Saieesha Marta |
-| Frontend B | Asthra Meadipudi or Saieesha Marta |
-
-The plan and the team rules live in the Linear project "Lumen". The repo holds no copy.
-
-## AWS
-
-| Item | Value |
-| -- | -- |
-| Region | `us-east-2` (Ohio). The team account's organization policy allows Lambda only in us-east-2. |
-| Function URL | https://7nkmh6ezx4unlwxzfjh3gy5lci0brirr.lambda-url.us-east-2.on.aws/ |
-| Lambda | `lumen-api` (Python 3.12, arm64, 1024 MB, 120 s) |
-| IAM role | `lumen-api-role` (S3 on the bucket only, Bedrock on the two models only, Polly, route matrix, CloudWatch Logs) |
-| Bucket | `lumen-2e6e7e` (public access blocked; prefixes `seed/`, `plans/`, `audio/`) |
-| Strong model (re-plan) | `us.anthropic.claude-haiku-4-5-20251001-v1:0` for now (same as fast: only the Haiku quota is requested; Sonnet 4.6 next, 5.5 is not available to this account) |
-| Fast model (parse, messages) | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
-
-Every request needs the header `X-Demo-Key`. The demo key is in Discord only, never in the repo.
-Only Vi changes the Lambda's environment variables, IAM role or function URL settings.
-
-## Deploy the backend
-
-Anyone may deploy, but only through `scripts/deploy_lambda.sh`. The script refuses to run unless you are on `main`, your working tree is clean, and `main` matches `origin/main`.
-
-1. Post "deploying (short SHA)" in Discord first.
-2. Have AWS CLI credentials for the team account (`aws sts get-caller-identity` works).
-3. Run:
-
-```bash
-git switch main && git pull
-DEMO_KEY=<demo key from Discord> scripts/deploy_lambda.sh
-```
-
-The script zips `backend/lambda_function.py` and `backend/lumen/`, stamps the short SHA into `lumen/_version.py`, updates `lumen-api` in us-east-2, waits, and prints the `version` from `GET /state`. It never touches environment variables, IAM or the function URL.
-
-## Before recording
-
-```bash
-DEMO_KEY=<demo key from Discord> python scripts/demo_check.py warmup
-```
-
-`warmup` calls GET /state, runs one throwaway alert and plan, then resets. `python scripts/demo_check.py run 2` runs the whole demo flow twice (reset, alert, plan, approve all, confirm, voice, re-plan) and stops on the first failed step.
-
-## Debugging
-
-Every request writes one JSON log line per pipeline step with milliseconds, plus one summary line with `path`, `status`, `version` and `request_id`. A Bedrock step that fails or runs past its time limit (parse 20 s, text 25 s, re-plan 45 s, check 25 s) logs `"fallback": true` and the reason, then uses its rule-based path.
-
-CloudWatch Logs Insights, log group `/aws/lambda/lumen-api` (us-east-2), query for errors and fallbacks:
-
-```
-fields @timestamp, path, status, step, error, reason, fallback, request_id, @message
-| filter status >= 400 or ispresent(error) or fallback = 1 or @message like /Task timed out|Traceback/
-| sort @timestamp desc
-| limit 100
-```
+Vi Huynh · Zayd Bashir · Asthra Meadipudi · Saieesha Marta

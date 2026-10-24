@@ -130,7 +130,7 @@
       '<button class="btn sec ico sm lt-btn" type="button">' +
         '<svg class="i fill lt-ip" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5l8 4.5-8 4.5z"/></svg>' +
         '<svg class="i lt-ipa" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg></button>' +
-      '<div class="lt-hd"><span class="lt-lb"></span><span class="lt-cap"></span><span class="lt-rd"><span class="lt-t m"></span><span class="lt-pw"></span></span></div>' +
+      '<div class="lt-hd"><span class="lt-lb"></span><span class="lt-cap"></span><span class="lt-rd"><span class="lt-t num"></span><span class="lt-pw"></span></span></div>' +
       '<div class="lt-tr"><div class="lt-in">' +
         '<div class="lt-ln"><i class="lt-base"></i><i class="lt-off"></i><i class="lt-fill"></i></div>' +
         '<div class="lt-h" role="slider" tabindex="0"></div>' +
@@ -152,7 +152,7 @@
       lab.className = 'lt-sl' + (i === 0 ? ' first' : i === stops.length - 1 ? ' last' : '');
       lab.style.left = frac(s) * 100 + '%';
       lab.title = longText(s) + ' · ' + (o.stops[i].label || '');
-      lab.innerHTML = '<span class="lt-st m">' + p.weekday + ' ' + p.hour + (p.minute === '00' ? '<span class="lt-mm">:00</span>' : ':' + p.minute) + ' ' + p.dayPeriod + ' </span><b></b>';
+      lab.innerHTML = '<span class="lt-st num">' + p.weekday + ' ' + p.hour + (p.minute === '00' ? '<span class="lt-mm">:00</span>' : ':' + p.minute) + ' ' + p.dayPeriod + ' </span><b></b>';
       lab.querySelector('b').textContent = o.stops[i].label || '';
       stopsEl.appendChild(lab);
     });

@@ -1,4 +1,4 @@
-/* Lumen app screen: tokens and layout. Map tokens are read by map.js. */
+/* Lumen console (console.html): tokens and layout. Map tokens are read by map.js. CONTRACT-v5 section 4. */
 :root{
   --f-ui:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",system-ui,sans-serif;
   --f-mono:"Atkinson Hyperlegible Mono",ui-monospace,Menlo,monospace;
@@ -49,6 +49,7 @@ h1,h2,h3,p,dl,dd,ol,ul{margin:0}
 a{color:var(--blue-ink);text-underline-offset:3px}
 .sprite{position:absolute}
 .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}  /* counts and times in the UI face: the mono zero has a slash (v5) */
 .vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .i.fill{fill:currentColor}
@@ -91,15 +92,20 @@ button,select,input,textarea{font:inherit;color:inherit}
 .logo i{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--amber)}
 .logo i::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--on-amber)}
 .sep{flex:none;width:1px;height:24px;background:var(--line)}
-.home{display:flex;align-items:center;gap:8px;min-width:0;font-weight:600}
+.home{display:flex;align-items:center;gap:8px;min-width:0;margin:0;font-weight:600}
 .home .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .spacer{flex:1}
-.chip{display:flex;align-items:center;gap:8px;min-width:0;color:var(--mute);font-size:13px;white-space:nowrap;overflow:hidden}
+/* "Power off in 33 hours" is the biggest text in the bar */
+.chip{display:flex;align-items:center;gap:10px;min-width:0;margin:0 8px 0 0;color:var(--mute);font-size:14px;white-space:nowrap;overflow:hidden}
 .chip .dot{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--line-2)}
-.chip.on{color:var(--ink-2)}
-.chip.on .dot{background:var(--red);border-color:var(--red)}
+.chip.on{color:var(--ink);font-size:20px;line-height:24px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.chip.on .dot{width:10px;height:10px;background:var(--red);border-color:var(--red)}
 .chip #chipT{overflow:hidden;text-overflow:ellipsis}
 .planbtn{display:none}
+.demobtn{anchor-name:--demo}
+.demobtn .i{transition:transform .15s ease-out}
+.demobtn[aria-expanded="true"]{background:var(--paper-2);color:var(--ink)}
+.demobtn[aria-expanded="true"] .i{transform:rotate(180deg)}
 
 /* layout: --rail-user / --panel-user are the widths the manager dragged (app.js, wide layout only) */
 .app{position:relative;display:grid;grid-template-columns:var(--rail-user,var(--rail-w)) minmax(0,1fr) var(--panel-user,var(--panel-w));min-height:0}
@@ -163,6 +169,25 @@ body.resizing #map{pointer-events:none}
 .send{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;border-radius:8px;background:var(--rail-line);color:var(--rail-ink);cursor:pointer}
 .send:hover:not(:disabled){background:var(--rail-amber);color:var(--on-amber)}
 .cmd :disabled{opacity:.5;cursor:not-allowed}
+/* after the run: 3 stages, the 8 steps behind "How this plan was made", and "Something changed?" at the bottom */
+.phases.stages{flex:none;overflow:visible}
+.stages .nm{font-size:15px}
+.stages.in{animation:fold .6s cubic-bezier(.16,1,.3,1)}
+@keyframes fold{from{opacity:0;transform:translateY(-6px);clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+.howbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:8px 12px;border:0;border-radius:8px;background:none;color:var(--rail-ink-2);font-size:13px;font-weight:600;text-align:left;cursor:pointer;transition:background-color .15s ease-out,color .15s ease-out}
+.howbtn:hover{background:var(--rail-2);color:var(--rail-ink)}
+.howbtn .i{transition:transform .15s ease-out}
+.howbtn[aria-expanded="true"] .i{transform:rotate(180deg)}
+.howbtn+.phases{margin-top:4px}
+.chg{display:grid;gap:8px;margin-top:auto;padding-top:12px}
+.chgbtn{justify-content:flex-start;width:100%;height:40px;border-color:var(--rail-line);color:var(--rail-ink)}
+.chgbtn:hover:not(:disabled){background:var(--rail-2);border-color:var(--rail-mute)}
+.chgbtn[aria-expanded="true"]{justify-content:center;color:var(--rail-ink-2)}
+.chg .cmd{margin-top:0}
+.cmd-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-4px -4px 0 0}
+.cmd-x{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:none;color:var(--rail-ink-2);cursor:pointer}
+.cmd-x:hover{background:var(--rail-line);color:var(--rail-ink)}
+.cmd .err{color:var(--rail-err)}
 
 /* map */
 .map{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--paper-3)}
@@ -218,21 +243,18 @@ body.resizing #map{pointer-events:none}
 .map .maplibregl-ctrl-bottom-left,.map .maplibregl-ctrl-bottom-right{bottom:var(--tl-h,0px)}
 .ctl{position:absolute;z-index:2;right:10px;bottom:calc(152px + var(--tl-h,0px));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .ctl .btn{box-shadow:var(--shadow)}
-.ctl #d3{min-width:44px;font-weight:600}
 /* a narrow map keeps its width for the plan: the controls go icon-only (their names stay for screen readers and tooltips) */
 .map{container-type:inline-size}
 @container (max-width:799px){
-  .ctl .btn:not(#d3){width:36px;padding:0}
+  .ctl .btn{width:36px;padding:0}
   .ctl .lb{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 }
-.ctl #d3[aria-pressed="true"]{background:var(--paper-3);border-color:var(--ink-2)}
 
 /* panel */
 .panel{min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--paper);border-left:1px solid var(--line)}
 section.sec{padding:20px}
 section.sec+section.sec{border-top:1px solid var(--line)}
-.sec h2,.plan-h h2{font-size:16px;line-height:24px;font-weight:700}
-.sec h2{margin-bottom:12px}
+.sec h2{margin-bottom:12px;font-size:16px;line-height:24px;font-weight:700}
 .sec h2 .tag{margin-left:6px;vertical-align:2px}
 .hname{font-weight:700}
 .addr{margin-top:2px;color:var(--mute);font-size:13px}
@@ -252,101 +274,94 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .notice summary{width:max-content;cursor:pointer;font-weight:600;color:var(--ink-2)}
 .notice pre{margin:8px 0 0;padding:12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);font:400 12px/18px var(--f-ui);white-space:pre-wrap}
 
-.plan-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:20px 20px 12px}
-.pstat{color:var(--amber-ink);font-size:13px;font-weight:700}
-.pstat.ok{color:var(--green-ink)}
-.cnt{display:grid;grid-template-columns:repeat(3,1fr);margin:0 20px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
-.cnt div{min-width:0;padding:10px 12px}
-.cnt div+div{border-left:1px solid var(--line)}
-.cnt span{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px;white-space:nowrap}
-.cnt span::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
-.cnt b{display:block;margin-top:2px;font:500 24px/28px var(--f-mono);font-variant-numeric:tabular-nums}
-.acts{display:flex;margin:16px 20px 0}
-.btn.big{flex:1;height:48px;font-size:16px}
-.note{margin:8px 20px 0;color:var(--mute);font-size:12px;line-height:16px}
-/* R2: every patient approved */
-.okbox{display:grid;gap:4px;justify-items:start;margin:16px 20px 0;padding:14px 16px;border:1px solid color-mix(in srgb,var(--green) 40%,transparent);border-radius:12px;background:var(--green-bg)}
-.okline{display:flex;align-items:center;gap:8px;color:var(--green-ink);font-size:16px;line-height:24px;font-weight:700}
-.okline .i{width:20px;height:20px;stroke-width:2.25}
-.okc{color:var(--ink)}
-.okn{margin:8px 0 4px;color:var(--ink-2);font-size:13px;line-height:18px}
-/* Check the plan: blocks to fix, then one line per kind of warning */
-.check{margin:16px 20px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
-.check h3{font-size:14px;line-height:20px;font-weight:700}
-.check h3 span{color:var(--ink-2);font-weight:600}
-.check ul{display:grid;gap:6px;margin-top:8px;padding:0;list-style:none;max-width:65ch;color:var(--ink-2);font-size:13px;line-height:18px}
-.check .fix{color:var(--red-ink)}
-.check .call{color:var(--amber-ink)}
-.check .more{color:var(--mute)}
-/* R3: chairs per receiving clinic */
-.chairs{margin:20px 20px 0}
-.chairs h3,.lh h3{font-size:14px;line-height:20px;font-weight:700}
-.chairs ul{display:grid;gap:2px;margin-top:4px;padding:0;list-style:none}
-/* R8: a Chairs row shows only its route on the map */
-.chb{display:block;width:calc(100% + 16px);margin:0 -8px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
-.chb:hover{background:var(--paper-2)}
+/* v5 plan: one sentence, the check verdict, one button, where they go */
+.plan,.doneb{padding:24px 20px 28px}
+.lead{font-size:22px;line-height:28px;font-weight:700;letter-spacing:-.01em;text-wrap:balance;font-variant-numeric:tabular-nums}
+.lead span{display:block;font-weight:500;color:var(--ink-2)}
+.lead:focus{outline:0}
+.lead:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:4px}
+.verdict{margin-top:18px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2);font-size:14px;line-height:20px}
+.verdict h3{display:flex;align-items:center;gap:8px;font-size:15px;line-height:22px;font-weight:700;color:var(--ink-2)}
+.verdict h3 .i{width:18px;height:18px;stroke-width:2.5}
+.verdict.ok{border-color:color-mix(in srgb,var(--green) 28%,transparent);background:var(--green-bg)}
+.verdict.ok h3{color:var(--green-ink)}
+.verdict.bad{border-color:color-mix(in srgb,var(--red) 28%,transparent);background:var(--red-bg)}
+.verdict.bad h3,.verdict.bad b{color:var(--red-ink)}
+.verdict ul{display:grid;gap:6px;margin-top:8px;padding:0;list-style:none;max-width:65ch;color:var(--ink)}
+.verdict li{position:relative;padding-left:14px}
+.verdict li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.45}
+.vd-n{margin-top:4px;color:var(--ink)}
+.verdict .btn{margin-top:10px}
+.spin{flex:none;width:14px;height:14px;margin:0 2px;border:2px solid var(--line-2);border-top-color:var(--ink-2);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+.acts{display:flex;margin-top:20px}
+.btn.big{flex:1;height:52px;font-size:17px}
+.note{margin-top:8px;color:var(--mute);font-size:13px;line-height:18px}
 /* End of the run: three calm pulses on "Review and approve" (none under reduced motion) */
 .btn.ring{animation:ring 1.6s ease-out 3}
 @keyframes ring{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--amber) 55%,transparent)}to{box-shadow:0 0 0 12px color-mix(in srgb,var(--amber) 0%,transparent)}}
-@media (prefers-reduced-motion:reduce){.btn.ring{animation:none}}
-.chb[aria-pressed="true"]{background:var(--paper-2);border-color:var(--line-2)}
-.ch1{display:flex;align-items:baseline;gap:8px;font-size:13px;line-height:18px}
-.ch1 .cn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-.fullp{flex:none;padding:0 7px;border:1px solid var(--ink-2);border-radius:10px;color:var(--ink);font-size:11px;line-height:18px;font-weight:700}
-.ch2{display:flex;align-items:center;gap:10px;margin-top:4px}
-.bar{flex:1;height:6px;border-radius:3px;background:var(--paper-3);overflow:hidden}
-.bar i{display:block;width:var(--f);height:100%;border-radius:3px;background:var(--map-transfer)}
-.ch2 .sub{flex:none;min-width:88px;color:var(--mute);font-size:12px;line-height:16px;text-align:right}
-.chairs .more{margin-top:10px}
-.chairs .more summary{display:flex;align-items:center;gap:6px;width:max-content;color:var(--ink-2);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
-.chairs .more summary::-webkit-details-marker{display:none}
-.chairs .more[open] summary .i{transform:rotate(180deg)}
-.calls{margin-top:12px;color:var(--ink-2);font-size:13px;line-height:18px;max-width:65ch}
-.lh{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 20px 0}
-.chgbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 20px 0;line-height:18px;padding:8px 8px 8px 12px;border-radius:12px;background:var(--amber-bg);color:var(--amber-ink);font-size:13px;font-weight:600}
-.pts{position:relative;margin-top:12px;padding:0;list-style:none;border-top:1px solid var(--line)}
-.pt{border-bottom:1px solid var(--line);transition:background-color .2s ease-out;content-visibility:auto;contain-intrinsic-size:auto 86px}
-.pt.open{content-visibility:visible}  /* an open row is tall: an estimate would shift the list when it re-renders off screen */
-.pt.chg{background:var(--amber-bg)}
-.pt.sel:not(.chg){background:var(--paper-2)}
-.rowb{display:grid;grid-template-columns:24px minmax(0,1fr);gap:0 10px;width:100%;padding:12px 20px;border:0;background:none;text-align:left;cursor:pointer}
-.rowb:hover{background:color-mix(in srgb,var(--paper-3) 55%,transparent)}
-.rowb:focus-visible{outline-offset:-2px}
-.rk{color:var(--mute);font-size:12px;line-height:20px}
-.rb{display:grid;gap:2px;min-width:0}
-.r1,.r2,.r3{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
-.r1 .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.r2,.r3{font-size:13px;line-height:18px}
-.r2{color:var(--ink-2)}
-.r3{color:var(--mute)}
-.r2 .m{flex:none;font-size:12px}
-.r2 .nochair{color:var(--ink);font-weight:600}
-.r3>span:last-child{flex:none}
-.s-confirmed{color:var(--green-ink);font-weight:600}
-.s-declined{color:var(--ink);font-weight:700}
-.s-approved{color:var(--ink-2)}
-.chgt{display:flex;align-items:baseline;gap:8px;margin-top:4px;color:var(--amber-ink);font-size:12px;line-height:16px;font-weight:600}
-.chgt .tag{flex:none;background:var(--amber);color:var(--on-amber)}
-.pdet{display:grid;gap:6px;padding:0 20px 16px 54px;font-size:13px;line-height:18px}
-/* R5: one clear patient card */
-.pdet .big{font-size:16px;line-height:22px;font-weight:700;color:var(--ink)}
-.pdet .leave{color:var(--ink)}
-.pdet .why{color:var(--ink-2)}
-.msg{margin-top:6px}
-.msg .langs{margin:8px 0}
-.msg summary{display:flex;align-items:center;gap:6px;width:max-content;max-width:100%;color:var(--ink-2);font-weight:600;cursor:pointer;list-style:none}
-.msg summary::-webkit-details-marker{display:none}
-.msg summary .i{color:var(--mute);transition:transform .15s ease-out}
-.msg[open] summary .i{transform:rotate(180deg)}
+.where{margin-top:32px}
+.where h3,.needs-h h3{font-size:15px;line-height:22px;font-weight:700}
+.where ul{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.where li{border-bottom:1px solid var(--line)}
+/* a clinic row shows only its route on the map (R8); the dot is that route's color */
+.wrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;width:calc(100% + 16px);margin:0 -8px;padding:11px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left}
+button.wrow{cursor:pointer;transition:background-color .15s ease-out}
+button.wrow:hover,.wrow[aria-pressed="true"]{background:var(--paper-2)}
+.wrow:focus-visible{outline-offset:-2px}
+.wn{display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.wn::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--map-transfer);transform:translateY(-1px)}
+.wrow.e .wn::before{background:var(--map-early)}
+.wrow.c .wn::before{background:var(--paper);box-shadow:inset 0 0 0 2px var(--map-staff)}
+.wv{flex:none;color:var(--ink-2);font-size:13px}
+.where .more{margin-top:10px}
+.where .more summary{display:flex;align-items:center;gap:6px;width:max-content;color:var(--ink-2);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+.where .more summary::-webkit-details-marker{display:none}
+.where .more[open] summary .i{transform:rotate(180deg)}
+
+/* v5 stage 3: the done board fills in as the replies land */
+.lead-s{margin-top:6px;color:var(--ink-2)}
+.board{margin:20px 0 0;border-top:1px solid var(--line)}
+.brow{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px 16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.brow dt{display:flex;align-items:center;gap:10px;font-weight:600}
+.brow dd{margin:0;color:var(--ink);text-align:right}
+.brow dd.bx{grid-column:1/-1;text-align:left}
+.bi{display:grid;place-items:center;flex:none;width:20px;height:20px;border:1.5px solid var(--line-2);border-radius:50%;transition:background-color .3s ease-out,border-color .3s ease-out}
+.bi .i{width:13px;height:13px;stroke-width:2.5}
+.brow.ok .bi{border-color:var(--green);background:var(--green);color:var(--paper)}
+.brow.wait .bi{border-color:var(--amber);border-right-color:transparent;animation:spin 1.1s linear infinite}
+.brow.todo .bi{border-color:var(--amber);background:var(--amber-bg)}
+.brow.fresh .bi{animation:pop .45s cubic-bezier(.16,1,.3,1)}
+.brow.fresh .bi path{stroke-dasharray:14;stroke-dashoffset:14;animation:draw .4s .12s ease-out forwards}
+@keyframes pop{from{transform:scale(.6)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+/* the told clinics, one line each: a check once the clinic confirmed the chairs, struck through when staff turned it off */
+.cl{display:grid;gap:2px;margin:4px 0 0 30px;padding:0;list-style:none;color:var(--ink-2);font-size:13px;line-height:18px}
+.cl li{display:flex;align-items:center;gap:6px}
+.cl li::before{content:"";flex:none;width:5px;height:5px;margin:0 4px 0 3px;border-radius:50%;background:var(--line-2)}
+.cl li.ok::before{display:none}
+.cl li.ok{color:var(--green-ink)}
+.cl li.off{text-decoration:line-through;color:var(--mute)}
+.cl .i{width:13px;height:13px;stroke-width:2.5}
+.needs-h{margin-top:32px}
+.needs{margin:10px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.needs li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.needs li.fresh{animation:rise .5s cubic-bezier(.16,1,.3,1)}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.nn{min-width:0;overflow:hidden;font-weight:700;white-space:nowrap;text-overflow:ellipsis}
+.np{grid-row:1/3;grid-column:2;color:var(--ink);font-weight:600;text-decoration:none}
+.np:hover{text-decoration:underline}
+.nw{grid-column:1;color:var(--ink-2);font-size:13px;line-height:18px}
+.doneb .acts{flex-wrap:wrap;gap:8px}
+.doneb.enter{animation:rise .55s cubic-bezier(.16,1,.3,1)}
+.print-only{display:none}
+
+/* the review list reuses these (review.js) */
 .langs{display:flex;flex-wrap:wrap;gap:4px}
 .langs button{height:28px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer}
 .langs button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .msgt{padding:10px 12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);max-width:65ch}
-.spk{display:grid;gap:8px}
-.spk audio{width:100%;height:36px}
 .racts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
-.pdet audio{width:100%;height:36px}
-.empty{padding:24px 20px;color:var(--mute)}
 
 /* popovers */
 .pop{position:fixed;inset:calc(var(--top-h) + 8px) 16px auto auto;margin:0;width:min(340px,calc(100vw - 32px));padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
@@ -361,6 +376,16 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .keyrow input:focus-visible{outline-offset:0}
 #keyShow[aria-pressed="true"]{background:var(--paper-3)}
 .pop-b{display:flex;gap:8px;margin-top:12px}
+/* the Demo menu: reset, demo key, theme; it hangs under its button */
+.pop.menu{display:none;width:248px;padding:6px}
+.pop.menu:popover-open{display:grid;gap:2px}
+@supports (position-anchor:--demo){.pop.menu{position-anchor:--demo;inset:auto;top:calc(anchor(bottom) + 6px);right:anchor(right)}}
+.mi{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--ink);font-weight:600;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
+.mi:hover:not(:disabled){background:var(--paper-2)}
+.mi:disabled{opacity:.55;cursor:not-allowed}
+.mi:focus-visible{outline-offset:-2px}
+.mi .i{color:var(--ink-2)}
+.pop.menu .small{margin:4px 0 0;padding:10px 10px 6px;border-top:1px solid var(--line)}
 
 /* narrow: the plan panel becomes a drawer */
 @media (max-width:1180px){
@@ -371,37 +396,62 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
   .planbtn[aria-expanded="true"]{background:var(--paper-3)}
 }
-@media (max-width:1000px){.home,.home+.sep{display:none}}
-/* phone: rail is a top sheet, panel a bottom sheet */
+@media (max-width:1000px){.home{display:none}}
+/* phone: rail is a top sheet, panel a bottom sheet; every control is at least 44 px tall */
 @media (max-width:760px){
   body{grid-template-rows:auto minmax(0,1fr)}
-  .top{flex-wrap:wrap;gap:6px;padding:8px 12px}
+  .top{flex-wrap:wrap;gap:6px 8px;padding:8px 12px}
   .logo{margin-right:auto}
-  .top .btn{padding:0 10px}
-  .top .btn.ico{width:32px;padding:0}
+  .top .btn{height:44px;padding:0 12px}
   .top>.sep{display:none}
   .spacer{order:5;flex-basis:100%;height:0}
-  .top .selw,#tourTag,.chip,.planbtn{order:6}
-  .top .selw{flex:1 1 140px}
-  .top .selw select{width:100%}
+  /* three rows: logo, Demo, Run demo; then "Power off in 33 hours" on its own line; then county and Plan */
+  .chip{order:6;flex:1 1 100%;margin:2px 0}
+  .chip:not(.on){display:none}
+  .top .selw,.planbtn{order:7}
+  .top .selw{flex:1 1 auto}
+  .top .selw select{width:100%;height:44px}
+  .mi{height:44px}
   .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
   .rail{padding:12px}
-  .railtog{display:inline-flex;height:32px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
+  .railtog{display:inline-flex;height:44px;padding:0 12px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
+  .pausebtn{height:44px}
   .railtog .i{transition:transform .15s ease-out}
   .railtog[aria-expanded="true"] .i{transform:rotate(180deg)}
-  .rail-body{display:none;max-height:52svh}
+  .rail-body{display:none;max-height:52svh;overflow:auto}
   .rail.open .rail-body{display:flex}
+  .howbtn,.chgbtn{min-height:44px}
+  .cmd-x{width:44px;height:44px}
   .panel{top:auto;left:0;width:auto;height:72svh;border-left:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;transform:translateY(100%)}
   .legend{max-width:calc(100% - 72px)}
+  .legend summary,.lgbtn{min-height:44px}
+  .ctl .btn{width:44px;height:44px}
   section.sec{padding:16px}
-  .plan-h{padding:16px 16px 12px}
-  .cnt,.acts,.note,.chgbar,.chairs,.okbox,.lh,.check{margin-left:16px;margin-right:16px}
+  .plan,.doneb{padding:20px 16px 24px}
+  .lead{font-size:20px;line-height:26px}
+  .wrow{min-height:44px;align-items:center}
+  .doneb .acts .btn,.verdict .btn,.keycard .btn{height:44px}
+  .np{display:inline-flex;align-items:center;min-height:44px}
+  .needs li{padding:6px 0}
   .sugg{min-height:44px}
   .send{width:44px;height:44px}
   .ph .retry{height:44px}
-  .rowb{padding:12px 16px}
-  .pdet{padding:0 16px 16px 50px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .brow.fresh .bi path{stroke-dashoffset:0}
+}
+
+/* Print the list: the done board on paper, black on white */
+@media print{
+  :root,:root[data-theme="dark"]{--paper:#FFFFFF;--paper-2:#FFFFFF;--ink:#000000;--ink-2:#222222;--mute:#444444;--line:#BBBBBB;--line-2:#888888;--green:#000000;--green-ink:#000000;--amber:#000000;--amber-bg:#FFFFFF;color-scheme:light}
+  @page{margin:16mm}
+  body{display:block;height:auto;overflow:visible;background:var(--paper)}
+  .top,.rail,.map,.rsz,.pop,dialog,.banner,.doneb .acts,.doneb .note,.vh{display:none!important}
+  .app{display:block}
+  .panel{position:static;width:auto;height:auto;overflow:visible;border:0;box-shadow:none;transform:none;visibility:visible}
+  .doneb{max-width:680px;padding:0}
+  .print-only{display:block;margin-bottom:12px;color:var(--ink-2);font-size:12px}
+  .needs li,.brow{break-inside:avoid}
+  .np{text-decoration:none}
 }
