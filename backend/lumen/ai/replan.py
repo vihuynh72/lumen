@@ -9,8 +9,6 @@ from pathlib import Path
 import re
 from time import monotonic
 
-from botocore.exceptions import BotoCoreError, ClientError
-
 from lumen.ai import bedrock
 
 
@@ -61,9 +59,14 @@ class _State:
     diff: list | None = None
 
 
+def _project(row, keys):
+    view = {key: row[key] for key in keys if key in row}
+    return {**view, "slot": {k: row["slot"][k] for k in ("date", "shift")}} if row.get("slot") else view
+
+
 def _rows(plan):
     """Never forward patient names, prose, audio, or home coordinates."""
-    return [{key: row[key] for key in ROW_FIELDS if key in row} for row in plan["patients"]]
+    return [_project(row, ROW_FIELDS) for row in plan["patients"]]
 
 
 def _clinic_context(clinics):
@@ -77,29 +80,58 @@ def _mentions(text, value):
     return re.search(rf"(?<!\w){re.escape(' '.join(value.casefold().split()))}(?!\w)", text)
 
 
+def _clinic_ids(text, clinics):
+    matches = [(m.start(), m.end(), c["id"]) for c in clinics for alias in (c["id"], c["name"])
+               for m in re.finditer(rf"(?<!\w){re.escape(' '.join(alias.casefold().split()))}(?!\w)", text)]
+    return {cid for start, end, cid in matches
+            if not any(a <= start and end <= b and b - a > end - start for a, b, _ in matches)}
+
+
+def _patient_requested(text, patient):
+    clauses = [c for c in re.split(r"[.;!?]|\b(?:and|but)\b", text) if _mentions(c, patient)]
+    if any(re.search(r"\b(?:not|no|never|\w+n't|cannot|leave|alone|without)\b", c) for c in clauses):
+        return False
+    for clause in clauses:
+        target = _mentions(clause, patient)
+        verbs = rf"declin(?:e|ed|ing)|drop(?:ped)?|pin(?:ned)?|move|send|keep(?= (?:{re.escape(patient.casefold())} )?at\b)"
+        for action in re.finditer(rf"\b(?:{verbs})\b", clause):
+            gap = clause[min(target.end(), action.end()):max(target.start(), action.start())]
+            if len(re.findall(r"\w+", gap)) <= 3:
+                return True
+    return False
+
+
 def _limits(text, clinics):
-    numbers = dict(zip("one two three four five six seven eight nine ten".split(), range(1, 11)))
+    words = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+    numbers = {**dict(zip(words.split(), range(21))), "no": 0}
     limits = {}
-    for match in re.finditer(r"\bcan only take (\d+|" + "|".join(numbers) + r") more\b", text):
-        prefix = text[:match.start()].rstrip(" ():,")
-        hits = {c["id"] for c in clinics for alias in (c["id"], c["name"])
-                if re.search(rf"(?<!\w){re.escape(' '.join(alias.casefold().split()))}$", prefix)}
-        if len(hits) != 1:
-            raise ValueError("instruction not understood")
-        cid = next(iter(hits))
-        number = match[1]
-        limit = int(number) if number.isdigit() else numbers[number]
-        limits = {**limits, cid: min(limits.get(cid, limit), limit)}
+    for sentence in re.split(r"[;!?]|\.(?!\d)", text):
+        hits = _clinic_ids(sentence, clinics)
+        phrases = re.findall(r"\b(?:can (?:now )?only take|can't take|cannot take|take|only|no|zero)\b[^;!?]*?\bmore\b", sentence)
+        values = []
+        for phrase in phrases:
+            match = re.fullmatch(r"(?:can (?:now )?only take|take|only) (\w+) more", phrase)
+            number = match[1] if match else "zero" if phrase in ("can't take any more", "cannot take any more", "no more", "zero more") else ""
+            value = int(number) if number.isdigit() else numbers.get(number)
+            if value is None or not hits or re.search(r"\bmore than\b", sentence):
+                raise ValueError("Capacity limit not understood")
+            values = [*values, value]
+        if len(hits) > 1 and len(set(values)) > 1:
+            raise ValueError("Ambiguous capacity limits")
+        for cid in hits:
+            if values:
+                limit = min(values)
+                limits = {**limits, cid: min(limits.get(cid, limit), limit)}
     return limits
 
 
 def _known(plan, clinics, instruction):
-    text = " ".join(instruction.casefold().split())
+    text = " ".join(instruction.casefold().replace("’", "'").split())
     return _State(frozenset(r["patient_id"] for r in plan["patients"]),
                   frozenset(c["id"] for c in clinics),
                   {(c["id"], s["date"], s["shift"]): s["open_chairs"] for c in clinics for s in c["slots"]},
-                  frozenset(c["id"] for c in clinics if _mentions(text, c["id"]) or _mentions(text, c["name"])),
-                  frozenset(r["patient_id"] for r in plan["patients"] if _mentions(text, r["patient_id"])),
+                  frozenset(_clinic_ids(text, clinics)),
+                  frozenset(r["patient_id"] for r in plan["patients"] if _patient_requested(text, r["patient_id"])),
                   _limits(text, clinics))
 
 
@@ -138,11 +170,11 @@ def _facts(diff):
             "clinics": clinics, "new_actions": dict(sorted(actions.items()))}
 
 
-def _summary(diff, clinics, old_plan, new_plan):
+def _summary(diff, clinics, old_plan, new_plan, capacity_clinics):
     facts = _facts(diff)
     names = {c["id"]: c["name"] for c in clinics}
     changed = {d["patient_id"] for d in diff}
-    involved = set(facts["clinics"]) | {r["clinic_id"] for p in (old_plan, new_plan)
+    involved = capacity_clinics | set(facts["clinics"]) | {r["clinic_id"] for p in (old_plan, new_plan)
                                         for r in p["patients"] if r["patient_id"] in changed and r.get("clinic_id")}
     places = ", ".join(names.get(cid, cid) for cid in sorted(involved)) or "the existing clinics"
     count = facts["changed_rows"]
@@ -152,12 +184,24 @@ def _summary(diff, clinics, old_plan, new_plan):
         "hospital": ("needs a staff call", "need staff calls"),
         "notify_only": ("receives a notification", "receive notifications"),
     }
-    actions = "; ".join(
-        f"{n} patient{'' if n == 1 else 's'} {descriptions[action][n != 1]}"
-        for action, n in facts["new_actions"].items()
-    )
+    ids = lambda field, predicate: {d["patient_id"] for d in diff if d["field"] == field and predicate(d)}
+    staff = ids("action", lambda d: d["to"] == "hospital") | ids("flags", lambda d: "staff_call" in d["to"] and "staff_call" not in d["from"])
+    pinned = ids("pinned", lambda d: d["to"] is True)
+    locked = pinned | {r["patient_id"] for r in new_plan["patients"] if r.get("pinned")}
+    moves = ids("clinic_id", lambda d: d["from"] != d["to"]) | ids("slot", lambda d: d["from"] != d["to"])
+    counts = {**facts["new_actions"], **({"hospital": len(staff)} if staff else {})}
+    actions = [f"{n} patient{'' if n == 1 else 's'} {descriptions.get(action, ('has an updated action', 'have updated actions'))[n != 1]}"
+               for action, n in counts.items()]
+    for count_ids, noun in ((ids("status", lambda d: d["to"] == "declined"), "patient{s} declined"),
+                            (pinned, "patient{s} pinned"), (locked & moves, "pinned move{s}"),
+                            (ids("pickup_time", lambda d: d["from"] != d["to"]), "pickup change{s}")):
+        if count_ids:
+            actions = [*actions, f"{len(count_ids)} {noun.format(s='' if len(count_ids) == 1 else 's')}"]
+    details = "; ".join(actions) or "0 action changes"
+    if capacity_clinics and not moves:
+        details += "; capacity reduced and nobody moved"
     return (f"{count} patient row{'' if count == 1 else 's'} changed at {places}. "
-            f"New actions: {actions or '0 action changes'}.")
+            f"New actions: {details}.")
 
 
 def _view(name, value, state):
@@ -167,7 +211,7 @@ def _view(name, value, state):
         # The contract's diff excludes names and text fields.
         return {"diff": value, "summary_facts": _facts(value), "matching_current": state.matched is not None}
     keys = ("patient_id", "clinic_id", "date", "shift", "open_chairs", "action", "slot", "pinned", "status")
-    return {key: value[key] for key in keys if key in value}
+    return _project(value, keys)
 
 
 def _updated(state, name, value):
@@ -182,8 +226,8 @@ def _call_tool(tools, name, args):
     try:
         return tools[name](**args)
     except Exception as exc:
-        logger.warning("Replan tool %s failed: %s: %s", name, type(exc).__name__, exc)
-        raise
+        logger.warning("Replan tool failed: %s", type(exc).__name__)
+    raise RuntimeError("Tool failed") from None
 
 
 def _execute(use, tools, state):
@@ -200,8 +244,6 @@ def _execute(use, tools, state):
         if name in MUTATORS or name == "rerun_matching":
             state = replace(state, matched=None, diff=None)
         value = _call_tool(tools, name, args)
-    except (BotoCoreError, ClientError):
-        raise
     except ValueError as exc:
         content, status = [{"text": str(exc) if len(str(exc)) < 200 else "Tool failed"}], "error"
     except Exception:
@@ -279,4 +321,5 @@ def replan(instruction: str, plan: dict, tools: dict, clinics: list | None = Non
             raise RuntimeError("Replan model did not finish its turn")
         state = _finish(state, tools, check_budget)
         return {"plan": state.matched, "diff": state.diff,
-                "summary": _summary(state.diff, clinics, plan, state.matched)}
+                "summary": _summary(state.diff, clinics, plan, state.matched,
+                                    {k[0] for k, n in state.capacities.items() if n != state.slots[k]})}
