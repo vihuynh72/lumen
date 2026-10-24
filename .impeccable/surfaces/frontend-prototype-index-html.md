@@ -26,3 +26,11 @@ FIRST VIEWPORT: A 56 px top bar holds Lumen, the home clinic with a Home tag, th
 FORM: Run rail, position 1 of my ordered structural list (dealt hand index 1). seed:325b73432be7cf66. Signature move: the rail is the AI run log. Each phase lights when its API answer lands and shows its AWS service, its true source (model, rules fallback or rules) and its server time, and the map camera moves to what that phase changed. Raise from the gate-board challenger: a re-plan reranks plan rows in place, and changed rows hold amber until the manager acknowledges them.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Extension 2 (user feedback, Oct 23 night)
+
+The map stops drawing a web. Patients gather at their closed clinic, and one road route per destination funnels them out (Amazon Location Service routes), each labeled with patients, road minutes and miles. Clicking a patient draws that patient's own road route. A pop-out review panel covering almost the whole screen holds the full patient table for approval. The rail and plan panel resize by drag or keyboard. A timeline at the bottom of the map plays a simulated outage: grid live, power off at Tue 6 PM inside the shutoff area, patients flow out along the roads, power back Thu noon. One county at a time; day and night both first-class. More voice languages through Amazon Translate plus Polly. Binding details: CONTRACT-v2 (E1-E10).
+
+## Extension 3 (user feedback, Oct 23, 11:40 PM)
+
+Simple for daily use. The rail is "Shutoff response" in plain step names with no service, source or timing chips; Bedrock is credited only when it really ran. No version numbers. The run is the timeline: notice received, shutoff area, zoom into the clinic as it loses power, zoom out, routes traced live along the roads to each receiving clinic while its chair count fills, then the full-screen approval list opens. Capacity is visible ("16 of 18 chairs", "Full"). The patient card is one sentence, one leave/drive line and one reason line. Routes are computed live from Amazon Location on every run. Binding details: CONTRACT-v3 (R1-R7).

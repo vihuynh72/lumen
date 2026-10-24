@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lumen</title>
+<link rel="icon" href="data:,">
 <meta name="description" content="Lumen turns a PG&amp;E power shutoff notice into a patient-by-patient dialysis plan that staff approve.">
 <!-- first visit follows the system theme; the toggle saves a choice that wins after that -->
 <script>(function(){var t;try{t=localStorage.getItem('lumenTheme')}catch(e){}if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})()</script>
@@ -53,7 +54,7 @@
     </select><svg class="i"><use href="#i-chev"/></svg></label>
   <span class="tag am" id="tourTag" hidden>Illustrative tour</span>
   <span class="spacer"></span>
-  <span class="chip" id="chip"><span class="dot" aria-hidden="true"></span><span class="m" id="chipId"></span><span id="chipT">No shutoff notice</span></span>
+  <span class="chip" id="chip"><span class="dot" aria-hidden="true"></span><span id="chipT">No shutoff notice</span></span>
   <button class="btn sec planbtn" id="planTog" type="button" aria-expanded="false" aria-controls="panel"><svg class="i"><use href="#i-list"/></svg>Plan</button>
   <button class="btn q ico" id="themeTog" type="button" aria-label="Switch to dark theme"><svg class="i"><use href="#i-moon"/></svg></button>
   <button class="btn q ico" id="keyTog" type="button" aria-label="Demo key"><svg class="i"><use href="#i-key"/></svg></button>
@@ -64,7 +65,8 @@
 <div class="app">
   <aside class="rail" id="rail" aria-labelledby="railH">
     <div class="rail-h">
-      <div><h2 id="railH" tabindex="-1">AI run</h2><p class="sub" id="railSub">Not started</p></div>
+      <div><h2 id="railH" tabindex="-1">Shutoff response</h2><p class="sub" id="railSub">Not started</p></div>
+      <button class="btn pausebtn" id="pause" type="button" hidden>Pause</button>
       <button class="btn railtog" id="railTog" type="button" aria-expanded="false" aria-controls="railBody">Steps<svg class="i"><use href="#i-chev"/></svg></button>
     </div>
     <div class="rail-body" id="railBody">
@@ -86,21 +88,25 @@
   <main class="map" id="main" aria-label="Map of the home clinic and its power grid">
     <div id="map"></div>
     <div class="banner" id="banner" role="alert" hidden><span id="bannerT"></span><button class="btn q ico sm" id="bannerX" type="button" aria-label="Dismiss the message"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="ncard" id="notice" role="status" hidden>
+      <p class="ncard-t" id="noticeT"></p>
+      <p class="ncard-a" id="noticeA"></p>
+      <p class="ncard-s"><span class="tag n" id="noticeS">Simulated PG&amp;E notice</span></p>
+    </div>
+    <!-- data-s: the first run stage that draws it; data-x: the stage that replaces it; data-w: shown only when that is on the map (app.js legend()) -->
     <details class="legend" id="legend">
       <summary>Legend<svg class="i"><use href="#i-chev"/></svg></summary>
       <dl>
         <dt>Power</dt>
-        <dd><span><i class="sw feed"></i>Live feeder (illustrative)</span><span><i class="sw ln dead"></i>No power (simulated)</span><span><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line</span><span><i class="sw sub"></i>Substation<i class="sw sub dead"></i>off</span></dd>
-        <dt>Area</dt>
-        <dd><span><i class="sw zone"></i>Shutoff area (illustrative)</span><span><i class="sw zone off"></i>Darker while the power is off</span><span id="lgCounty" hidden><i class="sw ln county"></i>County line</span></dd>
+        <dd><span><i class="sw feed"></i>Live feeder (illustrative)</span><span data-s="2"><i class="sw ln dead"></i>No power (simulated)</span><span><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line</span><span><i class="sw sub"></i>Substation</span></dd>
+        <dt data-s="1">Area</dt>
+        <dd data-s="1"><span><i class="sw zone"></i>Shutoff area (illustrative)</span><span data-s="2"><i class="sw zone off"></i>Darker while the power is off</span></dd>
         <dt>Places</dt>
-        <dd><span><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic</span><span><i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic</span><span><i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</span><span><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>Loses power</span><span><i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Receiving</span><span><i class="sw bld"></i>Building (dashed: approximate)</span></dd>
-        <dt>Patients</dt>
-        <dd><span><i class="sw dot" style="--c:var(--map-affected)"></i>Before the plan</span><span><i class="sw dot" style="--c:var(--map-early)"></i>Early session</span><span><i class="sw dot" style="--c:var(--map-transfer)"></i>Transfer</span><span><i class="sw dot" style="--c:var(--map-staff)"></i>Staff call</span><span><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span><span><b class="sw rk">#1</b>Top 3</span></dd>
-        <dt>Routes</dt>
-        <dd><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>Transfer</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Staff call</span><span><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed by a re-plan</span><span><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Straight line: no road route yet</span><span><i class="sw ln sel" style="--c:var(--map-transfer)"></i>Selected patient, in their color</span></dd>
-        <dt>Labels</dt>
-        <dd><span><b class="sw tagp">6 · 22 min</b>Patients · road time</span><span><b class="sw tagp e">8 come in early</b>at their own clinic</span></dd>
+        <dd><span><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic</span><span><i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic</span><span><i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</span><span data-s="2"><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>No power</span><span data-s="4"><i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Takes patients</span><span data-s="0" data-w="county"><i class="sw ln county"></i>County line</span></dd>
+        <dt data-s="3">Patients</dt>
+        <dd data-s="3"><span data-s="3" data-x="4"><i class="sw dot" style="--c:var(--map-affected)"></i>Treatment in the shutoff</span><span data-s="4"><i class="sw dot" style="--c:var(--map-transfer)"></i>Moves</span><span data-s="4"><i class="sw dot" style="--c:var(--map-early)"></i>Comes in early</span><span data-s="4"><i class="sw dot" style="--c:var(--map-staff)"></i>Staff call</span><span data-s="4" data-w="notice"><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span></dd>
+        <dt data-s="4">Routes</dt>
+        <dd data-s="4"><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>To a clinic with chairs</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Staff call</span><span data-s="4" data-w="changed"><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed</span><span data-s="4" data-w="straight"><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Road route not available</span></dd>
       </dl>
       <p class="lgnote">Lines and substations: OpenStreetMap. Patient homes: synthetic.</p>
       <button class="lgbtn" id="animTog" type="button">Pause animation</button>
@@ -131,7 +137,7 @@
 </div>
 
 <div id="resetPop" class="pop" popover role="dialog" aria-label="Reset the demo" aria-describedby="resetQ">
-  <p id="resetQ">Reset the demo? This deletes the event and plan.</p>
+  <p id="resetQ">Reset the demo? This deletes the notice and the patient plan.</p>
   <div class="pop-b">
     <button class="btn danger" id="resetGo" type="button">Reset</button>
     <button class="btn sec" type="button" popovertarget="resetPop" popovertargetaction="hide" autofocus>Cancel</button>
@@ -139,7 +145,7 @@
 </div>
 
 <div id="runPop" class="pop" popover role="dialog" aria-label="Start over" aria-describedby="runQ">
-  <p id="runQ">Start over? This deletes the plan, its approvals and voice notes.</p>
+  <p id="runQ">Start over? This deletes the patient plan, its approvals and voice notes.</p>
   <div class="pop-b">
     <button class="btn danger" id="runGo" type="button">Start over</button>
     <button class="btn sec" type="button" popovertarget="runPop" popovertargetaction="hide" autofocus>Cancel</button>

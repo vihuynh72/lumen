@@ -120,7 +120,10 @@ body.resizing #map{pointer-events:none}
 .rail :focus-visible{outline-color:var(--rail-focus)}
 .rail ::selection{background:var(--rail-line);color:var(--rail-ink)}
 .rail *{scrollbar-color:var(--rail-line) transparent}
-.rail-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:0 4px}
+.rail-h{display:flex;align-items:flex-start;gap:12px;padding:0 4px}
+.rail-h>div{flex:1;min-width:0}
+.pausebtn{flex:none;height:32px;padding:0 12px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
+.pausebtn:hover{background:var(--rail-line)}
 .rail-h h2{font-size:18px;line-height:24px;font-weight:700}
 .rail-h .sub{margin-top:2px;color:var(--rail-mute);font-size:13px}
 .railtog{display:none}
@@ -139,29 +142,14 @@ body.resizing #map{pointer-events:none}
 @keyframes beat{50%{opacity:.35;transform:scale(.7)}}
 .ph-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-weight:600}
 .ph-h .st{flex:none;color:var(--rail-mute);font-size:12px}
-.ph.pending .nm,.ph.queued .nm{color:var(--rail-ink-2)}
+.ph.pending .nm{color:var(--rail-ink-2)}
 .ph.running .st,.ph.waiting .st{color:var(--rail-amber)}
 .ph.error .st{color:var(--rail-err)}
-.meta{display:flex;align-items:center;gap:4px 8px;margin-top:2px;color:var(--rail-mute);font-size:12px;line-height:18px}
-.meta>span:not(.svc){min-width:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
-.svc{flex:none;padding:0 6px;border:1px solid var(--rail-line);border-radius:4px;font-size:11px;font-weight:600;line-height:18px;color:var(--rail-ink-2)}
-.res{margin-top:4px;font-size:13px;line-height:18px;color:var(--rail-ink)}
-.ph.done p.res{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ph.queued .res,.ph.pending .res{color:var(--rail-mute)}
+.res{margin-top:2px;font-size:13px;line-height:18px;color:var(--rail-ink-2)}
+.ph.running .res,.ph.waiting .res{color:var(--rail-ink)}
 .ph .err{margin-top:6px;color:var(--rail-err)}
 .ph .retry{margin-top:8px;height:28px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:12px}
 .ph .retry:hover{background:var(--rail-line)}
-.ph .ph-rv{margin:0 0 0 auto;height:26px}
-/* the result line is the Details toggle, so a done step stays one line */
-.det summary{display:flex;align-items:center;gap:4px;cursor:pointer;list-style:none}
-.det summary::-webkit-details-marker{display:none}
-.det summary span{min-width:0}
-.ph.done .det summary span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ph .det[open] summary span{white-space:normal;overflow:visible}
-.det summary .i{width:14px;height:14px;color:var(--rail-mute);transition:transform .15s ease-out}
-.det[open] summary .i{transform:rotate(180deg)}
-.det summary:hover .i{color:var(--rail-ink)}
-.det p{margin-top:4px;font-size:12px;line-height:16px;color:var(--rail-mute)}
 .cmd{display:grid;gap:8px;margin-top:12px;padding:12px;border:1px solid var(--rail-mute);border-radius:12px;background:var(--rail-2)}
 .cmd label{color:var(--rail-ink-2);font-size:12px;font-weight:600}
 .cmd textarea{width:100%;min-height:36px;padding:0;border:0;outline:0;resize:none;background:none;color:var(--rail-ink);caret-color:var(--rail-amber)}
@@ -205,8 +193,6 @@ body.resizing #map{pointer-events:none}
 .sw.feed{width:20px;height:3px;border-radius:2px;background:repeating-linear-gradient(90deg,var(--map-power) 0 6px,transparent 6px 10px),color-mix(in srgb,var(--map-power) 32%,transparent)}
 .sw.sub{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:50%;background:var(--map-halo);box-shadow:0 0 0 1px var(--line)}
 .sw.sub::after{content:"";width:6px;height:6px;border:1.5px solid var(--map-trans);background:color-mix(in srgb,var(--map-trans) 28%,transparent)}
-.sw.sub.dead{opacity:.7}
-.sw.sub.dead::after{border-style:dashed;border-color:var(--map-dead);background:color-mix(in srgb,var(--map-dead) 28%,transparent)}
 .sw.zone{width:20px;height:10px;border:1.5px solid var(--map-outage);border-radius:2px;background:color-mix(in srgb,var(--map-outage) 10%,transparent)}
 .sw.pin{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:50%;background:var(--paper);border:1.5px solid var(--line-2);color:var(--ink-2)}
 .sw.pin .i{width:9px;height:9px}
@@ -215,15 +201,16 @@ body.resizing #map{pointer-events:none}
 .sw.pin.rcv{background:var(--map-early);border-color:var(--map-early);color:var(--map-halo)}
 .sw.hosp{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:4px;background:var(--map-transfer);color:var(--map-halo)}
 .sw.hosp .i{width:10px;height:10px;stroke-width:2.5}
-.sw.bld{width:14px;height:10px;margin:0 3px;border:1.5px dashed var(--ink-2);border-radius:2px;background:var(--map-fac)}
-.sw.rk{width:20px;text-align:center;font-weight:700;color:var(--ink)}
 .sw.dot{width:8px;height:8px;margin:0 6px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1.5px var(--map-halo)}
 .sw.zone.off{--a:22%;background:linear-gradient(color-mix(in srgb,var(--rail) var(--a),transparent) 0 0),color-mix(in srgb,var(--map-outage) 10%,transparent)}
 :root[data-theme="dark"] .sw.zone.off{--a:50%}
 .sw.county{border-top:1.5px dashed color-mix(in srgb,var(--map-ink) 45%,transparent)}
-.sw.sel{border-top-width:5px;border-radius:3px}
-.sw.tagp{padding:0 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--paper);color:var(--ink);font-size:11.5px;font-weight:700;line-height:16px;white-space:nowrap}
-.sw.tagp.e{border-color:transparent;border-radius:4px;background:var(--green-bg);color:var(--green-ink);font-weight:600}
+/* scene 1 of the run: the simulated notice slides in over the map */
+.ncard{position:absolute;z-index:4;top:16px;left:50%;display:grid;gap:4px;width:max-content;max-width:min(460px,calc(100% - 32px));padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--shadow);transform:translateX(-50%);animation:slidein .25s ease-out}
+.ncard-t{font-size:18px;line-height:24px;font-weight:700;color:var(--ink)}
+.ncard-a{color:var(--ink-2)}
+.ncard-s{margin-top:4px}
+@keyframes slidein{from{opacity:0;transform:translate(-50%,-12px)}}
 /* the outage timeline (timeline.js) sits along the bottom of the map; --tl-h lifts what would sit under it */
 .tlbar{position:absolute;z-index:3;left:12px;right:12px;bottom:12px}
 .tlbar:empty{display:none}
@@ -259,50 +246,56 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .keycard{display:grid;gap:12px;margin:20px 20px 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
 .keycard p{color:var(--ink-2)}
 .keycard .btn{justify-self:start}
-.how ol{display:grid;gap:12px;padding:0;list-style:none}
-.how li{display:grid;grid-template-columns:20px minmax(0,1fr);gap:0 10px;font-size:13px;line-height:18px}
-.how .n{color:var(--mute)}
-.how b{font-weight:700}
-.how .svc2{margin-left:6px;color:var(--mute);font-size:12px}
-.how p{margin-top:2px;color:var(--ink-2)}
-.how .small{margin-top:16px}
+.hint{margin-top:16px}
 .notice{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
 .notice summary{width:max-content;cursor:pointer;font-weight:600;color:var(--ink-2)}
 .notice pre{margin:8px 0 0;padding:12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);font:400 12px/18px var(--f-ui);white-space:pre-wrap}
 
 .plan-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:20px 20px 12px}
-.plan-h .mute{font-size:13px}
+.pstat{color:var(--amber-ink);font-size:13px;font-weight:700}
+.pstat.ok{color:var(--green-ink)}
 .cnt{display:grid;grid-template-columns:repeat(3,1fr);margin:0 20px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
 .cnt div{min-width:0;padding:10px 12px}
 .cnt div+div{border-left:1px solid var(--line)}
 .cnt span{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px;white-space:nowrap}
 .cnt span::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .cnt b{display:block;margin-top:2px;font:500 24px/28px var(--f-mono);font-variant-numeric:tabular-nums}
-.sum{margin:12px 20px 0;color:var(--ink-2);max-width:65ch}
-/* routes (E3) */
-.routes{margin:20px 20px 0}
-.routes h3{margin-bottom:8px;font-size:14px;line-height:20px;font-weight:700}
-.rtab{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;line-height:18px}
-.rtab th,.rtab td{padding:6px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
-.rtab thead th{padding-top:0;color:var(--mute);font-size:12px;line-height:16px;font-weight:600;vertical-align:bottom}
-.rtab thead th:nth-child(2){width:64px}.rtab thead th:nth-child(3){width:64px}.rtab thead th:nth-child(4){width:64px}
-.rtab th:nth-child(2),.rtab th:nth-child(3),.rtab td:nth-child(2),.rtab td:nth-child(3){padding-right:12px;text-align:right}
-.rtab tbody th{padding-right:8px;font-weight:600;color:var(--ink)}
-.rtab td .m{display:block}
-.rtab .sub{display:block;color:var(--mute);font-size:12px;line-height:16px;font-weight:400}
-.rtab tfoot th,.rtab tfoot td{border-bottom:0;font-weight:700}
-.far{display:block;color:var(--red-ink);font-size:12px;line-height:16px;font-weight:700}
-.lnk{margin-top:8px;padding:0;border:0;background:none;color:var(--blue-ink);font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.routes .small{margin-top:8px}
-.acts{display:flex;gap:8px;margin:16px 20px 0}
-.acts .pri{flex:1;height:40px}
-.okline{display:flex;flex:1;align-items:center;gap:8px;color:var(--green-ink);font-weight:700}
-.acts .selw select{height:40px}
-.pulse{animation:ring 2.4s ease-out 3}
-@keyframes ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--amber) 55%,transparent)}70%,100%{box-shadow:0 0 0 9px color-mix(in srgb,var(--amber) 0%,transparent)}}
+.acts{display:flex;margin:16px 20px 0}
+.btn.big{flex:1;height:48px;font-size:16px}
 .note{margin:8px 20px 0;color:var(--mute);font-size:12px;line-height:16px}
-.chgbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 20px 0;padding:8px 8px 8px 12px;border-radius:12px;background:var(--amber-bg);color:var(--amber-ink);font-size:13px;font-weight:600}
-.pts{position:relative;margin-top:16px;padding:0;list-style:none;border-top:1px solid var(--line)}
+/* R2: every patient approved */
+.okbox{display:grid;gap:4px;justify-items:start;margin:16px 20px 0;padding:14px 16px;border:1px solid color-mix(in srgb,var(--green) 40%,transparent);border-radius:12px;background:var(--green-bg)}
+.okline{display:flex;align-items:center;gap:8px;color:var(--green-ink);font-size:16px;line-height:24px;font-weight:700}
+.okline .i{width:20px;height:20px;stroke-width:2.25}
+.okc{color:var(--ink)}
+.okn{margin:8px 0 4px;color:var(--ink-2);font-size:13px;line-height:18px}
+/* R3: chairs per receiving clinic */
+.chairs{margin:20px 20px 0}
+.chairs h3,.lh h3{font-size:14px;line-height:20px;font-weight:700}
+.chairs ul{display:grid;gap:2px;margin-top:4px;padding:0;list-style:none}
+/* R8: a Chairs row shows only its route on the map */
+.chb{display:block;width:calc(100% + 16px);margin:0 -8px;padding:4px 8px;border:1px solid transparent;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
+.chb:hover{background:var(--paper-2)}
+/* End of the run: three calm pulses on "Review and approve" (none under reduced motion) */
+.btn.ring{animation:ring 1.6s ease-out 3}
+@keyframes ring{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--amber) 55%,transparent)}to{box-shadow:0 0 0 12px color-mix(in srgb,var(--amber) 0%,transparent)}}
+@media (prefers-reduced-motion:reduce){.btn.ring{animation:none}}
+.chb[aria-pressed="true"]{background:var(--paper-2);border-color:var(--line-2)}
+.ch1{display:flex;align-items:baseline;gap:8px;font-size:13px;line-height:18px}
+.ch1 .cn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.fullp{flex:none;padding:0 7px;border:1px solid var(--ink-2);border-radius:10px;color:var(--ink);font-size:11px;line-height:18px;font-weight:700}
+.ch2{display:flex;align-items:center;gap:10px;margin-top:4px}
+.bar{flex:1;height:6px;border-radius:3px;background:var(--paper-3);overflow:hidden}
+.bar i{display:block;width:var(--f);height:100%;border-radius:3px;background:var(--map-transfer)}
+.ch2 .sub{flex:none;min-width:88px;color:var(--mute);font-size:12px;line-height:16px;text-align:right}
+.chairs .more{margin-top:10px}
+.chairs .more summary{display:flex;align-items:center;gap:6px;width:max-content;color:var(--ink-2);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+.chairs .more summary::-webkit-details-marker{display:none}
+.chairs .more[open] summary .i{transform:rotate(180deg)}
+.calls{margin-top:12px;color:var(--ink-2);font-size:13px;line-height:18px;max-width:65ch}
+.lh{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 20px 0}
+.chgbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 20px 0;line-height:18px;padding:8px 8px 8px 12px;border-radius:12px;background:var(--amber-bg);color:var(--amber-ink);font-size:13px;font-weight:600}
+.pts{position:relative;margin-top:12px;padding:0;list-style:none;border-top:1px solid var(--line)}
 .pt{border-bottom:1px solid var(--line);transition:background-color .2s ease-out;content-visibility:auto;contain-intrinsic-size:auto 86px}
 .pt.open{content-visibility:visible}  /* an open row is tall: an estimate would shift the list when it re-renders off screen */
 .pt.chg{background:var(--amber-bg)}
@@ -325,21 +318,24 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .s-approved{color:var(--ink-2)}
 .chgt{display:flex;align-items:baseline;gap:8px;margin-top:4px;color:var(--amber-ink);font-size:12px;line-height:16px;font-weight:600}
 .chgt .tag{flex:none;background:var(--amber);color:var(--on-amber)}
-.pdet{display:grid;gap:12px;padding:0 20px 16px 54px;font-size:13px;line-height:18px}
-.pdet .why{color:var(--ink)}
-.chips{display:flex;flex-wrap:wrap;gap:4px;padding:0;list-style:none}
-.chips li{padding:0 8px;border:1px solid var(--line);border-radius:10px;color:var(--ink-2);font-size:12px;line-height:20px;background:var(--paper)}
-.pdet .facts{margin:0}
-.msg{display:grid;gap:8px}
+.pdet{display:grid;gap:6px;padding:0 20px 16px 54px;font-size:13px;line-height:18px}
+/* R5: one clear patient card */
+.pdet .big{font-size:16px;line-height:22px;font-weight:700;color:var(--ink)}
+.pdet .leave{color:var(--ink)}
+.pdet .why{color:var(--ink-2)}
+.msg{margin-top:6px}
+.msg .langs{margin:8px 0}
+.msg summary{display:flex;align-items:center;gap:6px;width:max-content;max-width:100%;color:var(--ink-2);font-weight:600;cursor:pointer;list-style:none}
+.msg summary::-webkit-details-marker{display:none}
+.msg summary .i{color:var(--mute);transition:transform .15s ease-out}
+.msg[open] summary .i{transform:rotate(180deg)}
 .langs{display:flex;flex-wrap:wrap;gap:4px}
 .langs button{height:28px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer}
 .langs button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .msgt{padding:10px 12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);max-width:65ch}
-.rcard{display:grid;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink-2)}
-.rcard .rc1{font-weight:700;color:var(--ink)}
 .spk{display:grid;gap:8px}
 .spk audio{width:100%;height:36px}
-.racts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.racts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
 .pdet audio{width:100%;height:36px}
 .empty{padding:24px 20px;color:var(--mute)}
 
@@ -366,7 +362,6 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
   .planbtn[aria-expanded="true"]{background:var(--paper-3)}
 }
-@media (max-width:1359px){#chipId{display:none}}  /* keeps "Simulated PG&E notice" whole */
 @media (max-width:1000px){.home,.home+.sep{display:none}}
 /* phone: rail is a top sheet, panel a bottom sheet */
 @media (max-width:760px){
@@ -391,7 +386,7 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .legend{max-width:calc(100% - 72px)}
   section.sec{padding:16px}
   .plan-h{padding:16px 16px 12px}
-  .cnt,.acts,.sum,.note,.chgbar,.routes{margin-left:16px;margin-right:16px}
+  .cnt,.acts,.note,.chgbar,.chairs,.okbox,.lh{margin-left:16px;margin-right:16px}
   .rowb{padding:12px 16px}
   .pdet{padding:0 16px 16px 50px}
 }

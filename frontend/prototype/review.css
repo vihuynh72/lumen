@@ -1,22 +1,28 @@
-/* Review and approve dialog (CONTRACT-v2 E4). app.css tokens only; reuses .btn, .tag, .langs, .msgt, .chgt, .racts, .small, .err, .m, .vh, .i. */
+/* Review and approve list (CONTRACT-v3 R2, R5). app.css tokens only; reuses .btn, .tag, .langs, .msgt, .racts, .small, .err, .m, .vh, .i, .s-*. */
 .rv{position:fixed;inset:24px;width:auto;height:auto;max-width:none;max-height:none;margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);overflow:hidden}
-.rv[open]{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);animation:rv-in .2s ease-out}
+.rv[open]{display:flex;flex-direction:column;animation:rv-in .2s ease-out}
 .rv::backdrop{background:color-mix(in srgb,var(--rail) 86%,transparent)}
 :root:has(.rv[open]){overflow:hidden}
 @keyframes rv-in{from{opacity:.5;transform:translateY(6px)}}
 .rv :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .rv [tabindex="-1"]:focus{outline:0}  /* headings take focus only to move the reading point */
 .rv .btn[aria-disabled="true"]{opacity:.55;cursor:progress}
-.rv input[type="checkbox"]{width:16px;height:16px;margin:0;accent-color:var(--ink);cursor:pointer}
+.rv input[type="checkbox"]{width:18px;height:18px;margin:0;accent-color:var(--ink);cursor:pointer}
 .rv input[type="checkbox"]:disabled{cursor:not-allowed}
 
-/* header and toolbar */
-.rv-h{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px 12px}
-.rv-h h2{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:18px;line-height:24px;font-weight:700}
-.rv-sum{margin-top:4px;max-width:96ch;color:var(--ink-2);font-size:13px;line-height:18px}
-.rv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:0 20px 12px;border-bottom:1px solid var(--line)}
+/* header, success band, toolbar */
+.rv-h{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 20px 0}
+.rv-h h2{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:20px;line-height:28px;font-weight:700}
+.rv-sum{margin-top:2px;color:var(--ink-2)}
+.rv-done{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin-top:12px;padding:12px 20px;border-block:1px solid var(--line);background:var(--green-bg)}
+.rv-done>div{flex:1 1 240px}
+.rv-done-i{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--green);color:var(--paper)}
+.rv-done-i .i{width:18px;height:18px}
+.rv-done-h{color:var(--ink);font-size:16px;line-height:22px;font-weight:700}
+.rv-done-c{color:var(--green-ink)}
+.rv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:12px 20px;border-bottom:1px solid var(--line)}
 .rv-chips{display:flex;flex-wrap:wrap;gap:4px}
-.rv-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+.rv-chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
 .rv-chip:hover{border-color:var(--line-2);color:var(--ink)}
 .rv-chip.dot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
 .rv-chip .m{color:var(--mute);font-size:12px}
@@ -29,34 +35,30 @@
 .rv-q input::placeholder{color:var(--mute);opacity:1}
 .rv-q input:focus-visible{outline-offset:0}
 .rv-acts{display:flex;align-items:center;gap:8px;margin-left:auto}
+.rv-acts:empty{display:none}
 .rv-ok{display:flex;align-items:center;gap:6px;color:var(--green-ink);font-weight:700;white-space:nowrap}
 .rv-err{padding:8px 20px;border-bottom:1px solid var(--line);background:var(--red-bg)}
 
 /* table: grid rows so content-visibility can skip the ones off screen */
-.rv-body{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:0}
+.rv-body{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 400px;flex:1 1 0;min-height:0}
 .rv-tw{min-height:0;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable}
-.rv-t{--rv-cols:36px 40px minmax(120px,1.3fr) 80px minmax(160px,1.7fr) minmax(120px,1.2fr) minmax(104px,.8fr) minmax(128px,1.2fr) minmax(128px,.8fr) 96px;display:block;min-width:1012px;border-spacing:0;font-size:13px;line-height:18px}
+.rv-t{--rv-cols:44px minmax(150px,1.2fr) minmax(88px,.6fr) minmax(128px,.8fr) minmax(150px,1fr) minmax(200px,1fr) minmax(200px,1.2fr) minmax(96px,.5fr) minmax(160px,.8fr);display:block;min-width:1216px;border-spacing:0;font-size:14px;line-height:20px}
 .rv-t thead,.rv-t tbody{display:block}
 .rv-t thead{position:sticky;top:0;z-index:3}
 .rv-t tr{display:grid;grid-template-columns:var(--rv-cols);align-items:center;height:56px;border-bottom:1px solid var(--line);background:var(--paper)}
-.rv-t thead tr{height:40px;background:var(--paper-2)}
+.rv-t thead tr{height:44px;background:var(--paper-2)}
 .rv-t tbody tr{content-visibility:auto;contain-intrinsic-size:auto 56px;cursor:pointer;transition:background-color .15s ease-out}
-.rv-t th,.rv-t td{min-width:0;padding:0 8px;text-align:left}
+.rv-t th,.rv-t td{min-width:0;padding:0 10px;text-align:left}
 .rv-t td{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--ink-2)}
-.rv-t td.rv-f{display:flex;align-items:center;gap:2px}
-.rv-t td.rv-col{flex-direction:column;align-items:flex-start;justify-content:center}
-.rv-t .rv-c0,.rv-t .rv-c1,.rv-t .rv-c2{position:sticky;z-index:1;align-self:stretch;display:flex;align-items:center;background:inherit}
-.rv-t .rv-c0{left:0;justify-content:center;padding:0}
-.rv-t .rv-c1{left:36px}
-.rv-t .rv-c2{left:76px}
-.rv-t td.rv-col.rv-c2{align-items:flex-start}
+.rv-t .rv-c0,.rv-t .rv-c1{position:sticky;z-index:1;align-self:stretch;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;background:inherit}
+.rv-t .rv-c0{left:0;align-items:center;padding:0}
+.rv-t .rv-c1{left:44px}
 .rv-t tbody tr:hover{background:var(--paper-2)}
 .rv-t tr.rv-selr{background:var(--paper-3)}
 .rv-t tr.rv-chgr{background:var(--amber-bg)}
-.rv-t tr.rv-chgr.rv-selr{box-shadow:inset 0 0 0 1px var(--amber)}
-.rv-t .rv-rk{color:var(--mute);font-size:12px}
-.rv-t td.m,.rv-t td .m{font-size:12px}
-.rv-sort{display:inline-flex;align-items:center;gap:4px;height:28px;margin:0 -4px;padding:0 4px;border:0;border-radius:4px;background:none;color:var(--ink-2);font-size:12px;font-weight:700;text-align:left;white-space:nowrap;cursor:pointer}
+.rv-t tr.rv-chgr.rv-selr{background:color-mix(in srgb,var(--amber) 30%,var(--paper))}  /* sticky cells would cut an inset ring */
+.rv-t td.m,.rv-t td .m{font-size:13px}
+.rv-sort{display:inline-flex;align-items:center;gap:4px;height:28px;margin:0 -4px;padding:0 4px;border:0;border-radius:4px;background:none;color:var(--ink-2);font-size:13px;font-weight:700;text-align:left;white-space:nowrap;cursor:pointer}
 .rv-sort:hover{background:var(--paper-3);color:var(--ink)}
 .rv-sort .i{width:14px;height:14px;opacity:0;transition:transform .15s ease-out}
 [aria-sort] .rv-sort{color:var(--ink)}
@@ -64,52 +66,52 @@
 [aria-sort="ascending"] .rv-sort .i{transform:rotate(180deg)}
 .rv-nm{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;padding:0;border:0;background:none;color:var(--ink);font-weight:700;text-align:left;cursor:pointer}
 .rv-nm:hover{text-decoration:underline;text-underline-offset:3px}
-.rv-chg{margin-top:2px;background:var(--amber);color:var(--on-amber)}
-.rv-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--c);vertical-align:0}
-.rv-far{color:var(--red-ink);font-weight:700}
-.rv-t .rv-far{font-size:12px}
-.rv-dec{padding:0;border:0;background:none;color:var(--ink-2);font-size:12px;line-height:18px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.rv-dec:hover{color:var(--ink)}
-.rv-dec[aria-disabled="true"]{opacity:.55;cursor:progress}
+.rv-chg{color:var(--amber-ink);font-size:12px;line-height:16px;font-weight:700}
+.rv-dot{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:var(--c);vertical-align:1px}
+.rv-far{display:block;color:var(--red-ink);font-size:12px;line-height:16px;font-weight:700}
 .rv-empty{display:grid;justify-items:start;gap:12px;padding:24px 20px;color:var(--mute)}
 
-/* detail pane */
-.rv-det{display:flex;flex-direction:column;gap:16px;min-height:0;padding:20px;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable;border-left:1px solid var(--line);background:var(--paper);font-size:13px;line-height:18px}
-.rv-det h3{font-size:18px;line-height:24px;font-weight:700}
-.rv-det h4{margin:0 0 8px;font-size:13px;line-height:18px;font-weight:700}
-.rv-det .small{margin-top:2px}
-.rv-det .chgt{margin-top:8px}
-.rv-dwhat{font-size:15px;line-height:22px;font-weight:700}
-.rv-when{margin-top:2px;color:var(--ink-2);font-size:12px}
-.rv-route{display:grid;gap:4px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2);color:var(--ink-2)}
-.rv-rt{color:var(--ink);font-weight:700}
-.rv-why{display:grid;gap:4px;padding-left:18px;color:var(--ink-2)}
+/* detail pane: one clear card (R5) */
+.rv-det{display:flex;flex-direction:column;gap:16px;min-height:0;padding:20px;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable;border-left:1px solid var(--line);background:var(--paper)}
+.rv-det h3{font-size:20px;line-height:28px;font-weight:700}
+.rv-sub{margin-top:2px;color:var(--ink-2)}
+.rv-card{display:grid;gap:6px;color:var(--ink-2)}
+.rv-big{margin-bottom:2px;color:var(--ink);font-size:17px;line-height:24px;font-weight:700}
+.rv-chgn{color:var(--amber-ink);font-weight:600}
+.rv-msg summary{display:flex;align-items:center;gap:6px;width:fit-content;padding:4px 0;color:var(--ink);font-weight:600;list-style:none;cursor:pointer}
+.rv-msg summary::-webkit-details-marker{display:none}
+.rv-msg summary:hover{text-decoration:underline;text-underline-offset:3px}
+.rv-msg summary .i{transform:rotate(-90deg);transition:transform .15s ease-out}
+.rv-msg[open] summary{margin-bottom:8px}
+.rv-msg[open] summary .i{transform:none}
+.rv-msg .langs{margin-bottom:8px}
+.rv-do{display:grid;gap:4px}
+.rv-do .racts{margin-bottom:4px}
 .rv-voice{display:grid;gap:8px}
 .rv-det audio{width:100%;height:36px}
 .rv-none{max-width:36ch;color:var(--mute)}
 .rv-back{align-self:flex-start;margin:-8px 0 0 -10px}
 .rv-back .i{transform:rotate(90deg)}
-@media (min-width:1440px){.rv-back:not(:focus-visible){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
-@media (min-width:1600px){.rv-body{grid-template-columns:minmax(0,1fr) 400px}}
+@media (min-width:1800px){.rv-back:not(:focus-visible){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
 
-/* below 1440 px the details are a sheet over the table */
-@media (max-width:1439px){
+/* below 1800 px the details are a sheet over the table, so the table keeps its full width */
+@media (max-width:1799px){
   .rv-body{grid-template-columns:minmax(0,1fr)}
   .rv-det{position:absolute;z-index:4;inset:0 0 0 auto;width:min(420px,100%);box-shadow:var(--shadow);transform:translateX(100%);visibility:hidden;transition:transform .2s ease-out,visibility 0s linear .2s}
   .rv-body.rv-sheet .rv-det{transform:none;visibility:visible;transition:transform .2s ease-out}
 }
 @media (max-width:760px){
   .rv{inset:0;border:0;border-radius:0}
-  .rv-h{padding:12px 16px 8px}
-  .rv-bar{padding:0 16px 12px}
+  .rv-h{padding:12px 16px 0}
+  .rv-done,.rv-bar{padding:12px 16px}
   .rv-q{flex:1 1 100%}
   /* phones: no sideways scroll; each row stacks name over what happens, the rest is in the details sheet */
-  .rv-t{--rv-cols:36px 40px minmax(0,1fr) 96px;min-width:0}
+  .rv-t{--rv-cols:44px minmax(0,1fr) auto;min-width:0}
   .rv-t tbody tr{height:auto;min-height:56px;padding:8px 0;contain-intrinsic-size:auto 72px}
-  .rv-t :is(th,td):is(:nth-child(4),:nth-child(6),:nth-child(7),:nth-child(8),:nth-child(9)),.rv-t th:nth-child(5){display:none}
-  .rv-t td:is(:nth-child(1),:nth-child(2)){grid-row:1/3}
-  .rv-t td:nth-child(5){grid-area:2/3}
-  .rv-t td:nth-child(10){grid-area:1/4/3}
+  .rv-t :is(th,td):is(:nth-child(3),:nth-child(5),:nth-child(6),:nth-child(7),:nth-child(8)),.rv-t th:nth-child(4){display:none}
+  .rv-t td:nth-child(1){grid-row:1/3}
+  .rv-t td:nth-child(4){grid-area:2/2}
+  .rv-t td:nth-child(9){grid-area:1/3/3}
   .rv-acts{width:100%;margin-left:0}
   .rv-acts>*{flex:1}
   .rv-err{padding:8px 16px}

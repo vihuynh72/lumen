@@ -287,11 +287,11 @@
       }
     }
 
-    function summary(rows) {  // backend text_fallback.fill, with zero counts left out
+    function summary(rows) {  // backend text_fallback.fill in plain words, with zero counts left out
       const n = a => rows.filter(r => r.action === a).length, rides = rows.filter(r => r.book_today).length;
-      const parts = [['early_session', 'dialyzes early', 'dialyze early'], ['transfer', 'moves to another clinic', 'move to another clinic'], ['hospital', 'needs a staff call', 'need a staff call']]
+      const parts = [['early_session', 'comes in early', 'come in early'], ['transfer', 'moves to another clinic', 'move to another clinic'], ['hospital', 'needs a staff call', 'need a staff call']]
         .map(([a, one, many]) => [n(a), one, many]).filter(([k]) => k)
-        .map(([k, one, many], i) => `${k} ${i ? '' : k === 1 ? 'patient ' : 'patients '}${k === 1 ? one : many}`);
+        .map(([k, one, many]) => `${k} ${k === 1 ? one : many}`);
       const list = parts.length > 2 ? `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}` : parts.join(' and ') || 'No patient needs a change';
       return `${list}.${rides ? ` Book ${rides} paratransit ride${rides === 1 ? '' : 's'} today.` : ''}`;
     }
@@ -303,7 +303,7 @@
       ai_sources: { text: 'fallback' } };
     timing.total = Math.max(Math.round(performance.now() - t0), timing.affected + timing.rank + timing.match + timing.text);
 
-    let current = v1;  // the latest version; replan and approve build on it. Reset = LumenTour.build(data) again.
+    let current = v1, capNow = baseCap;  // the latest version and the chairs its match used; replan and approve build on it. Reset = LumenTour.build(data) again.
     const stamp = version => iso(NOW + (version - 1) * MIN);  // shortcut: one demo minute per version, not wall time
 
     function replan(instruction) {
@@ -344,11 +344,12 @@
       const moved = new Set(diff.filter(d => d.field === 'clinic_id' && d.from === center.id).map(d => d.patient_id)).size;
       const toStaff = result.overflow.filter(id => !old.overflow.includes(id)).length;
       const count = (k, noun, one, many) => `${k} ${noun}${k === 1 ? '' : 's'} ${k === 1 ? one : many}`;
-      const text = `${center.name} can take only ${n} more, so ${count(moved, 'patient', 'moves', 'move')} to other chairs or the staff call list. ` +
-        `${count(toStaff, 'more patient', 'needs', 'need')} a staff call.`;
+      const text = moved ? `${center.name} can take only ${n} more, so ${count(moved, 'patient', 'moves', 'move')} to other chairs or the staff call list.` +
+        (toStaff ? ` ${count(toStaff, 'more patient', 'needs', 'need')} a staff call.` : '') : `${center.name} can take only ${n} more; no patient needs to move.`;
       const ts = stamp(old.version + 1);
       const timingMs = { replan: tReplan, text: Math.round(performance.now() - tText) };
       timingMs.total = Math.max(Math.round(performance.now() - t), timingMs.replan + timingMs.text);
+      capNow = cap;
       current = { ...old, version: old.version + 1, created_at: ts, timing_ms: timingMs, patients: result.patients, overflow: result.overflow,
         audit: old.audit.concat({ ts, actor: 'Rosa', change: `re-plan: ${String(instruction).trim().slice(0, 200)}` }), summary: text,
         ai_sources: { ...old.ai_sources, replan: 'fallback' } };
@@ -388,7 +389,14 @@
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
 
     return { facilities, patients, outage: data.outage, event: { ...EVENT }, affected, plan: v1, replan, approve,
-      suggestion: busiest ? `${fac[busiest[0]].name} can only take four more` : '' };
+      suggestion: busiest ? `${fac[busiest[0]].name} can only take four more` : '',
+      // Chairs per powered hemodialysis center, from the latest plan: open = chairs the match could use, used = rows holding one.
+      get capacity() {
+        const out = {};
+        for (const [k, n] of capNow) { const id = k.split('|')[0]; (out[id] ||= { open: 0, used: 0 }).open += n; }
+        for (const r of current.patients) if (r.slot && r.status !== 'declined' && out[r.clinic_id]) out[r.clinic_id].used++;
+        return out;
+      } };
   }
 
   window.LumenTour = { build };

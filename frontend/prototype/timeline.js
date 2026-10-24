@@ -1,11 +1,13 @@
 /* Lumen outage timeline bar (CONTRACT-v2 E8): window.LumenTimeline. Plain script, no dependencies.
-   stops[0] = notice, stops[1] = power off, stops[2] = power back. The track runs from the first to the last stop. */
+   stops[0] = notice, stops[1] = power off, stops[2] = power back. The track runs from the first to the last stop.
+   setMode('run'): the bar is the guided run's clock, read-only, with a scene caption from set(iso, {caption}).
+   setMode('replay') (the default): play button and draggable handle. The mode outlasts destroy/mount, so the run can set it first. */
 (function () {
   'use strict';
   var HOUR = 36e5, SNAP_MS = 15 * 6e4, SNAP_PX = 8;
   var F = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   var WORD = { on: 'power on', off: 'power off', restored: 'power back on' };
-  var S = null;
+  var S = null, MODE = 'replay';
 
   function parts(t) { var r = {}; F.formatToParts(t).forEach(function (p) { r[p.type] = p.value; }); return r; }
   function longText(t) { var p = parts(t); return p.weekday + ' ' + p.month + ' ' + p.day + ', ' + p.hour + ':' + p.minute + ' ' + p.dayPeriod; }
@@ -105,6 +107,7 @@
   }
 
   function onKey(e) {
+    if (MODE === 'run') return;
     var d = { ArrowRight: HOUR, ArrowUp: HOUR, ArrowLeft: -HOUR, ArrowDown: -HOUR, PageUp: 6 * HOUR, PageDown: -6 * HOUR }[e.key];
     var t = d != null ? S.t + d : e.key === 'Home' ? S.t0 : e.key === 'End' ? S.t1 : null;
     if (t === null) return;
@@ -127,7 +130,7 @@
       '<button class="btn sec ico sm lt-btn" type="button">' +
         '<svg class="i fill lt-ip" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5l8 4.5-8 4.5z"/></svg>' +
         '<svg class="i lt-ipa" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg></button>' +
-      '<div class="lt-hd"><span class="lt-lb"></span><span class="lt-rd"><span class="lt-t m"></span><span class="lt-pw"></span></span></div>' +
+      '<div class="lt-hd"><span class="lt-lb"></span><span class="lt-cap"></span><span class="lt-rd"><span class="lt-t m"></span><span class="lt-pw"></span></span></div>' +
       '<div class="lt-tr"><div class="lt-in">' +
         '<div class="lt-ln"><i class="lt-base"></i><i class="lt-off"></i><i class="lt-fill"></i></div>' +
         '<div class="lt-h" role="slider" tabindex="0"></div>' +
@@ -137,7 +140,7 @@
     var t0 = stops[0], t1 = stops[stops.length - 1];
     S = { root: root, label: label, stops: stops, t0: t0, t1: t1, off: stops[1], back: stops[2], t: t0, power: null,
       onChange: null, done: null, raf: 0, rect: null, btn: root.querySelector('.lt-btn'), h: root.querySelector('.lt-h'),
-      time: root.querySelector('.lt-t'), pw: root.querySelector('.lt-pw'), live: root.querySelector('.vh') };
+      time: root.querySelector('.lt-t'), cap: root.querySelector('.lt-cap'), pw: root.querySelector('.lt-pw'), live: root.querySelector('.vh') };
     var ln = root.querySelector('.lt-ln'), stopsEl = root.querySelector('.lt-stops'), tr = root.querySelector('.lt-tr');
     root.style.setProperty('--off0', frac(S.off));
     root.style.setProperty('--off1', frac(S.back));
@@ -160,7 +163,7 @@
     S.btn.addEventListener('click', onButton);
     S.h.addEventListener('keydown', onKey);
     tr.addEventListener('pointerdown', function (e) {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || MODE === 'run') return;
       e.preventDefault();  // no text selection, no native focus jump
       finish(false);
       tr.setPointerCapture(e.pointerId);
@@ -176,6 +179,26 @@
     apply(t0);  // paint the first state before the caller's onChange is attached: mounting is not a change
     S.onChange = o.onChange || null;
     setPlaying(false);
+    setMode(MODE);
+  }
+
+  function setMode(m) {
+    MODE = m === 'run' ? 'run' : 'replay';
+    if (!S) return;
+    if (MODE === 'run') finish(false);  // the run owns the clock: stop a replay the user started
+    S.root.classList.toggle('run', MODE === 'run');
+    S.h.setAttribute('aria-readonly', String(MODE === 'run'));
+  }
+
+  // set(iso) moves the clock; set(null, {caption}) only changes the caption.
+  function set(iso, o) {
+    if (!S) return;
+    var t = Date.parse(iso), c = o && o.caption;
+    if (!isNaN(t)) { finish(false); apply(t); }
+    if (c != null && c !== S.cap.textContent) {
+      S.cap.textContent = c;
+      if (c) S.live.textContent = c + '.';
+    }
   }
 
   function destroy() {
@@ -187,7 +210,8 @@
 
   window.LumenTimeline = {
     mount: mount,
-    set: function (iso) { if (!S) return; var t = Date.parse(iso); if (isNaN(t)) return; finish(false); apply(t); },
+    set: set,
+    setMode: setMode,
     play: play,
     pause: function () { finish(false); },
     destroy: destroy
