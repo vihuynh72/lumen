@@ -8,6 +8,7 @@ One Lambda function URL. The handler routes on method and path. The JSON schemas
 * Header `Content-Type: application/json` on every POST.
 * CORS: methods `GET`, `POST`; headers `content-type`, `x-demo-key`.
 * Every response body is JSON.
+* Optional query `?session=<8 to 40 lowercase letters or digits>`. Each session has its own events and plans, so one viewer's run or Reset does not change another viewer's plan. Without it, the request uses the shared space (scripts and `demo_check`). A bad value returns `400`, `step` `"router"`.
 
 ## Conventions
 
@@ -368,7 +369,7 @@ Polly in us-east-2 has no Vietnamese, Tagalog, Cantonese or Telugu voice. For th
 
 ## POST /reset
 
-Deletes `plans/` and `audio/` for the demo event, so the demo starts clean.
+Deletes the events and plans of this session, so the demo starts clean. Without `?session=`, it deletes the shared `plans/` and the `audio/` cache.
 
 Request: no body (or `{}`).
 

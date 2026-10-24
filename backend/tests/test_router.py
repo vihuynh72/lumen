@@ -36,13 +36,14 @@ def env(monkeypatch):
     for file in store.SEED_FILES.values():
         s3.put_object(Bucket="b", Key=f"seed/{file}", Body=(SEED / file).read_bytes())
     monkeypatch.setattr(store, "_client", s3)
+    monkeypatch.setattr(store, "ROOT", "plans/")
     monkeypatch.setattr(router, "parse_with_bedrock", bedrock_blocked)
     monkeypatch.setattr(router, "rank", stand_in_rank)
     return s3
 
 
-def call(method, path, body=None, key="k3y"):
-    event = {"requestContext": {"http": {"method": method}}, "rawPath": path,
+def call(method, path, body=None, key="k3y", session=None):
+    event = {"requestContext": {"http": {"method": method}}, "rawPath": path, "queryStringParameters": {"session": session} if session else None,
              "headers": {"X-Demo-Key": key} if key else {}, "body": json.dumps(body) if body is not None else None}
     resp = router.lambda_handler(event, None)
     return resp["statusCode"], json.loads(resp["body"])
@@ -303,6 +304,19 @@ def test_oversized_input_is_a_400():
     assert call("POST", "/alert", {"notice_text": "x" * 20_001})[0] == 400
     plan_v1()
     assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "y" * 501})[0] == 400
+
+
+def test_sessions_keep_their_own_plans():
+    a, b = "abcd1234", "wxyz9876"
+    for s in (a, b):
+        call("POST", "/alert", {"notice_text": NOTICE}, session=s)
+        call("POST", "/plan", {"event_id": "PSPS-DEMO-01"}, session=s)
+    assert call("POST", "/reset", session=b) == (200, {"ok": True, "deleted": 3})
+    assert call("GET", "/state", session=b)[1]["plan"] is None
+    assert call("GET", "/state")[1]["plan"] is None  # the shared space never saw either session
+    status, plan = call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"], "edits": []}, session=a)
+    assert status == 200 and plan["version"] == 2
+    assert call("GET", "/state", session="BAD!")[0] == 400
 
 
 def test_reset_twice_in_a_row():

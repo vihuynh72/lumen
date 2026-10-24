@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -155,7 +156,7 @@ def demo_now(event):
 
 def clock(event):
     """A demo clock that moves: demo_now plus the real time since the alert (for created_at and audit entries)."""
-    saved = store.get_json(f"plans/{event['event_id']}/clock.json")
+    saved = store.get_json(f"{store.ROOT}{event['event_id']}/clock.json")
     elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(saved["alert_at"]) if saved else timedelta(0)
     return demo_now(event) + min(max(elapsed, timedelta(0)), timedelta(hours=12))
 
@@ -210,7 +211,7 @@ def alert(body):
     log(step="parse", source=source, ms=round((time.perf_counter() - start) * 1000))
     event = {**{k: event[k] for k in EVENT_KEYS}, "source_text": text, "parse_source": source}
     store.save_event(event)
-    store.put_json(f"plans/{event['event_id']}/clock.json", {"alert_at": datetime.now(timezone.utc).isoformat()})
+    store.put_json(f"{store.ROOT}{event['event_id']}/clock.json", {"alert_at": datetime.now(timezone.utc).isoformat()})
     return event
 
 
@@ -406,6 +407,11 @@ def lambda_handler(event, context):
         key = os.environ.get("DEMO_KEY", "")
         if not key or not hmac.compare_digest(headers.get("x-demo-key", "").encode(), key.encode()):
             raise ApiError(401, "bad demo key", "auth")
+        # ?session= gives each browser its own events and plans, so one viewer's Reset or run never deletes another's plan.
+        session = (event.get("queryStringParameters") or {}).get("session", "")
+        if session and not re.fullmatch(r"[a-z0-9]{8,40}", session):
+            raise ApiError(400, "session must be 8 to 40 lowercase letters or digits", "router")
+        store.ROOT = f"sessions/{session}/plans/" if session else "plans/"
         route = ROUTES.get((method, path))
         if route is None:
             raise ApiError(404, f"no route {method} {path}", "router")
