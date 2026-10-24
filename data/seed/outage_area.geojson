@@ -1,0 +1,23 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"event_area": "Cameron Park, Shingle Springs and Placerville (El Dorado County)"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-121.03, 38.69],
+          [-121.02, 38.64],
+          [-120.95, 38.615],
+          [-120.82, 38.64],
+          [-120.74, 38.69],
+          [-120.75, 38.77],
+          [-120.86, 38.785],
+          [-120.98, 38.73],
+          [-121.03, 38.69]
+        ]]
+      }
+    }
+  ]
+}
