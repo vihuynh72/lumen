@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -103,7 +104,8 @@ def test_plan_errors():
 
 
 def test_rank_falls_back_to_rules_when_rank_py_is_missing(monkeypatch, capsys):
-    monkeypatch.setattr(router, "rank", REAL_RANK)  # lumen.ai.rank has not landed in this repo yet
+    monkeypatch.setattr(router, "rank", REAL_RANK)
+    monkeypatch.setitem(sys.modules, "lumen.ai.rank", None)  # simulate lumen.ai.rank failing to import
     call("POST", "/alert", {"notice_text": NOTICE})
     status, plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})
     assert status == 200 and [r["rank"] for r in plan["patients"]][:3] == [1, 2, 3]
