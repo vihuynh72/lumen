@@ -1,4 +1,4 @@
-/* Lumen console (console.html): tokens and layout. Map tokens are read by map.js. CONTRACT-v5 section 4. */
+/* Lumen console (console.html): tokens and layout. Map tokens are read by map.js. CONTRACT-v5 section 4, CONTRACT-v6. */
 :root{
   --f-ui:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",system-ui,sans-serif;
   --f-mono:"Atkinson Hyperlegible Mono",ui-monospace,Menlo,monospace;
@@ -146,8 +146,8 @@ body.resizing #map{pointer-events:none}
 .ph.running .d::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--rail-amber);animation:beat 1.4s ease-in-out infinite}
 .ph.error .d{border:0;background:var(--rail-err);color:var(--rail-err-ink)}
 @keyframes beat{50%{opacity:.35;transform:scale(.7)}}
-.ph-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-weight:600}
-.ph-h .st{flex:none;color:var(--rail-mute);font-size:12px}
+.ph-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:0 8px;font-weight:600}  /* a long name keeps its line; the state word wraps under it */
+.ph-h .st{flex:none;margin-left:auto;color:var(--rail-mute);font-size:12px}
 .ph.pending .nm{color:var(--rail-ink-2)}
 .ph.running .st,.ph.waiting .st{color:var(--rail-amber)}
 .ph.error .st{color:var(--rail-err)}
@@ -169,16 +169,7 @@ body.resizing #map{pointer-events:none}
 .send{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;border-radius:8px;background:var(--rail-line);color:var(--rail-ink);cursor:pointer}
 .send:hover:not(:disabled){background:var(--rail-amber);color:var(--on-amber)}
 .cmd :disabled{opacity:.5;cursor:not-allowed}
-/* after the run: 3 stages, the 8 steps behind "How this plan was made", and "Something changed?" at the bottom */
-.phases.stages{flex:none;overflow:visible}
-.stages .nm{font-size:15px}
-.stages.in{animation:fold .6s cubic-bezier(.16,1,.3,1)}
-@keyframes fold{from{opacity:0;transform:translateY(-6px);clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
-.howbtn{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:8px 12px;border:0;border-radius:8px;background:none;color:var(--rail-ink-2);font-size:13px;font-weight:600;text-align:left;cursor:pointer;transition:background-color .15s ease-out,color .15s ease-out}
-.howbtn:hover{background:var(--rail-2);color:var(--rail-ink)}
-.howbtn .i{transition:transform .15s ease-out}
-.howbtn[aria-expanded="true"] .i{transform:rotate(180deg)}
-.howbtn+.phases{margin-top:4px}
+/* "Something changed?" waits at the bottom of the rail once there is a plan */
 .chg{display:grid;gap:8px;margin-top:auto;padding-top:12px}
 .chgbtn{justify-content:flex-start;width:100%;height:40px;border-color:var(--rail-line);color:var(--rail-ink)}
 .chgbtn:hover:not(:disabled){background:var(--rail-2);border-color:var(--rail-mute)}
@@ -304,12 +295,16 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .where h3,.needs-h h3{font-size:15px;line-height:22px;font-weight:700}
 .where ul{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
 .where li{border-bottom:1px solid var(--line)}
-/* a clinic row shows only its route on the map (R8); the dot is that route's color */
-.wrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;width:calc(100% + 16px);margin:0 -8px;padding:11px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left}
+/* a clinic row opens what that clinic gets and shows only its route on the map (v6); the dot is that route's color */
+.wrow{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px;width:calc(100% + 16px);margin:0 -8px;padding:11px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left}
+.wrow .wn{flex:1}
 button.wrow{cursor:pointer;transition:background-color .15s ease-out}
-button.wrow:hover,.wrow[aria-pressed="true"]{background:var(--paper-2)}
+button.wrow:hover{background:var(--paper-2)}
+.wrow>.i,.cvp>.i{align-self:center;margin-right:-4px;color:var(--mute);transform:rotate(-90deg);transition:transform .2s cubic-bezier(.16,1,.3,1),color .15s ease-out}
+button.wrow:hover>.i,.cvp:hover>.i{color:var(--ink);transform:rotate(-90deg) translateY(2px)}
+.ws{flex-basis:100%;padding-left:18px;color:var(--mute);font-size:13px;line-height:18px}
 .wrow:focus-visible{outline-offset:-2px}
-.wn{display:flex;align-items:baseline;gap:10px;min-width:0;overflow:hidden;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.wn{display:flex;align-items:baseline;gap:10px;min-width:0;font-weight:600}  /* a long clinic name wraps; it is never cut */
 .wn::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--map-transfer);transform:translateY(-1px)}
 .wrow.e .wn::before{background:var(--map-early)}
 .wrow.c .wn::before{background:var(--paper);box-shadow:inset 0 0 0 2px var(--map-staff)}
@@ -335,26 +330,73 @@ button.wrow:hover,.wrow[aria-pressed="true"]{background:var(--paper-2)}
 .brow.fresh .bi path{stroke-dasharray:14;stroke-dashoffset:14;animation:draw .4s .12s ease-out forwards}
 @keyframes pop{from{transform:scale(.6)}}
 @keyframes draw{to{stroke-dashoffset:0}}
-/* the told clinics, one line each: a check once the clinic confirmed the chairs, struck through when staff turned it off */
+/* the told clinics, one line each, each opens what it gets: a check once it confirmed the slots, struck through when staff turned it off */
 .cl{display:grid;gap:2px;margin:4px 0 0 30px;padding:0;list-style:none;color:var(--ink-2);font-size:13px;line-height:18px}
 .cl li{display:flex;align-items:center;gap:6px}
 .cl li::before{content:"";flex:none;width:5px;height:5px;margin:0 4px 0 3px;border-radius:50%;background:var(--line-2)}
 .cl li.ok::before{display:none}
 .cl li.ok{color:var(--green-ink)}
 .cl li.off{text-decoration:line-through;color:var(--mute)}
+.cl button{display:inline-flex;align-items:center;gap:6px;margin:0 -4px;padding:1px 4px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;text-decoration:inherit;text-align:left;cursor:pointer}
+.cl button:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
 .cl .i{width:13px;height:13px;stroke-width:2.5}
 .needs-h{margin-top:32px}
 .needs{margin:10px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
 .needs li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
 .needs li.fresh{animation:rise .5s cubic-bezier(.16,1,.3,1)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}}
-.nn{min-width:0;overflow:hidden;font-weight:700;white-space:nowrap;text-overflow:ellipsis}
+.nn{justify-self:start;max-width:100%;min-width:0;margin:0 -4px;padding:0 4px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-weight:700;text-align:left;cursor:pointer}
+.nn:hover{text-decoration:underline;text-underline-offset:3px}
 .np{grid-row:1/3;grid-column:2;color:var(--ink);font-weight:600;text-decoration:none}
 .np:hover{text-decoration:underline}
 .nw{grid-column:1;color:var(--ink-2);font-size:13px;line-height:18px}
 .doneb .acts{flex-wrap:wrap;gap:8px}
 .doneb.enter{animation:rise .55s cubic-bezier(.16,1,.3,1)}
 .print-only{display:none}
+
+/* v6: what a patient or a clinic gets, one view over the plan; Back or Esc closes it */
+.view{padding:16px 20px 28px}
+.back{display:inline-flex;align-items:center;gap:4px;height:32px;margin:0 0 14px -8px;padding:0 10px 0 6px;border:0;border-radius:8px;background:none;color:var(--ink-2);font-weight:600;cursor:pointer;transition:background-color .15s ease-out,color .15s ease-out}
+.back:hover{background:var(--paper-2);color:var(--ink)}
+.back .i{transform:rotate(90deg)}
+.vsub{margin-top:6px;color:var(--ink-2);text-wrap:pretty}
+.vnone{margin-top:16px;color:var(--ink-2)}
+.view .langs{margin-top:18px}
+/* the message as the patient sees it: one plain bubble, no phone around it */
+.bubble{width:fit-content;max-width:min(100%,46ch);margin-top:14px;padding:12px 15px;border-radius:18px 18px 18px 6px;background:var(--paper-3);color:var(--ink);font-size:15px;line-height:22px;white-space:pre-line;overflow-wrap:anywhere}
+.bubble.fresh{animation:bubble .5s cubic-bezier(.16,1,.3,1)}
+@keyframes bubble{from{opacity:0;transform:translateY(8px) scale(.97);transform-origin:0 100%;filter:blur(2px)}}
+/* under the bubble: when it went out and what the patient said ("Told 9:02 AM · Said yes") */
+.bmeta{display:flex;align-items:center;gap:5px;margin:8px 0 0 4px;color:var(--mute);font-size:13px;line-height:18px;font-variant-numeric:tabular-nums}
+.bmeta.told{color:var(--ink-2);font-weight:600}
+.bmeta.yes{color:var(--green-ink);font-weight:700}
+.bmeta.wait,.bmeta.no{color:var(--amber-ink);font-weight:700}
+.bmeta .i{width:14px;height:14px;stroke-width:2.5}
+.bmeta.fresh{animation:rise .45s cubic-bezier(.16,1,.3,1)}
+.vrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:20px}
+.vrow .small{margin:0}
+.view .err{margin-top:8px}
+/* the clinic's list: a plain card, To and From, one row per patient, the reply it asks for */
+.sheet{margin-top:18px;padding:4px 16px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.tf{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:20px}
+.tf dt{color:var(--mute)}
+.tf dd{margin:0;font-weight:600}
+.tf dd span{display:block;color:var(--ink-2);font-size:13px;font-weight:400}
+.arr{margin-top:14px;font-weight:700}
+.cv{margin:6px 0 0;padding:0;list-style:none}
+.cv li+li{border-top:1px solid var(--line)}
+/* a name is never cut: when the time does not fit beside it, the time wraps under it */
+.cvp{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:calc(100% + 16px);margin:0 -8px;padding:10px 32px 10px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
+.cvp:hover{background:var(--paper-2)}
+.cvp:focus-visible{outline-offset:-2px}
+.cvn{font-weight:700}
+.cvw{margin-left:auto;color:var(--ink);font-size:13px;white-space:nowrap}
+.cvd{flex-basis:100%;color:var(--ink-2);font-size:13px;line-height:18px}
+.cvp>.i{position:absolute;top:calc(50% - 8px);right:8px;margin:0}
+.reply{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-weight:600}
+.cvs{display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+.cvs.ok{color:var(--green-ink)}
+.cvs .i{width:16px;height:16px;stroke-width:2.5}
 
 /* the review list reuses these (review.js) */
 .langs{display:flex;flex-wrap:wrap;gap:4px}
@@ -420,7 +462,7 @@ button.wrow:hover,.wrow[aria-pressed="true"]{background:var(--paper-2)}
   .railtog[aria-expanded="true"] .i{transform:rotate(180deg)}
   .rail-body{display:none;max-height:52svh;overflow:auto}
   .rail.open .rail-body{display:flex}
-  .howbtn,.chgbtn{min-height:44px}
+  .chgbtn{min-height:44px}
   .cmd-x{width:44px;height:44px}
   .panel{top:auto;left:0;width:auto;height:72svh;border-left:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;transform:translateY(100%)}
   .legend{max-width:calc(100% - 72px)}
@@ -432,6 +474,10 @@ button.wrow:hover,.wrow[aria-pressed="true"]{background:var(--paper-2)}
   .wrow{min-height:44px;align-items:center}
   .doneb .acts .btn,.verdict .btn,.keycard .btn{height:44px}
   .np{display:inline-flex;align-items:center;min-height:44px}
+  .nn,.cl button,.back,.where .more summary{min-height:44px}
+  .view{padding:12px 16px 24px}
+  .view .langs button,.vrow .btn{height:44px}
+  .vnone a{display:inline-block;padding:12px 0;margin:-12px 0}  /* "Phone Rogelio at 555-0184": a 44 px tap, the line keeps its height */
   .needs li{padding:6px 0}
   .sugg{min-height:44px}
   .send{width:44px;height:44px}

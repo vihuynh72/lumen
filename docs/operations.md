@@ -23,11 +23,11 @@ The script zips `backend/lambda_function.py` and `backend/lumen/`, stamps the sh
 
 The web app is the static folder `frontend/prototype/`. Upload it to AWS Amplify as is. There is no build step.
 
-The folder has no `index.html`: the pages are `landing.html` and `console.html`. Make the bare Amplify URL open `landing.html` (a rewrite from `/` to `/landing.html`), or people who type the bare URL see an error. The README links to `landing.html` directly.
+`index.html` is the landing page, so the bare Amplify URL opens it. Its **Try the live demo** button opens `console.html`, the console.
 
 ## Seed data
 
-`python scripts/validate_seed.py` checks the seed files in `data/seed/`. CI runs it on every pull request to `main`. `scripts/upload_seed.sh` validates the seed again, then uploads it. Only the project lead runs the upload.
+Each county has its own seed: El Dorado in `data/seed/` and Santa Clara in `data/seed/santaclara/` (S3 `seed/` and `seed/santaclara/`). `python scripts/validate_seed.py` checks both. CI runs it on every pull request to `main`. `scripts/upload_seed.sh` validates the seed again, then uploads both. Only the project lead runs the upload.
 
 ## Before a demo
 
@@ -37,7 +37,7 @@ The imported model sleeps when nobody calls it. The first call after a quiet per
 DEMO_KEY=<demo key> python scripts/demo_check.py warmup
 ```
 
-`warmup` calls `GET /state`, runs one throwaway alert and plan, then resets. `python scripts/demo_check.py run 2` runs the whole demo flow twice (reset, alert, plan, approve all, confirm, voice, re-plan) and stops on the first failed step. Both need `LUMEN_URL` set, or AWS CLI credentials so the script can look up the function URL.
+`warmup` calls `GET /state`, runs one throwaway alert and plan, then resets. `python scripts/demo_check.py run 2` runs the whole demo flow twice (reset, alert, plan, approve all, confirm, voice, re-plan) and stops on the first failed step. Both use El Dorado, the API's default region. Both counties share the model, so one warm-up is enough before a Santa Clara demo. Both need `LUMEN_URL` set, or AWS CLI credentials so the script can look up the function URL.
 
 ## Debugging
 

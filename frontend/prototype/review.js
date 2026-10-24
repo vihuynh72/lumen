@@ -1,4 +1,5 @@
-/* Lumen "Approve and tell everyone" list (CONTRACT-v5 section 5; the patient card is CONTRACT-v3 R5): window.LumenReview.
+/* Lumen "Approve and tell everyone" list (CONTRACT-v5 section 5; the patient card is CONTRACT-v3 R5 plus CONTRACT-v6 section 4,
+   "What {first name} gets"): window.LumenReview.
    app.js builds the row view models and does every write; this file shows them and calls back.
    Switches stay local until the one press. */
 (() => {
@@ -29,14 +30,14 @@ const told = r => r.note?.status === 'sent' || r.note?.status === 'queued';
 const callIn = r => !!(r.callInstead ?? r.flag?.callInstead);
 const blocked = r => r.flag?.severity === 'block';
 const hasMsg = r => Object.keys(r.messages || {}).length > 0;
-// Grouped by destination, like the panel's "Where they go": a patient who did not answer keeps the chair, so stays in that clinic.
+// Grouped by destination, like the panel's "Where they go": a patient who did not answer keeps the slot, so stays in that clinic.
 const toPhone = r => r.status === 'declined' || (!isMove(r) && r.action !== 'notify_only');
 const groupOf = r => toPhone(r) ? 'call' : r.action === 'early_session' ? 'early' : r.action === 'transfer' ? `c:${r.clinicId ?? r.where ?? ''}` : 'keep';
 const hospitalOf = r => r.action === 'hospital' && r.status !== 'declined' && r.where ? r.where.replace(/ if needed$/, '') : '';
 
 let dlg = null, o = {}, rows = [], byId = new Map(), st = null, opener = null, detFor = null;
 const $ = s => dlg.querySelector(s);
-const fresh = () => ({ q: '', sel: null, det: false, voice: new Map(), held: new Set(), off: new Set(), msgShut: new Set(),
+const fresh = () => ({ q: '', sel: null, det: false, voice: new Map(), held: new Set(), off: new Set(),
   busy: {}, busyAll: '', err: '', rowErr: {}, lang: {}, audio: {}, done: '' });
 const setRows = list => { rows = Array.isArray(list) ? list : []; byId = new Map(rows.map(r => [r.id, r])); };
 const say = t => { $('#rvLive').textContent = t; };
@@ -99,8 +100,6 @@ function build() {
   document.body.append(dlg);
   dlg.addEventListener('click', onClick);
   dlg.addEventListener('change', onChange);
-  // toggle does not bubble: capture it so a closed message stays closed across re-renders
-  dlg.addEventListener('toggle', e => { const d = e.target; if (d.matches?.('.rv-msg')) st.msgShut[d.open ? 'delete' : 'add'](d.dataset.id); }, true);
   $('#rvQ').addEventListener('input', e => { st.q = e.target.value; render(true); });
   dlg.addEventListener('cancel', e => { if (st.det) { e.preventDefault(); back(); } });  // Esc closes the card, then the list
   dlg.addEventListener('keydown', e => { if (e.key === 'Escape') e.stopPropagation(); });  // and not the plan drawer behind it
@@ -158,7 +157,7 @@ function groupHTML(g, vis, i) {
 }
 function rowHTML(r, k) {
   const id = esc(r.id), sel = st.sel === r.id, moved = k !== 'call' && k !== 'keep';
-  const when = k === 'call' ? (r.status === 'declined' ? 'Said no' : r.status === 'no_answer' ? 'No answer' : r.when || 'No chair fits') : k === 'keep' ? 'Usual session' : r.when || '';
+  const when = k === 'call' ? (r.status === 'declined' ? 'Said no' : r.status === 'no_answer' ? 'No answer' : 'No slot fits') : k === 'keep' ? 'Usual session' : r.when || '';
   const why = blocked(r) ? `<p class="rv-why rv-f-b"><b>Fix first:</b> ${esc(r.flag.text)}</p>`
     : moved && callIn(r) ? `<p class="rv-why rv-f-w"><b>Call instead:</b> ${esc(r.flag?.text || 'The plan check says to phone this patient.')}</p>` : '';
   return `<li class="rv-r${sel ? ' rv-selr' : ''}" data-id="${id}"${sel ? ' aria-current="true"' : ''}>
@@ -177,6 +176,7 @@ function voiceHTML(r) {
   const word = (t, c) => `<span class="rv-w rv-w-${c}">${t}</span>`;
   if (held(r)) return word('On hold', 'hold');
   if (r.status === 'no_answer') return word('No answer', 'hold');
+  if (r.status === 'confirmed') return word('Said yes', 'told');
   if (told(r)) return word(r.note.status === 'queued' ? 'Told at 8 AM' : 'Told', 'told');
   if (blocked(r)) return word('Fix first', 'fix');
   if (!hasMsg(r)) return word('No message', 'none');
@@ -199,18 +199,37 @@ function shortLang(code, r) {
   try { return dn.of(code) || code; } catch { return code; }
 }
 const langLabel = (code, r) => r.msgLabels?.[code] || shortLang(code, r);
-// R5: one clear card, then the message (open: it is what the patient hears), then Approve and Hold.
+const VOICED = new Set(['en', 'es', 'zh']);  // the languages Polly speaks for Lumen; other messages play in English or stay text
+const hm = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' });  // the plan's clock
+const clock = s => { const d = s ? new Date(s) : null; return d && !isNaN(d) ? hm.format(d) : ''; };
+// research/patients.md: Chinese-speaking patients keep the family name first; everyone else has the given name first.
+const firstName = r => { const w = String(r.name || '').trim().split(/\s+/); return r.lang === 'zh' && w.length > 1 ? w.at(-1) : w[0]; };
+// The line under the bubble, [kind, words]: the sent time, then what the patient said. Only moves get a voice note.
+function receipt(r) {
+  const n = r.note, t = n?.status === 'sent' ? ['Told', clock(n.sentAt)].filter(Boolean).join(' ') : '';
+  if (r.status === 'declined') return ['no', [t, 'Said no'].filter(Boolean).join(' · ')];
+  if (!isMove(r)) return null;
+  if (r.status === 'confirmed') return ['yes', [t, 'Said yes'].filter(Boolean).join(' · ')];
+  if (r.status === 'no_answer') return ['wait', [t, 'No answer'].filter(Boolean).join(' · ')];
+  if (t) return ['told', t];
+  if (n?.status === 'queued') return ['', `Sends at ${clock(n.sendAt) || '8:00 AM'}`];
+  if (held(r)) return ['wait', 'On hold. Not sent.'];
+  if (n?.status === 'stale') return ['', 'The plan changed. Not sent again yet.'];
+  return ['', canNote(r) && voiceOn(r) ? 'Not sent yet' : blocked(r) ? 'Not sent. Fix the problem first.' : 'Not sent. Staff phone instead.'];
+}
+// R5: one clear card and its actions, then "What {first name} gets" (CONTRACT-v6 section 4): the text message as one bubble
+// in the patient's language, its sent time and reply, and the voice note.
 function detHTML(r) {
   if (!r) return '';
   const id = r.id, ls = msgLangs(r), cur = curLang(r), b = st.busy[id], dis = b || st.busyAll ? ' aria-disabled="true"' : '';
-  const a = st.audio[id], ck = icon('ck'), h = held(r);
+  const a = st.audio[id], ck = icon('ck'), h = held(r), rc = receipt(r), vl = !ls.length ? '' : VOICED.has(cur) ? cur : r.messages.en ? 'en' : '';
   const big = r.summary || [r.what, r.when].filter(Boolean).join(' · ');
   const why = r.why ? (/^why\b/i.test(r.why) ? r.why : `Why: ${r.why}`) : '';
   const hold = `<button type="button" class="btn q sm" data-act="hold" data-k="hd"${dis}>Hold</button>`;
   const first = h ? `<button type="button" class="btn sec sm" data-act="unhold" data-k="uh">Take off hold</button>`
     : r.status === 'draft' ? `<button type="button" class="btn sec sm" data-act="approve" data-k="ap"${dis}>${ck}${b === 'approve' ? 'Approving…' : 'Approve'}</button>${hold}`
     : `${r.canConfirm ? `<button type="button" class="btn sec sm" data-act="confirm" data-k="cf"${dis}>${ck}${b === 'confirm' ? 'Saving…' : 'Patient said yes'}</button>` : ''}${r.status === 'approved' && !told(r) ? hold : ''}`;
-  const voice = `<button type="button" class="btn sec sm" data-act="voice" data-k="vo"${r.canVoice ? (b ? ' aria-disabled="true"' : '') : ' disabled'}${r.voiceHint ? ' aria-describedby="rvVoH"' : ''}><svg class="i fill" aria-hidden="true"><use href="#i-play"/></svg>${b === 'voice' ? 'Making voice note…' : `Play voice note in ${esc(shortLang(cur, r))}`}</button>`;
+  const voice = vl ? `<button type="button" class="btn sec sm" data-act="voice" data-lang="${esc(vl)}" data-k="vo"${r.canVoice ? (b ? ' aria-disabled="true"' : '') : ' disabled'}${r.voiceHint ? ' aria-describedby="rvVoH"' : ''}><svg class="i fill" aria-hidden="true"><use href="#i-play"/></svg>${b === 'voice' ? 'Making voice note…' : vl === cur ? 'Play voice note' : 'Voice in English'}</button>` : '';
   const decline = r.status === 'declined' ? '' : `<button type="button" class="btn q sm" data-act="decline" data-k="dc"${dis}>${b === 'decline' ? 'Saving…' : 'Patient said no'}</button>`;
   return `<button type="button" class="btn q sm rv-back" data-act="back" data-k="back">${icon('chev')}Back to the list</button>
     <div><h3 id="rvDH" tabindex="-1">${esc(r.name)}</h3>
@@ -222,19 +241,20 @@ function detHTML(r) {
       ${r.gap ? '<p class="small">Long gap after this session</p>' : ''}
       ${r.flag?.text ? `<p class="${blocked(r) ? 'rv-f-b' : 'rv-f-w'}"><b>${blocked(r) ? 'Fix first:' : callIn(r) ? 'Call instead:' : 'Look at:'}</b> ${esc(r.flag.text)}</p>` : ''}
       ${r.changed && r.changeText ? `<p class="rv-chgn">Changed: ${esc(low(r.changeText))}</p>` : ''}
-      ${h ? '<p class="rv-holdn">On hold. This patient gets no voice note when you approve.</p>' : ''}
     </div>
-    <div class="rv-do"><div class="racts">${first}</div></div>
-    ${ls.length ? `<details class="rv-msg" data-id="${esc(id)}"${st.msgShut.has(id) ? '' : ' open'}><summary data-k="msg">${icon('chev')}Message · ${esc(ls.map(l => shortLang(l, r)).join(', '))}</summary>
+    <div class="rv-do"><div class="racts">${first}${decline}</div></div>
+    <section class="rv-gets" aria-labelledby="rvGetsH"><h4 id="rvGetsH">What ${esc(firstName(r))} gets</h4>
       ${ls.length > 1 ? `<div class="langs" role="group" aria-label="Message language">${ls.map(l => `<button type="button" data-act="lang" data-lang="${esc(l)}" data-k="lg-${esc(l)}" aria-pressed="${l === cur}">${esc(langLabel(l, r))}</button>`).join('')}</div>` : ''}
-      <p class="msgt" lang="${esc(cur)}">${esc(r.messages[cur])}</p></details>`
-      : '<p class="small">No message for this patient yet.</p>'}
-    <div class="rv-do"><div class="racts">${voice}${decline}</div>
-    ${r.voiceHint ? `<p class="small" id="rvVoH">${esc(r.voiceHint)}</p>` : ''}</div>
-    ${a ? `<div class="rv-voice"><p class="small">${a.url ? 'Voice note' : 'No voice note'} in ${esc(langLabel(a.lang, r))}</p>
-      ${a.url ? `<audio controls preload="auto" src="${esc(a.url)}"></audio>` : ''}
-      ${a.text && a.text !== r.messages?.[a.lang] ? `<p class="small">${a.url ? 'What it says' : 'Translated message'}</p><p class="msgt" lang="${esc(a.lang)}">${esc(a.text)}</p>` : ''}
-      ${a.note ? `<p class="small">${esc(a.note)}</p>` : ''}</div>` : ''}
+      ${ls.length ? `<p class="rv-bub${rc && r.note?.status !== 'sent' ? ' rv-unsent' : ''}" lang="${esc(cur)}">${esc(r.messages[cur])}</p>
+        ${rc ? `<p class="rv-rc rv-rc-${rc[0] || 'not'}">${rc[0] === 'told' || rc[0] === 'yes' ? ck : ''}${esc(rc[1])}</p>` : ''}`
+        : `<p class="small">${toPhone(r) ? `No text message. Staff phone ${esc(firstName(r))}.` : 'No message for this patient yet.'}</p>`}
+      ${voice ? `<div class="racts">${voice}</div>` : ''}
+      ${voice && r.voiceHint ? `<p class="small" id="rvVoH">${esc(r.voiceHint)}</p>` : ''}
+      ${a ? `<div class="rv-voice"><p class="small">${a.url ? 'Voice note' : 'No voice note'} in ${esc(langLabel(a.lang, r))}</p>
+        ${a.url ? `<audio controls preload="auto" src="${esc(a.url)}"></audio>` : ''}
+        ${a.text && a.text !== r.messages?.[a.lang] ? `<p class="small">${a.url ? 'What it says' : 'Translated message'}</p><p class="msgt" lang="${esc(a.lang)}">${esc(a.text)}</p>` : ''}
+        ${a.note ? `<p class="small">${esc(a.note)}</p>` : ''}</div>` : ''}
+    </section>
     ${st.rowErr[id] ? `<p class="err" role="alert">${esc(st.rowErr[id])}</p>` : ''}`;
 }
 
@@ -269,9 +289,9 @@ async function rowWrite(id, kind, fn, msg) {
   const w = await write(id, kind, fn);
   if (w.ok && w.s === st) say(msg);
 }
-async function voice(id) {
+async function voice(id, lang) {
   const r = byId.get(id); if (!r) return;
-  const lang = curLang(r), label = langLabel(lang, r), w = await write(id, 'voice', () => o.onVoice(id, lang));
+  const label = langLabel(lang, r), w = await write(id, 'voice', () => o.onVoice(id, lang));
   if (!w.ok || w.s !== st) return;
   st.audio[id] = { lang, ...(w.res || {}) };
   render();
@@ -313,7 +333,7 @@ function onClick(e) {
     case 'unhold': if (r) { st.held.delete(r.id); render(); ($('[data-k="hd"]') || $('#rvDH')).focus(); say(`${r.name} is off hold.`); } break;
     case 'decline': if (r) rowWrite(r.id, 'decline', () => o.onDecline(r.id), `${r.name} said no.`); break;
     case 'confirm': if (r) rowWrite(r.id, 'confirm', () => o.onConfirm(r.id), `${r.name} said yes.`); break;
-    case 'voice': if (r) voice(r.id); break;
+    case 'voice': if (r) voice(r.id, b.dataset.lang); break;
   }
 }
 function onChange(e) {

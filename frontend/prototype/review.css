@@ -1,4 +1,4 @@
-/* "Approve and tell everyone" list (CONTRACT-v5 section 5; card: CONTRACT-v3 R5). app.css tokens only; reuses .btn, .langs, .msgt, .racts, .small, .err, .m, .vh, .i. */
+/* "Approve and tell everyone" list (CONTRACT-v5 section 5; card: CONTRACT-v3 R5 and CONTRACT-v6 section 4). app.css tokens only; reuses .btn, .langs, .msgt, .racts, .small, .err, .m, .vh, .i. */
 .rv{--rv-max:1040px;--rv-vcol:132px;--rv-pad:max(24px,calc((100% - var(--rv-max)) / 2 + 24px));--rv-colh:40px;--rv-sheet:440px;--rv-ease:cubic-bezier(.16,1,.3,1);
   --rv-cols:minmax(200px,1.4fr) minmax(170px,1fr) minmax(120px,.7fr) var(--rv-vcol);
   position:fixed;inset:24px;width:auto;height:auto;max-width:none;max-height:none;margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);overflow:hidden}
@@ -105,14 +105,17 @@
 .rv-big{margin-bottom:2px;color:var(--ink);font-size:17px;line-height:24px;font-weight:700}
 .rv-dot{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:var(--c);vertical-align:1px}
 .rv-chgn{color:var(--amber-ink);font-weight:600}
-.rv-holdn{color:var(--amber-ink);font-weight:700}
-.rv-msg summary{display:flex;align-items:center;gap:6px;width:fit-content;padding:4px 0;color:var(--ink);font-weight:600;list-style:none;cursor:pointer}
-.rv-msg summary::-webkit-details-marker{display:none}
-.rv-msg summary:hover{text-decoration:underline;text-underline-offset:3px}
-.rv-msg summary .i{transform:rotate(-90deg);transition:transform .15s ease-out}
-.rv-msg[open] summary{margin-bottom:8px}
-.rv-msg[open] summary .i{transform:none}
-.rv-msg .langs{margin-bottom:8px}
+/* "What Maria gets": the text message as one bubble, then a receipt line; a dashed bubble has not gone out yet */
+.rv-gets{display:grid;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
+.rv-gets h4{margin:0 0 2px;color:var(--ink);font-size:15px;line-height:22px;font-weight:700}
+.rv-bub{justify-self:start;max-width:min(86%,40ch);margin:0;padding:10px 14px;border:1px solid transparent;border-radius:18px 18px 18px 6px;background:var(--paper-3);color:var(--ink);font-size:15px;line-height:22px;overflow-wrap:anywhere;white-space:pre-line}
+.rv-bub.rv-unsent{border:1px dashed var(--line-2);background:var(--paper)}
+.rv-rc{display:flex;align-items:center;gap:6px;margin:-2px 0 0 6px;color:var(--mute);font-size:13px;line-height:18px;font-variant-numeric:tabular-nums}
+.rv-rc .i{width:14px;height:14px;stroke-width:2.25}
+.rv-rc-told{color:var(--ink-2)}
+.rv-rc-yes{color:var(--green-ink);font-weight:700}
+.rv-rc-wait{color:var(--amber-ink);font-weight:700}
+.rv-rc-no{color:var(--red-ink);font-weight:700}
 .rv-do{display:grid;gap:4px}
 .rv-voice{display:grid;gap:8px}
 .rv-det audio{width:100%;height:36px}
@@ -134,7 +137,7 @@
   .rv-hd{flex-basis:calc(100% - 120px)}
   .rv-h h2{font-size:20px;line-height:26px}
   .rv-q{order:3;flex:1 1 100%}
-  .rv .btn,.rv-q input{height:44px}
+  .rv .btn,.rv-q input,.rv .langs button{height:44px}
   .rv-in{padding:0 16px 32px}
   .rv-colh{display:none}
   .rv-gh{top:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:10px;row-gap:0}

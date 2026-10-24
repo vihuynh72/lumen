@@ -1,7 +1,8 @@
 /* Lumen app screen: API client, the guided run (scenes), rail, plan panel and controls.
    Calls window.LumenMap (map.js), LumenTour (tour.js), LumenReview (review.js) and LumenTimeline (timeline.js).
    Contracts: contracts/api.md, CONTRACT-v2 (E1-E10), CONTRACT-v3 (R1-R9), CONTRACT-v4 (plan check, bulk voice notes),
-   CONTRACT-v5 section 4 (three stages: plan made, approve and tell, everyone told; the done board). */
+   CONTRACT-v5 section 4 (approve and tell, the done board), CONTRACT-v6 (every step stays on screen, slots, Santa Clara by
+   default, what a patient and a clinic get). */
 (() => {
 'use strict';
 const CFG = window.LUMEN_CONFIG || {};
@@ -20,8 +21,10 @@ const icon = id => `<svg class="i"><use href="#i-${id}"/></svg>`;
 const NOTICE = {};
 NOTICE.santaclara = "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-SC-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Evergreen and the east foothills of San Jose (Santa Clara County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n";
 NOTICE.eldorado = "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n";
-// a clinic and a patient of each region (the backend's own 400 text names the same two)
-const SUGGEST_LIVE = { eldorado: ['DaVita Folsom can only take 4 more', 'Maria Delgado declined'], santaclara: ['SHC Silver Creek can only take 4 more', 'Thanh Nguyen declined'] };
+// El Dorado's example changes (the backend's own 400 text names the same two); Santa Clara's come from its plan (suggestions())
+const SUGGEST_LIVE = { eldorado: ['DaVita Folsom can only take 4 more', 'Maria Delgado declined'] };
+const CALLBACK = '555-0100';  // the fictional clinic line every patient message names (backend text_fallback.CALLBACK)
+const VOICE_LANGS = new Set(['en', 'es', 'zh']);  // Amazon Polly voices for POST /voice; other languages play English or show the text
 const ROUTES_API = 'https://routes.geo.us-east-2.amazonaws.com/v2/routes';  // Amazon Location Routes v2, called with LUMEN_CONFIG.mapKey
 const NO_ROAD = 'Road route not available';
 
@@ -36,9 +39,9 @@ const FALLBACK = [
   { id: 'H01', name: 'Mercy Hospital of Folsom', kind: 'hospital', lng: -121.145976, lat: 38.670957, home: false, stations: null, address: '1650 Creekside Dr, Folsom, CA 95630' },
 ];
 
-const PHASES = ['Read the PG&E notice', 'Find who is affected', 'Put the most urgent first', 'Find open chairs',
-  'Write patient messages', 'Check the plan', 'Approve the plan', 'Send voice notes'];
-const STAGES = ['Plan made', 'Approve and tell', 'Everyone told'];  // the rail after the run (v5)
+// v6: all 8 stay on screen with their result lines; step 7 waits for staff, step 8 fills in as the replies land
+const PHASES = ['Read the PG&E notice', 'Find who is affected', 'Put the most urgent first', 'Find open slots',
+  'Write patient messages', 'Check the plan', 'Approve and tell everyone', 'Everyone told'];
 const ACTION = { early_session: 'come in early', transfer: 'move', hospital: 'need a phone call', notify_only: 'keep the usual time' };
 // Reasons in plain words, for "Why first: no car, lives alone" (R5)
 const REASON = {
@@ -72,7 +75,7 @@ const FIELD = { action: 'action', clinic_id: 'clinic', slot: 'session time', dri
 const SHIFT = { 1: [6, 0], 2: [10, 30], 3: [15, 0], 4: [19, 30] };
 
 const S = {
-  region: 'eldorado', data: {}, B: null, tour: null,
+  region: 'santaclara', data: {}, B: null, tour: null,
   clinics: FALLBACK, raw: {}, fac: {}, names: {}, homes: {}, langs: {}, rules: {}, people: {},
   outage: null, event: null, affected: null, plan: null, stage: 0,
   phases: [], running: false, directing: false, paused: false, notice: false,
@@ -80,9 +83,11 @@ const S = {
   rowErr: {}, busy: {}, approving: false, gen: 0, anim: true,
   lang: {}, road: {}, roadFail: false, speak: {}, opener: null, landed: null,
   check: null, checkErr: null, checkP: null,
-  // v5: told clinics and their (simulated) confirmations; telling: approve and tell is running; tellErr: its last failure;
-  // held: the patients staff kept to approve at the last approve and tell
-  told: new Set(), clinicOk: new Set(), held: new Set(), telling: false, tellErr: null, tellOpts: null, replying: false, howOpen: false, folded: false,
+  // v5: told clinics and their (simulated) confirmations; telling: what approve and tell is doing now (step 7's line), or '';
+  // tellErr and tellRetry: step 7's last failure and its Retry; held: the patients staff kept to approve at the last approve and tell
+  told: new Set(), clinicOk: new Set(), held: new Set(), telling: '', tellErr: null, tellRetry: null, tellOpts: null, replying: false,
+  // v6: the panel view open over the plan ({type: 'patient' | 'clinic', id, back, from}), the voice note playing, the message tab per patient
+  view: null, audio: null, msgLang: {},
 };
 const isTour = () => !!S.tour;  // the in-page Santa Clara tour (no key, or the API does not know Santa Clara yet)
 const hasKey = () => !!store.get('lumenDemoKey');
@@ -122,7 +127,7 @@ const join = a => a.length < 2 ? (a[0] || '') : `${a.slice(0, -1).join(', ')} an
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 function langName(code) { try { return langDN.of(code) || code; } catch { return code; } }
 const short = n => String(n || '').replace(/\s+Dialysis(\s+(Center|Clinic))?$/i, '');
-const cname = id => id ? short(S.fac[id]?.name || id) : 'no chair';
+const cname = id => id ? short(S.fac[id]?.name || id) : 'no slot';
 const pname = id => S.names[id] || id;
 const win = () => S.event ? `${dt(S.event.start)} to ${dt(S.event.end)}` : '';
 const places = () => String(S.event?.area_name || '').replace(/\s*\(.*\)\s*$/, '').split(/,\s*|\s+and\s+/).filter(Boolean);
@@ -135,13 +140,13 @@ function countdown() {
 }
 const rows = () => S.plan ? [...S.plan.patients].sort((a, b) => a.rank - b.rank) : [];
 function counts(p) { const c = { early_session: 0, transfer: 0, hospital: 0, notify_only: 0 }; for (const r of p.patients) c[r.action]++; return c; }
-// "28 move · 8 come in early · 4 need a phone call" (zero parts left out)
+// "28 move · 8 come in early · 4 need a phone call" (zero parts left out), in the panel's buckets: a patient who said no needs a call
 function moveLine(p) {
-  const c = counts(p);
-  return [c.transfer && `${c.transfer} move`, c.early_session && `${c.early_session} come in early`,
-    c.hospital && `${c.hospital} need${c.hospital === 1 ? 's' : ''} a phone call`, c.notify_only && `${c.notify_only} get a notice`].filter(Boolean).join(' · ');
+  const n = f => p.patients.filter(f).length, mv = n(r => hasChair(r) && r.action === 'transfer'), early = n(r => hasChair(r) && r.action === 'early_session');
+  const call = n(needsPhone), keep = n(r => r.action === 'notify_only');
+  return [mv && `${mv} move`, early && `${early} come in early`, call && `${call} need${call === 1 ? 's' : ''} a phone call`, keep && `${keep} get a notice`].filter(Boolean).join(' · ');
 }
-// v5 buckets that add up to every patient: a chair (a move or an early session), a phone call (no chair, or said no), the usual time
+// v5 buckets that add up to every patient: a slot (a move or an early session), a phone call (no slot, or said no), the usual time
 const isMove = r => r.action === 'early_session' || r.action === 'transfer';
 const hasChair = r => isMove(r) && !!r.slot && r.status !== 'declined';
 const needsPhone = r => !hasChair(r) && r.action !== 'notify_only';
@@ -360,7 +365,7 @@ function mapStage(stage) {
   if (stage < 4) { routeTok++; homeTok++; M('traceRoutes', [], { stagger: 0, duration: 0 }); }  // no plan, no routes
 }
 
-/* ---------- chairs (R3): open chairs in the shutoff window and the chairs this plan uses ---------- */
+/* ---------- slots (R3): open slots in the shutoff window and the slots this plan uses ---------- */
 const NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 // The newest "(clinic) can only take N more" re-plan caps that clinic at N (a later re-plan starts again from the seed counts).
 function replanCap() {
@@ -380,7 +385,7 @@ function openLive() {
   return out;
 }
 const openNow = () => isTour() ? Object.fromEntries(Object.entries(S.B.tour?.capacity || {}).map(([id, c]) => [id, c.open])) : openLive();
-// For LumenMap.setCapacity: receiving clinics {open, used, full, n: the plan's total} (the map writes "16 of 18 chairs" or "Full"),
+// For LumenMap.setCapacity: receiving clinics {open, used, full, n: the plan's total} (the map writes "16 of 18 slots" or "Full"),
 // the hospital {used: staff calls}, a closed clinic {early: "8 come in early before 6 PM"}; the map itself says "No power".
 // While the run traces routes, S.landed holds what has arrived so far, so the map and the panel count up together.
 function capacity() {
@@ -416,11 +421,13 @@ function visitsFrom(src, pr) {
     const rd = list.map(f => roadNow(a, pt(f))), road = rd.every(Boolean);
     return list.map((f, i) => [f, road ? rd[i].minutes : crow(a, pt(f))]).sort((x, y) => x[1] - y[1]).map(x => x[0]);
   };
-  const c = cands();
-  return [...near(c.filter(f => f.kind !== 'hospital')), ...near(c.filter(f => f.kind === 'hospital'))].map(f => {
+  const c = cands(), visit = f => {
     const used = pr.filter(p => p.fromId === src && p.toId === f.id).reduce((n, p) => n + p.count, 0);
     return { id: f.id, open: f.kind === 'hospital' ? null : open[f.id], used, accepted: used > 0 };
-  });
+  };
+  // nearest first, up to the farthest clinic this closed clinic's patients go to (the ones past it never came into play); the hospital last
+  const dial = near(c.filter(f => f.kind !== 'hospital')).map(visit), last = dial.findLastIndex(v => v.accepted);
+  return [...dial.slice(0, last + 1), ...near(c.filter(f => f.kind === 'hospital')).map(visit)];
 }
 
 /* ---------- rail ---------- */
@@ -448,30 +455,24 @@ const stepHTML = (p, i, retryAt = i) => {
       ${p.err ? `<p class="err">${esc(p.err)}</p>${retryAt != null && (p.retry || S.phases[retryAt]?.retry) ? `<button class="btn retry" type="button" data-retry="${retryAt}" data-k="retry-${retryAt}">Retry</button>` : ''}` : ''}
     </div></li>`;
 };
-// After the run the 8 steps fold into 3 stages; "How this plan was made" opens the steps again.
-const isFolded = () => !S.directing && S.stage >= 4 && !!S.plan;
+// v6: the 8 steps stay on screen after the run too; "Something changed?" waits under them once there is a plan.
+const planReady = () => !S.directing && S.stage >= 4 && !!S.plan;
 function renderRail() {
-  const ol = $('#phases'), fold = isFolded();
-  if (fold !== S.folded) {  // the run just ended (or a plan loaded): the stages come in once, the steps close
-    S.folded = fold; S.howOpen = false;
-    $('#stages').classList.toggle('in', fold && !reduced.matches);
-  }
-  $('#stages').hidden = $('#howBtn').hidden = !fold;
-  ol.hidden = fold && !S.howOpen;
-  $('#howBtn').setAttribute('aria-expanded', String(fold && S.howOpen));
-  if (fold) keepFocus(() => { $('#stages').innerHTML = stages().map((p, i) => stepHTML(p, i, p.retryAt)).join(''); }, '#railH');
+  const ol = $('#phases'), ready = planReady();
+  if (ready) syncTell();
   keepFocus(() => keepScroll(ol, () => { ol.innerHTML = S.phases.map((p, i) => stepHTML(p, i)).join(''); }), '#railH');
   $('#railSub').textContent = railSub();
   $('#pause').hidden = !S.directing;
   $('#pause').textContent = S.paused ? 'Resume' : 'Pause';
   // follow the newest event: a running or failed step, else the newest Re-plan step, else the step waiting for you
-  const act = ol.querySelector('.ph.running, .ph.error') || (S.phases.length > PHASES.length ? ol.lastElementChild : ol.querySelector('[aria-current]'));
-  if (act && !ol.hidden) railScroll(act);
+  const cur = S.phases.findIndex((p, i) => p.status === 'running' || (p.status === 'error' && !changeErr(p, i)));
+  const act = cur >= 0 ? ol.children[cur] : S.phases.length > PHASES.length ? ol.lastElementChild : ol.querySelector('[aria-current]');
+  if (act) railScroll(act);
   // "Something changed?": only once there is a plan, and not while a change or the replies are saving
-  const ok = fold && !S.running && !S.approving && !S.replying, sg = suggestions();
-  $('#chg').hidden = !fold;
+  const ok = ready && !S.running && !S.approving && !S.replying, sg = suggestions();
+  $('#chg').hidden = !ready;
   for (const el of [$('#chgBtn'), $('#instr'), $('#send')]) setDisabled(el, !ok);
-  if (!fold) openChange(false);
+  if (!ready) openChange(false);
   document.querySelectorAll('.sugg').forEach((b, k) => { b.textContent = sg[k] || ''; b.hidden = !sg[k]; setDisabled(b, !ok); });
 }
 function openChange(on) {
@@ -481,36 +482,41 @@ function openChange(on) {
   if (!on) $('#chgErr').hidden = true;
   if (on) $('#instr').focus(); else if (back) $('#chgBtn').focus();
 }
-// The 3 stages, read from the plan (so a reload shows them too) and from what is running now.
-function stages() {
-  const p = S.plan, all = p.patients, drafts = all.filter(r => r.status === 'draft').length, t = toldNow();
-  const last = S.phases.length > PHASES.length ? S.phases.length - 1 : -1, ch = last >= 0 ? S.phases[last] : null;  // the newest re-plan
-  // a change that failed leaves the plan as it was: the stage stays done, the error shows in the change box
-  const made = ch?.status === 'running' ? { name: STAGES[0], status: 'running', res: ch.res }
-    : { name: STAGES[0], status: 'done', res: ch?.status === 'done' ? `${ch.name}\n${chairLine(p)}` : chairLine(p) };
-  const tell = S.tellErr ? { status: 'error', err: S.tellErr.message, retryAt: 6 }
-    : S.telling ? { status: 'running', res: 'Approving and telling everyone' }
+// Steps 7 and 8, read from the plan (so a reload shows them too) and from what is running now.
+// Step 8 fills in as the replies land: "33 of 36 said yes · 3 to call".
+function syncTell() {
+  const all = S.plan.patients, drafts = all.filter(r => r.status === 'draft').length, t = toldNow();
+  const tell = S.tellErr ? { status: 'error', err: S.tellErr.message, retry: S.tellRetry }
+    : S.telling ? { status: 'running', res: S.telling }
     : t.done ? { status: 'done', res: toldLine(t) }
-    : { status: 'waiting', res: drafts && drafts < all.length ? `${plural(drafts, 'patient')} to approve` : 'Nothing is sent until you approve' };
-  const reply = !t.done ? { status: 'pending' } : S.replying ? { status: 'running', res: 'Replies are coming in' }
-    : needsYou().length ? { status: 'waiting', res: `${plural(needsYou().length, 'person', 'people')} to call` }
-    : t.waiting ? { status: 'running', res: 'Waiting for replies' } : { status: 'done', res: 'Everyone is set' };
-  return [made, { name: STAGES[1], ...tell }, { name: STAGES[2], ...reply }];
-}
-// "36 have a chair · 4 need a phone call"
-function chairLine(p) {
-  const c = p.patients.filter(hasChair).length, ph = p.patients.filter(needsPhone).length;
-  return [`${c} ${c === 1 ? 'has' : 'have'} a chair`, ph && `${ph} need${ph === 1 ? 's' : ''} a phone call`].filter(Boolean).join(' · ');
+    : { status: 'waiting', res: !drafts ? 'Approved. Nobody is told yet.' : drafts < all.filter(r => r.status !== 'declined').length ? `${plural(drafts, 'patient')} still to approve` : 'Nothing is sent until you approve' };
+  const told = all.filter(noted).length, yes = all.filter(r => noted(r) && r.status === 'confirmed').length, need = needsYou().length;
+  const busy = S.replying || t.waiting > 0 || [...S.told].some(c => !S.clinicOk.has(c));
+  const reply = !t.done || S.telling ? { status: 'pending' }
+    : busy ? { status: 'running', res: yes ? `${yes} of ${told} said yes` : 'Waiting for replies' }
+    : { status: 'done', res: [told && `${yes} of ${told} said yes`, need ? `${need} to call` : !told && 'Everyone is set'].filter(Boolean).join(' · ') };
+  S.phases[6] = { name: PHASES[6], ...tell };
+  S.phases[7] = { name: PHASES[7], ...reply };
 }
 // Two example changes: a clinic limit and a patient who declined (the tour: its busiest clinic and its first moved patient)
+// (Santa Clara live: its busiest receiving clinic, which stays open, and its first moved patient, so both always re-plan.)
 function suggestions() {
-  if (!isTour()) return (SUGGEST_LIVE[S.region] || []).map(limitChip);
-  // a used chip moves on to the next patient; tour names repeat ("Elena W."), and the tour reads only a name one patient has
+  if (SUGGEST_LIVE[S.region] && !isTour()) return SUGGEST_LIVE[S.region].map(limitChip);
+  // a used chip moves on to the next patient; tour names repeat ("Elena W."), and the re-plan reads only a name one patient has
   const one = id => Object.values(S.names).filter(n => n === pname(id)).length === 1;
   const p = rows().find(r => r.action === 'transfer' && r.status !== 'declined' && one(r.patient_id));
-  return [(S.tour?.suggestion || '').replace(/ four more$/, ' 4 more'), p ? `${pname(p.patient_id)} declined` : ''];
+  return [isTour() ? (S.tour?.suggestion || '').replace(/ four more$/, ' 4 more') : busiest(), p ? `${pname(p.patient_id)} declined` : ''];
 }
-// A re-plan keeps the chairs of patients who said yes, so "(clinic) can only take N more" fails when more of them are there:
+// "SHC East San Jose can only take 4 more": the receiving clinic with the most patients, by a name only that clinic has
+function busiest() {
+  const n = {};
+  for (const r of S.plan?.patients || []) if (r.action === 'transfer' && hasChair(r)) n[r.clinic_id] = (n[r.clinic_id] || 0) + 1;
+  const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0], f = S.fac[id];
+  if (!f) return '';
+  const nm = short(f.name), dial = S.clinics.filter(c => c.kind === 'dialysis' && c.name.toLowerCase().includes(nm.toLowerCase()));
+  return limitChip(`${dial.length === 1 ? nm : f.name} can only take 4 more`);
+}
+// A re-plan keeps the slots of patients who said yes, so "(clinic) can only take N more" fails when more of them are there:
 // the chip offers that many instead.
 function limitChip(s) {
   const m = /^(.+) can only take (\d+) more$/.exec(s), f = m && S.clinics.find(c => c.kind === 'dialysis' && c.name.toLowerCase().includes(m[1].toLowerCase()));
@@ -528,23 +534,19 @@ function railScroll(el) {
   ol.style.paddingBottom = room > 0 ? `${Math.ceil(room)}px` : '';
   if (Math.abs(top - s) >= 1) ol.scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
 }
+// A change that failed left the plan as it was: its row and the change box say so, and the sub line follows the work.
+const changeErr = (p, i) => i >= PHASES.length && p.status === 'error';
 function railSub() {
-  if (isFolded()) {
-    const st = stages(), k = st.findIndex(p => p.status !== 'done' && p.status !== 'pending');
-    if (k < 0) return 'Done';
-    const p = st[k];
-    return p.status === 'waiting' ? `Waiting for you · ${p.name}` : p.status === 'running' ? p.res : `${p.name} · failed`;
-  }
   const n = PHASES.length, w = S.phases.find(p => p.status === 'waiting');
   // a late plan check (step 6) runs on in the background: the step that waits for you comes first
-  let k = S.phases.findIndex((p, i) => p.status === 'error' || (p.status === 'running' && !(i === 5 && w)));
+  let k = S.phases.findIndex((p, i) => (p.status === 'error' && !changeErr(p, i)) || (p.status === 'running' && !(i === 5 && w)));
   if (k < 0 && S.directing) k = S.phases.map(p => p.status).lastIndexOf('done');  // a hold between two steps of the run: the step just shown
   if (k >= 0) {
     const p = S.phases[k];
     return `${S.paused ? 'Paused · ' : ''}${k < n ? `Step ${k + 1} of ${n} · ` : ''}${p.name}${p.status === 'error' ? ' · failed' : ''}`;
   }
   if (w) return `Waiting for you · ${w.name}`;
-  if (S.phases.every(p => p.status === 'done')) return 'Done';
+  if (S.phases.every((p, i) => p.status === 'done' || changeErr(p, i))) { const need = S.plan ? needsYou().length : 0; return need ? `Done · ${plural(need, 'person', 'people')} to call` : 'Done'; }
   return S.event ? 'Notice read' : 'Not started';
 }
 // Disabling the focused control drops focus to <body>; park it on the rail heading instead.
@@ -577,25 +579,13 @@ function planPhases(p) {
     { res: resText() },
   ];
 }
-function approveWaiting(n) {
-  setPhase(6, { status: 'waiting', res: n < S.plan.patients.length ? `${plural(n, 'patient')} still to approve` : 'Nothing is sent until you approve' });
-}
-// Step 8: "Voice notes sent to 31 patients · 4 wait until 8 AM · 9 skipped" (zero parts left out)
-function sentLine(sent, queued, skipped) {
-  return [sent && `Voice notes sent to ${plural(sent, 'patient')}`, queued && `${sent ? queued : plural(queued, 'voice note')} wait${queued === 1 ? 's' : ''} until 8 AM`,
-    skipped && `${skipped} skipped`].filter(Boolean).join(' · ');
-}
 function restorePhases() {
   resetPhases();
   if (S.event) setPhase(0, { status: 'done', res: noticeLine() });
   if (!S.plan) return;
   planPhases(S.plan).forEach((o, k) => setPhase(k + 1, { status: 'done', ...o }));
   setPhase(5, S.check ? { status: 'done', res: checkLine() } : { status: 'running', res: 'Checking the plan…' });  // applyState starts the check
-  const drafts = S.plan.patients.filter(r => r.status === 'draft').length;
-  if (!drafts) setPhase(6, { status: 'done', res: 'Every patient is approved' });
-  else approveWaiting(drafts);
-  const notes = s => S.plan.patients.filter(r => r.note?.status === s).length;
-  if (notes('sent') || notes('queued')) setPhase(7, { status: 'done', res: sentLine(notes('sent'), notes('queued'), 0) });
+  // steps 7 and 8 come from the plan (syncTell)
   const re = (S.plan.audit || []).filter(a => /^re-plan/i.test(a.change));
   re.forEach((a, k) => S.phases.push({ name: `Change: ${a.change.replace(/^re-plan:\s*/i, '')}`, status: 'done', res: k === re.length - 1 ? plainCall(S.plan.summary) : '' }));
 }
@@ -622,8 +612,8 @@ function landCheck() {
   else return;
   renderRail(); renderPanel(); syncReview();
 }
-// backend sentences say "staff call"; the screen says "phone call" (v5 plain words)
-const plainCall = t => String(t || '').replace(/Staff call them\./g, 'They need a phone call.').replace(/staff call/gi, 'phone call');
+// backend sentences say "staff call" and "chairs"; the screen says "phone call" (v5) and "slots" (v6). \b keeps "wheelchair".
+const plainCall = t => String(t || '').replace(/Staff call them\./g, 'They need a phone call.').replace(/staff call/gi, 'phone call').replace(/\bchair(s?)\b/g, 'slot$1');
 // check texts use patient IDs and 24-hour times ("05:27"); the screen uses names and "5:27 AM"
 const named = t => plainCall(t).replace(/\bP\d{3,}\b/g, id => pname(id)).replace(/\b(\d{4}-\d{2}-\d{2}) shift ([1-4])\b/g, (_, date, shift) => slotText({ date, shift: +shift })).replace(/\b([01]\d|2[0-3]):([0-5]\d)\b(?! ?[AP]M)/g, (_, h, m) => `${+h % 12 || 12}:${m} ${+h < 12 ? 'AM' : 'PM'}`);
 // Blocks one line each; warnings one line per code (a "look at" is a code, not an issue).
@@ -756,7 +746,7 @@ async function runDemo(from) {
 // Scene 1, "Notice received" (Mon 9:00 AM): POST /alert, then the notice card slides in over the map.
 async function sceneNotice() {
   S.event = S.plan = S.affected = S.diff = null; S.speak = {}; S.rowErr = {};
-  S.told = new Set(); S.clinicOk = new Set(); S.held = new Set(); S.tellErr = null; stopReplies(); seen.clear();
+  S.told = new Set(); S.clinicOk = new Set(); S.held = new Set(); S.tellErr = S.tellRetry = S.tellOpts = null; stopReplies(); seen.clear(); closeView(true);
   dropCheck(); resetPhases(); mapStage(0); clearSel(); R('close'); M('setScene', null); $('#panel').scrollTo({ top: 0, behavior: 'instant' });
   setPhase(0, { status: 'running', res: 'Reading the simulated PG&E notice' });
   renderAll();
@@ -803,18 +793,20 @@ async function scenesPlan() {
   await Promise.all([Promise.resolve(fly), beat(2650)]);
   done(2, res[1]);
   // 4 "Zoom out and search" (R9): the map visits the clinics nearest first, one closed clinic after another; then the
-  // routes the plan uses trace along the roads while each clinic's chairs count up
-  setPhase(3, { status: 'running', res: 'Each patient gets the nearest clinic with a free chair at their time.' });
+  // routes the plan uses trace along the roads while each clinic's slots count up
+  setPhase(3, { status: 'running', res: 'Each patient gets the nearest clinic with a free slot at their time.' });
   caption('Searching nearby clinics, nearest first');
   S.landed = {};  // every count starts at 0
   mapStage(4); renderAll();
   if (window.LumenMap?.searchGraph) {
-    const n = closed.length * cands().length, perNode = isTour() ? Math.min(350, Math.floor(10000 / Math.max(1, n))) : 700;  // the tour visits ~88 nodes: about 10 s
-    for (const id of closed) await Promise.resolve(M('searchGraph', { sourceId: id, visits: visitsFrom(id, pr), perNode }));
+    // about 10 s however many clinics: El Dorado visits ~6 nodes at 700 ms, Santa Clara's three closed clinics a few dozen faster
+    const vs = closed.map(id => [id, visitsFrom(id, pr)]), n = vs.reduce((k, [, v]) => k + v.length, 0);
+    const perNode = Math.min(isTour() ? 350 : 700, Math.floor(10000 / Math.max(1, n)));
+    for (const [id, visits] of vs) await Promise.resolve(M('searchGraph', { sourceId: id, visits, perNode }));
   } else { M('focus', 'flows', { duration: 1050 }); await beat(2650); }
   if (!ready) { setPhase(3, { status: 'running', res: 'Finding road routes…' }); caption('Finding road routes…'); renderRail(); }
   const list = await listP;
-  caption('Routes to clinics with open chairs');
+  caption('Routes to clinics with open slots');
   homeRoutes();
   const land = it => { S.landed[it.toId] = (S.landed[it.toId] || 0) + it.count; M('setCapacity', capacity()); renderWhere(); };
   // about 10 s of tracing at most: the live plan has a handful of routes 600 ms apart, the tour about 70
@@ -832,27 +824,26 @@ async function scenesPlan() {
   setPhase(5, { status: 'running', res: 'Checking the plan…' }); caption('Checking the plan'); renderRail();
   await Promise.all([beat(1500), Promise.race([S.checkP, new Promise(r => setTimeout(r, 4000))])]);
   landCheck();
-  // 7 "Approve": the run waits for staff (runDemo); nothing is sent until staff approve
-  approveWaiting(plan.patients.filter(r => r.status === 'draft').length);
+  // 7 "Approve and tell everyone": the run waits for staff (runDemo); nothing is sent until staff approve
+  syncTell();
   caption('Waiting for your approval');
-  announce('Approve the plan is waiting for you. Nothing is sent until you approve.');
+  announce('Approve and tell everyone is waiting for you. Nothing is sent until you approve.');
   renderRail();
 }
 // ids: 'all' or a list of patient ids (the review card's Approve). Rejects on failure.
 async function approve(ids) {
   if (S.approving || S.running || !S.plan) throw new ApiError('Another change is still saving. Try again in a moment.', 0);
   const all = ids === 'all';
-  S.approving = true;
-  setPhase(6, { status: 'running', res: all ? 'Approving every patient' : `Approving ${plural(ids.length, 'patient')}` });
+  S.approving = true; S.tellErr = null;
+  S.telling = all ? 'Approving every patient' : `Approving ${plural(ids.length, 'patient')}`;  // step 7's line while it saves
   renderAll();
   let err = null;
   try {
     S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: all ? ['all'] : ids, edits: [] });
-    const left = S.plan.patients.filter(r => r.status === 'draft').length;
-    if (left) approveWaiting(left); else done(6, { res: 'Every patient is approved' });
     checkSoon();
-  } catch (e) { err = e; fail(6, e, () => approve(ids).catch(() => {})); }
-  S.approving = false;
+  } catch (e) { err = e; S.tellErr = e; S.tellRetry = () => approve(ids).catch(() => {}); }
+  S.approving = false; S.telling = '';
+  if (err) fail(6, err);
   renderAll(); syncReview();
   if (err) throw err;
 }
@@ -903,34 +894,32 @@ async function approveAndTell(o = {}) {
   const voiceOff = new Set(o.voiceOff || []), clinicsOff = new Set(o.clinicsOff || []), hold = new Set(o.hold || []);
   const ev = S.event.event_id, ok = r => r.status === 'approved' || r.status === 'confirmed';
   const shown = new Set(checkIndex().call);  // the list showed these as "call instead": one still switched on is staff's choice
-  S.approving = S.telling = true; S.tellErr = null; S.tellOpts = o; S.held = hold; stopReplies();
-  setPhase(6, { status: 'running', res: 'Approving every patient' });
+  const step = t => { S.telling = t; renderRail(); };  // step 7's line while it runs
+  S.approving = true; S.tellErr = null; S.tellOpts = o; S.held = hold; stopReplies();
+  S.telling = 'Approving every patient';
   renderAll();
   let n = { sent: [], queued: [], skipped: [] }, pk = { sent: [] };
   try {
     const drafts = S.plan.patients.filter(r => r.status === 'draft' && !hold.has(r.patient_id)).map(r => r.patient_id);
     if (drafts.length) S.plan = await S.B.approve({ event_id: ev, patient_ids: drafts, edits: [] });
-    const left = S.plan.patients.filter(r => r.status === 'draft').length;
-    if (left) approveWaiting(left); else done(6, { res: 'Every patient is approved' });
-    setPhase(7, { status: 'running', res: 'Sending voice notes' }); renderRail();
+    step('Sending voice notes');
     if (S.checkP) await Promise.race([S.checkP, new Promise(r => setTimeout(r, 25e3))]);  // a check still running: wait, so call-instead patients are known
     const notes = S.plan.patients.filter(r => isMove(r) && ok(r) && !voiceOff.has(r.patient_id)).map(r => r.patient_id);
     if (notes.length) { n = await S.B.notify({ event_id: ev, patient_ids: notes, call_instead: [...checkIndex().call].filter(id => !shown.has(id)) }); S.plan = n.plan; }
-    done(7, { res: sentLine(n.sent.length, n.queued.length, n.skipped.length) });
+    step('Telling the clinics');
     const sheets = S.plan.patients.filter(r => (r.action === 'transfer' || r.action === 'hospital') && ok(r) && r.clinic_id
       && !clinicsOff.has(r.clinic_id) && !hold.has(r.patient_id) && r.packet?.status !== 'sent').map(r => r.patient_id);
     if (sheets.length) { pk = await S.B.packet({ event_id: ev, patient_ids: sheets }); S.plan = pk.plan; }
   } catch (e) {
-    S.tellErr = e; S.approving = S.telling = false;
-    fail(S.phases[7].status === 'running' ? 7 : 6, e, null);
-    S.phases[6].retry = () => approveAndTell(S.tellOpts).catch(() => {});  // the Approve and tell stage retries from here
+    S.tellErr = e; S.tellRetry = () => approveAndTell(S.tellOpts).catch(() => {}); S.approving = false; S.telling = '';  // step 7 retries from here
+    fail(6, e);
     renderAll(); syncReview();
     startReplies();  // the replies an earlier press started go on
     throw e;
   }
   const by = Object.fromEntries(S.plan.patients.map(r => [r.patient_id, r])), clinics = [...new Set(pk.sent.map(id => by[id]?.clinic_id).filter(Boolean))];
   clinics.forEach(c => S.told.add(c));
-  S.approving = S.telling = false; S.diff = null;  // the changes are approved and told
+  S.approving = false; S.telling = ''; S.diff = null;  // the changes are approved and told
   checkSoon();
   renderAll(); syncReview(); mapFlows();
   const told = [...n.sent, ...n.queued];
@@ -945,13 +934,18 @@ function toldNow() {
   const all = S.plan?.patients || [], notes = all.filter(noted).length, waiting = all.filter(r => noted(r) && r.status === 'approved').length;
   return { notes, waiting, clinics: S.told.size, done: !!all.length && all.every(r => r.status !== 'draft' || S.held.has(r.patient_id)) && (notes > 0 || S.told.size > 0) };
 }
-const toldLine = t => [t.notes && `${plural(t.notes, 'patient')}`, t.clinics && `${plural(t.clinics, 'clinic')}`].filter(Boolean).join(' and ') + ' told';
-// "Needs you now": no answer, no chair, said no, or a move with no voice note (the check says phone, or staff turned the note off)
+// "36 patients and 4 clinics told · 3 notes wait until 8 AM"
+function toldLine(t) {
+  const q = (S.plan?.patients || []).filter(r => r.note?.status === 'queued').length;
+  return [t.notes && `${plural(t.notes, 'patient')}`, t.clinics && `${plural(t.clinics, 'clinic')}`].filter(Boolean).join(' and ') + ' told'
+    + (q ? ` · ${plural(q, 'note')} wait${q === 1 ? 's' : ''} until 8 AM` : '');
+}
+// "Needs you now": no answer, no slot, said no, or a move with no voice note (the check says phone, or staff turned the note off)
 function needsYou() {
   const ck = checkIndex();
   return (S.plan?.patients || []).filter(r => r.status === 'draft' || r.status === 'no_answer' || r.status === 'declined' || needsPhone(r)
     || (hasChair(r) && r.status === 'approved' && !noted(r))).map(r => {
-    const why = r.status === 'draft' ? 'On hold, not approved' : r.status === 'no_answer' ? 'No answer' : r.status === 'declined' ? 'Said no' : needsPhone(r) ? 'No chair yet'
+    const why = r.status === 'draft' ? 'On hold, not approved' : r.status === 'no_answer' ? 'No answer' : r.status === 'declined' ? 'Said no' : needsPhone(r) ? 'No slot yet'
       : ck.call.has(r.patient_id) ? 'Phone, not a voice note' : 'No voice note sent';
     const at = r.slot ? r.pickup_time || null : r.affected_session;
     return { id: r.patient_id, name: pname(r.patient_id), why, at, when: !at ? '' : r.slot ? `${r.ride === 'paratransit' || r.ride === 'medical_van' ? 'Pickup' : 'Leaves'} ${dayTime(at)}` : `Usual treatment ${dayTime(at)}`,
@@ -959,7 +953,7 @@ function needsYou() {
   }).sort((a, b) => (Date.parse(a.at) || Infinity) - (Date.parse(b.at) || Infinity));
 }
 
-/* ---------- simulated replies (v5, demo only): patients answer their voice note; told clinics confirm the chairs ---------- */
+/* ---------- simulated replies (v5, demo only): patients answer their voice note; told clinics confirm the slots ---------- */
 // Deterministic: over about 20 s every patient with a sent note says yes in 3 batches, except those who missed a treatment
 // recently or live alone with a pickup before 6 AM, who do not answer. Each clinic confirms 4 to 8 s after its list.
 // Reduced motion: everything lands at once.
@@ -973,7 +967,7 @@ function startReplies() {
   // every told clinic that has not confirmed yet, so a second approve and tell never strands the first one's clinics
   [...S.told].filter(c => !S.clinicOk.has(c)).forEach((c, i) => setTimeout(() => {
     if (tok !== replyTok) return;
-    S.clinicOk.add(c); announce(`${cname(c)} confirmed the chairs.`); renderPanel(); renderRail();
+    S.clinicOk.add(c); announce(`${cname(c)} confirmed the slots.`); renderPanel(); renderRail();
   }, fast ? 0 : 4000 + (i * 1700) % 4000));
   const due = rows().filter(r => r.note?.status === 'sent' && r.status === 'approved');
   if (!due.length) return renderRail();
@@ -983,20 +977,32 @@ function startReplies() {
     : [[5000, edits(yes.slice(0, third), 'confirmed')], [6000, edits(yes.slice(third, 2 * third), 'confirmed')],
       [6000, edits(yes.slice(2 * third), 'confirmed')], [3500, edits(no, 'no_answer')]].filter(([, e]) => e.length);
   S.replying = true; renderRail(); renderPanel();
+  let reloaded = false;
   (async () => {
     for (const [ms, list] of steps) {
       await new Promise(r => setTimeout(r, ms));
       while (tok === replyTok && (S.running || S.approving || Object.values(S.busy).some(Boolean))) await new Promise(r => setTimeout(r, 500));  // let a staff change save first
       if (tok !== replyTok) return;
       // a reply never overwrites what staff saved meanwhile (a "said no", a call result): only rows still waiting answer
-      const by = Object.fromEntries(S.plan.patients.map(r => [r.patient_id, r]));
-      const due = list.filter(e => by[e.patient_id]?.status === 'approved' && by[e.patient_id].note?.status === 'sent');
+      const dueOf = () => { const by = Object.fromEntries(S.plan.patients.map(r => [r.patient_id, r])); return list.filter(e => by[e.patient_id]?.status === 'approved' && by[e.patient_id].note?.status === 'sent'); };
+      let due = dueOf(), plan = null;
       if (!due.length) continue;
-      let plan;
       try { plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: [], edits: due }); }
-      catch { if (tok === replyTok) { S.replying = false; renderRail(); renderPanel(); } return; }  // the board shows what landed
+      catch (e) {
+        // another write won the plan version (409): load the plan once, then answer the rows that still wait
+        if (e.status === 409 && !reloaded && tok === replyTok) {
+          reloaded = true;
+          try {
+            const st = await S.B.state(); if (tok !== replyTok) return;
+            if (st.plan) S.plan = st.plan;
+            due = dueOf(); plan = due.length ? await S.B.approve({ event_id: S.event.event_id, patient_ids: [], edits: due }) : S.plan;
+          } catch { plan = null; }
+        }
+        if (!plan) { if (tok === replyTok) { S.replying = false; renderRail(); renderPanel(); } return; }  // the board shows what landed
+      }
       if (tok !== replyTok) return;
       S.plan = plan;
+      if (!due.length) { renderPanel(); renderRail(); syncReview(); continue; }
       const y = due.filter(e => e.status === 'confirmed').length;
       announce(y ? `${plural(y, 'patient')} said yes.` : `${plural(due.length, 'patient')} did not answer.`);
       renderPanel(); renderRail(); syncReview();
@@ -1018,9 +1024,8 @@ async function replan(instruction) {
     S.diff = r.diff.reduce((m, d) => ((m[d.patient_id] ||= []).push(d), m), {});
     const n = Object.keys(S.diff).length, read = r.understood?.length ? `Lumen understood: ${plainCall(r.understood.join(' '))}\n` : '';
     done(at(), { res: read + plainCall(r.summary || r.plan.summary || `${plural(n, 'patient')} changed`) });
-    S.phases[3].res = moveLine(r.plan);  // Find open chairs shows the plan as it is now
-    runCheck();
-    if (r.plan.patients.some(x => x.status === 'draft')) setPhase(6, { status: 'waiting', res: `${plural(n, 'patient')} changed · approve them` });
+    S.phases[3].res = moveLine(r.plan);  // Find open slots shows the plan as it is now
+    runCheck();  // steps 7 and 8 follow the plan (syncTell): changed patients wait for approval again
     $('#instr').value = ''; openChange(false);
     S.running = false; clearSel();
     renderPanel();
@@ -1029,7 +1034,7 @@ async function replan(instruction) {
     announce(`${plural(n, 'patient')} changed.`);
   } catch (e) {
     // the failed change leaves the steps (no Retry there: the box keeps the words to try again)
-    setPhase(at(), { status: 'error', err: e.message });
+    setPhase(at(), { status: 'error', err: e.message, res: '' });
     $('#chgErr').textContent = e.message; $('#chgErr').hidden = false;
     announce(`The change did not work. ${e.message}`);
     setRunning(false); $('#instr').focus();
@@ -1051,14 +1056,15 @@ async function doReset() {
 // Scene 0: powered, no notice, no plan, no timeline.
 function clearRun() {
   Object.assign(S, { event: null, affected: null, plan: null, diff: null, speak: {}, rowErr: {}, busy: {}, roadFail: false, landed: null,
-    told: new Set(), clinicOk: new Set(), held: new Set(), telling: false, tellErr: null, tellOpts: null });
-  stopReplies(); seen.clear(); dropCheck(); resetPhases(); mapStage(0); clearSel(); R('close'); showNotice(false); TL('setMode', 'replay'); S.ring = false;
+    told: new Set(), clinicOk: new Set(), held: new Set(), telling: '', tellErr: null, tellRetry: null, tellOpts: null, msgLang: {} });
+  stopReplies(); seen.clear(); closeView(true); dropCheck(); resetPhases(); mapStage(0); clearSel(); R('close'); showNotice(false); TL('setMode', 'replay'); S.ring = false;
   M('setScene', null);  // the map goes back to the real power state
   $('#banner').hidden = true; $('#panel').scrollTo({ top: 0, behavior: 'instant' });
 }
 async function setRegion(region) {
   const g = ++S.gen;
-  S.region = region;
+  S.region = region; store.set('lumenRegion', region);  // the county stays across reloads (v6)
+  $('#region').value = region;
   clearRun();
   try { S.data[region] ||= await (await fetch(`data/${region}.json`)).json(); }
   catch { banner('The map data did not load. Reload the page.'); }
@@ -1087,7 +1093,7 @@ function renderTop() {
   $('#chipT').textContent = S.event ? `Power off in ${countdown()}` : 'No shutoff notice';
   for (const id of ['run', 'reset', 'region']) setDisabled($('#' + id), S.running || S.approving);  // approving writes to this region's plan
   $('#wholeBtn').hidden = S.stage < 4 || !S.plan;
-  $('#legend').hidden = isFolded();  // after the plan the map keeps a few plain marks: no key needed
+  $('#legend').hidden = planReady();  // after the plan the map keeps a few plain marks: no key needed
   legend();
   syncTimeline();
 }
@@ -1145,9 +1151,10 @@ function keepOpener() {
 }
 function renderAll() { renderTop(); renderRail(); renderPanel(); }
 function renderPanel() {
-  const el = $('#panel');
+  const el = $('#panel'), plan = S.stage >= 4 && S.plan;
+  if (!plan) S.view = null;  // reset or a new run: the plan the view showed is gone
   keepFocus(() => keepScroll(el, () => {
-    el.innerHTML = S.stage >= 4 && S.plan ? (toldNow().done ? doneHTML() : planHTML()) : keyCard() + (S.event ? eventHTML() : '') + homeHTML();
+    el.innerHTML = !plan ? keyCard() + (S.event ? eventHTML() : '') + homeHTML() : S.view ? viewHTML() : toldNow().done ? doneHTML() : planHTML();
     keepOpener();
   }));
 }
@@ -1165,7 +1172,7 @@ function homeHTML() {
   return `<section class="sec"><h2 id="panelH" tabindex="-1">Your clinic</h2>
     <p class="hname">${esc(h.name)}</p>${h.address ? `<p class="addr">${esc(h.address)}</p>` : ''}
     <dl class="facts">
-      <dt>Chairs</dt><dd class="num">${h.stations ?? 'Not listed'}</dd>
+      <dt>Slots per shift</dt><dd class="num">${h.stations ?? 'Not listed'}</dd>
       <dt>Backup generator</dt><dd>${esc(bp)}${sim ? ' (simulated)' : ''}</dd>
       <dt>Power</dt><dd>${pw}</dd>
       ${n != null ? `<dt>Treatments during the shutoff</dt><dd class="num">${plural(n, 'patient')}</dd>` : ''}
@@ -1188,9 +1195,9 @@ function planHTML() {
   const p = S.plan, chair = p.patients.filter(hasChair).length, phone = p.patients.filter(needsPhone).length, keep = counts(p).notify_only;
   const dis = S.running || S.approving || !canReview() ? ' disabled' : '';
   return `<div class="plan">
-    <h2 class="lead" id="panelH" tabindex="-1">${plural(chair, 'patient')} ${chair === 1 ? 'has' : 'have'} a chair.${phone ? ` <span>${phone} need${phone === 1 ? 's' : ''} a phone call from you.</span>` : ''}${keep ? ` <span>${keep} keep${keep === 1 ? 's' : ''} the usual time.</span>` : ''}</h2>
+    <h2 class="lead" id="panelH" tabindex="-1">${plural(chair, 'patient')} ${chair === 1 ? 'has' : 'have'} a slot.${phone ? ` <span>${phone} need${phone === 1 ? 's' : ''} a phone call from you.</span>` : ''}${keep ? ` <span>${keep} keep${keep === 1 ? 's' : ''} the usual time.</span>` : ''}</h2>
     ${verdictHTML()}
-    <div class="acts"><button class="btn pri big${S.ring ? ' ring' : ''}" type="button" data-act="review" data-k="review-panel"${dis}>${S.telling ? 'Telling everyone…' : S.approving ? 'Approving…' : 'Review and approve'}</button></div>
+    <div class="acts"><button class="btn pri big${S.ring ? ' ring' : ''}" type="button" data-act="review" data-k="review-panel"${dis}>${S.telling ? `${S.telling}…` : 'Review and approve'}</button></div>
     <p class="note">Nothing is sent until you approve.</p>
     ${whereHTML()}
   </div>`;
@@ -1210,22 +1217,24 @@ function verdictHTML() {
   });
   return `<section class="verdict ok" role="status"><h3>${icon('ck')}Plan checked. Ready to approve.</h3>${items.length ? `<ul>${items.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</section>`;
 }
-// "Where they go": each receiving clinic (patients · chairs left; a row shows only its route on the map), then early and phone.
+// "Where they go": each receiving clinic (patients · slots left), then early and phone. A clinic row, and the phone row when a
+// hospital gets sheets, opens what that place gets (v6) and shows only its route on the map.
 function whereHTML() {
-  const cp = capacity(), pr = pairs(), list = Object.entries(cp).filter(([, c]) => c.open != null).sort(([, a], [, b]) => b.n - a.n);
+  const cp = capacity(), list = Object.entries(cp).filter(([, c]) => c.open != null).sort(([, a], [, b]) => b.n - a.n);
   const early = S.plan.patients.filter(r => r.action === 'early_session' && hasChair(r)).length, phone = S.plan.patients.filter(needsPhone).length;
+  const hosp = mostOf(S.plan.patients.filter(r => r.action === 'hospital' && r.status !== 'declined').map(r => r.clinic_id));
   const li = ([id, c]) => {
-    const into = pr.filter(x => x.toId === id).sort((a, b) => b.count - a.count), p = into[0], left = c.open - c.used;
-    const from = new Set(into.map(x => x.fromId)).size === 1 ? p?.fromId : '';  // several closed clinics (tour): every route into this clinic
-    const v = `${plural(c.used, 'patient')} · ${left > 0 ? `${plural(left, 'chair')} left` : 'Full'}`;
-    const body = `<span class="wn">${esc(cname(id))}</span><span class="wv num">${esc(v)}</span>`;
-    return `<li>${p ? `<button class="wrow" type="button" data-act="route" data-from="${from || ''}" data-to="${id}" data-k="wh-${id}" aria-pressed="${S.route?.toId === id}" aria-label="${esc(cname(id))}: ${esc(v)}. Show only this route on the map.">${body}</button>` : `<span class="wrow">${body}</span>`}</li>`;
+    const left = c.open - c.used, v = `${plural(c.used, 'patient')} · ${left > 0 ? `${plural(left, 'slot')} left` : 'Full'}`;
+    return `<li><button class="wrow" type="button" data-act="clinic" data-id="${id}" data-k="wh-${id}" aria-label="${esc(cname(id))}: ${esc(v)}. See what this clinic gets.">
+      <span class="wn">${esc(cname(id))}</span><span class="wv num">${esc(v)}</span>${icon('chev')}</button></li>`;
   };
+  const call = `<span class="wn">Need a phone call</span><span class="wv num">${plural(phone, 'patient')}</span>`;
   const more = list.slice(6);  // the tour has 25 receiving centers: the busiest six first
   return `<section class="where" aria-labelledby="whH"><h3 id="whH">Where they go</h3>
     <ul>${list.slice(0, 6).map(li).join('')}
       ${early ? `<li><span class="wrow e"><span class="wn">Come in early here</span><span class="wv num">${plural(early, 'patient')}</span></span></li>` : ''}
-      ${phone ? `<li><span class="wrow c"><span class="wn">Need a phone call</span><span class="wv num">${plural(phone, 'patient')}</span></span></li>` : ''}</ul>
+      ${phone ? `<li>${hosp ? `<button class="wrow c" type="button" data-act="clinic" data-id="${hosp}" data-k="wh-${hosp}" aria-label="Need a phone call: ${plural(phone, 'patient')}. See what ${esc(cname(hosp))} gets.">${call}${icon('chev')}<span class="ws">${esc(cname(hosp))} gets their sheets</span></button>`
+        : `<span class="wrow c">${call}</span>`}</li>` : ''}</ul>
     ${more.length ? `<details class="more"${S.chMore ? ' open' : ''}><summary data-k="chmore">${plural(more.length, 'more clinic')}${icon('chev')}</summary><ul>${more.map(li).join('')}</ul></details>` : ''}
   </section>`;
 }
@@ -1243,10 +1252,12 @@ function doneHTML() {
     const fresh = st === 'ok' && !seen.has(k); if (st === 'ok') seen.add(k);
     return `<div class="brow ${st}${fresh ? ' fresh' : ''}"><dt><i class="bi" aria-hidden="true">${st === 'ok' ? icon('ck') : ''}</i>${label}</dt><dd class="num">${esc(value)}</dd>${extra ? `<dd class="bx">${extra}</dd>` : ''}</div>`;
   };
-  const clinicList = want.length > 1 && want.length <= 6 ? `<ul class="cl">${want.map(c => `<li class="${S.clinicOk.has(c) ? 'ok' : S.told.has(c) ? '' : 'off'}">${S.clinicOk.has(c) ? icon('ck') : ''}${esc(cname(c))}<span class="vh"> ${S.clinicOk.has(c) ? 'confirmed' : S.told.has(c) ? 'told' : 'not told'}</span></li>`).join('')}</ul>` : '';
+  // each place opens what it gets (v6): a check once it confirmed the slots, struck through when staff turned it off
+  const clinicList = want.length ? `<ul class="cl">${want.map(c => { const st = S.clinicOk.has(c) ? 'ok' : S.told.has(c) ? '' : 'off';
+    return `<li class="${st}"><button type="button" data-act="clinic" data-id="${c}" data-k="cl-${c}">${st === 'ok' ? icon('ck') : ''}${esc(cname(c))}<span class="vh">: ${st === 'ok' ? 'confirmed' : st ? 'not told' : 'told'}. See what it gets.</span></button></li>`; }).join('')}</ul>` : '';
   const needLi = n => {
     const fresh = !seen.has(`n-${n.id}-${n.why}`); seen.add(`n-${n.id}-${n.why}`);
-    return `<li class="${fresh ? 'fresh' : ''}"><span class="nn">${esc(n.name)}</span>${n.phone ? `<a class="np num" href="tel:${esc(n.phone)}">${esc(n.phone)}</a>` : ''}
+    return `<li class="${fresh ? 'fresh' : ''}"><button class="nn" type="button" data-act="patient" data-id="${n.id}" data-k="nd-${n.id}" aria-label="${esc(n.name)}: ${esc(n.why)}. See what they get.">${esc(n.name)}</button>${n.phone ? `<a class="np num" href="tel:${esc(n.phone)}">${esc(n.phone)}</a>` : ''}
       <span class="nw">${esc(n.why)}${n.when ? ` · ${esc(n.when)}` : ''}</span></li>`;
   };
   const enter = !seen.has('board'); seen.add('board');  // the board rises in once, when telling is done
@@ -1255,7 +1266,7 @@ function doneHTML() {
     <h2 class="lead" id="panelH" tabindex="-1">${need.length ? `Almost done: ${plural(need.length, 'person', 'people')} to call` : wait ? 'Almost done' : 'Everyone is set'}</h2>
     <p class="lead-s">${S.replying ? 'Replies are coming in.' : wait ? 'Waiting for replies.' : need.length ? 'Everything else is ready.' : 'Every patient and clinic has been told.'}</p>
     <dl class="board">
-      ${row('chairs', drafts ? 'todo' : 'ok', 'Chairs', `${all.length - drafts} of ${all.length}${phone ? ` · ${phone} by phone` : ''}`)}
+      ${row('slots', drafts ? 'todo' : 'ok', 'Slots', `${all.length - drafts} of ${all.length}${phone ? ` · ${phone} by phone` : ''}`)}
       ${row('told', wait ? 'wait' : 'ok', 'Patients told', !told.length ? 'No voice notes sent' : wait === told.length ? `${told.length} · waiting for replies` : [told.length, yes && `${yes} said yes`, no && `${no} said no`, na && `${na} no answer`, wait && `${wait} waiting`].filter(Boolean).join(' · '))}
       ${row('clinics', tc.length < want.length ? 'todo' : okc < tc.length ? 'wait' : 'ok', 'Clinics told', `${tc.length} of ${want.length}${!tc.length ? '' : okc === tc.length ? ' · all confirmed' : okc ? ` · ${okc} confirmed` : ' · waiting to confirm'}`, clinicList)}
       ${row('rides', rides ? 'todo' : 'ok', 'Rides', rides ? `${plural(rides, 'paratransit ride')} to book` : 'No rides to book')}
@@ -1266,13 +1277,135 @@ function doneHTML() {
     <p class="note">${t.notes || t.clinics ? 'The replies here are simulated for the demo. Nothing leaves Lumen.' : ''}</p>
   </section>`;
 }
+const mostOf = ids => { const n = {}; for (const id of ids) if (id) n[id] = (n[id] || 0) + 1; return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || ''; };
+
+/* ---------- what a patient and a clinic get (v6 section 4): one panel view over the plan; Back or Esc closes it ---------- */
+// S.view: {type: 'patient' | 'clinic', id, back: the view to return to (a patient opened from a clinic's list), k: its opener's data-k}
+function openView(v, opener) {
+  stopVoice();
+  S.view = { ...v, k: opener?.dataset?.k || v.k || '' };
+  if (v.type === 'patient') selectRow(v.id, true);  // only this patient's road route on the map
+  else {
+    const into = pairs().filter(p => p.toId === v.id), from = new Set(into.map(p => p.fromId));
+    clearSel();
+    if (into.length) { S.route = { fromId: from.size === 1 ? into[0].fromId : null, toId: v.id }; M('isolate', { type: 'route', ...S.route }); }
+  }
+  openPanel(true);
+  renderPanel();
+  $('#panel').scrollTo({ top: 0, behavior: 'instant' });
+  $('#panelH')?.focus({ preventScroll: true });
+  announce($('#panelH')?.textContent || '');
+}
+// silent: the plan is going away (reset, a new run); else back to the clinic's list or the plan, focus on what opened the view
+function closeView(silent) {
+  const v = S.view; if (!v) return;
+  stopVoice();
+  S.view = null;
+  if (silent) return;
+  if (v.back) { openView(v.back); $(`[data-k="cv-${v.id}"]`)?.focus(); return; }
+  clearSel(); planView(); renderPanel();  // the map goes back to the whole plan too
+  ($(`[data-k="${v.k}"]`) || $('#panelH'))?.focus();
+}
+function viewHTML() {
+  const v = S.view, back = v.back ? `Back to ${cname(v.back.id)}` : 'Back to the plan';
+  return `<section class="view" aria-labelledby="panelH">
+    <button class="back" type="button" data-act="back" data-k="back">${icon('chev')}${esc(back)}</button>
+    ${v.type === 'patient' ? patientView(v.id) : clinicView(v.id)}</section>`;
+}
+// research/patients.md: Chinese-speaking patients keep the family name first (as review.js reads it); everyone else the given name
+const firstName = id => { const w = pname(id).trim().split(/\s+/); return S.lang[id] === 'zh' && w.length > 1 ? w.at(-1) : w[0]; };
+// The line under the bubble, [kind, words], worded as the review card words it: "Told 9:02 AM · Said yes"
+function receipt(r) {
+  if (r.status === 'declined') return ['no', 'Said no'];
+  const n = r.note, t = n?.status === 'sent' ? `Told ${time(n.sent_at)}` : '';
+  if (r.status === 'confirmed') return ['yes', [t, 'Said yes'].filter(Boolean).join(' · ')];
+  if (r.status === 'no_answer') return ['wait', [t, 'No answer'].filter(Boolean).join(' · ')];
+  if (t) return ['told', t];
+  if (n?.status === 'queued') return ['', `Sends at ${time(n.send_at)}`];
+  if (n?.status === 'stale') return ['', 'The plan changed. Not sent again yet.'];
+  return ['', r.status === 'draft' ? 'Not sent yet. It goes out when you approve.' : toldNow().done ? 'Not sent. Staff phone instead.' : 'Not sent yet'];
+}
+// "Oct 6" from "2026-10-06"
+const shortDate = d => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+// The patient: their message as one text-message bubble in their language (a tab for English too), when it went out, the reply,
+// and the voice note (Polly speaks English, Spanish and Chinese; other languages play the English note, or show the text only).
+function patientView(id) {
+  const r = S.plan.patients.find(x => x.patient_id === id), first = esc(firstName(id));
+  if (!r) return `<h2 class="lead" id="panelH" tabindex="-1">What ${first} gets</h2><p class="note">This patient is no longer in the plan.</p>`;
+  const langs = msgLangs(r), lang = langs.includes(S.msgLang[id]) ? S.msgLang[id] : langs[0], msg = lang && r.messages[lang];
+  const phone = S.people[id]?.callback, call = phone ? ` at <a class="num" href="tel:${esc(phone)}">${esc(phone)}</a>` : '';
+  const head = `<h2 class="lead" id="panelH" tabindex="-1">What ${first} gets</h2><p class="vsub">${esc(summaryOf(r))}</p>`;
+  if (!msg) return `${head}<p class="vnone">No text message. Staff phone ${first}${call}.</p>`;
+  const tabs = langs.length > 1 ? `<div class="langs" role="group" aria-label="Message language">${langs.map(l =>
+    `<button type="button" data-act="lang" data-id="${id}" data-lang="${l}" data-k="lang-${l}" aria-pressed="${l === lang}">${esc(langName(l))}</button>`).join('')}</div>` : '';
+  const [kind, said] = receipt(r);
+  // the voice note: the tab's language when Polly speaks it, else English; live needs an approved move (POST /voice)
+  // (a draft shows the button, off, until approval; a "no answer" or "said no" has no note to play)
+  const vl = VOICE_LANGS.has(lang) ? lang : r.messages.en ? 'en' : null, can = isTour() ? !!r.messages.en : isMove(r) && ['approved', 'confirmed'].includes(r.status);
+  const a = S.audio?.k === `${id}|${vl}` ? S.audio : null;
+  const voice = !vl || (!can && r.status !== 'draft') ? '' : `<div class="vrow"><button class="btn sec" type="button" data-act="voice" data-id="${id}" data-lang="${vl}" data-k="voice"${can ? '' : ' disabled'}>
+      ${icon(a?.state === 'playing' ? 'stop' : 'play')}${a?.state === 'loading' ? 'Loading the voice note…' : a?.state === 'playing' ? 'Stop' : vl === lang ? 'Play voice note' : 'Voice in English'}</button>
+      ${!can ? '<span class="small">Plays once you approve.</span>' : ''}</div>${a?.state === 'error' ? `<p class="err" role="alert">${esc(a.err)}</p>` : ''}`;
+  const once = k => seen.has(k) ? '' : (seen.add(k), ' fresh');  // the bubble rises in, and a new reply pops, once (not on every re-render)
+  return `${head}${tabs}
+    <div class="bubble${once(`b-${id}-${lang}`)}" lang="${lang}">${esc(msg)}</div>
+    <p class="bmeta${kind ? ` ${kind}` : ''}${kind ? once(`rc-${id}-${said}`) : ''}">${kind === 'yes' || kind === 'told' ? icon('ck') : ''}${esc(said)}</p>
+    ${r.status === 'no_answer' && call ? `<p class="vnone">Phone ${first}${call}.</p>` : voice}`;
+}
+// The clinic or hospital: the list Lumen sends it (simulated), one row per patient, the reply it is asked for, and where that stands.
+function clinicView(id) {
+  const f = S.fac[id], hosp = f?.kind === 'hospital', home = homeFac(), addr = S.raw[id]?.address || f?.address || '';
+  const at = r => r.slot ? slotStart(r.slot) : Date.parse(r.affected_session) || 0;
+  const list = rows().filter(r => r.clinic_id === id && r.status !== 'declined' && r.action === (hosp ? 'hospital' : 'transfer')).sort((a, b) => at(a) - at(b));
+  // the tour keeps no packet on its rows (tourBackend.packet): a clinic it told got every approved row
+  const sent = list.filter(r => r.packet?.status === 'sent' || (isTour() && S.told.has(id) && r.status !== 'draft'));
+  const first = sent.map(r => r.packet?.sent_at).filter(Boolean).sort()[0], ok = sent.length && S.clinicOk.has(id);
+  const status = sent.length ? `${first ? `Told ${time(first)}` : 'Told'} · ${ok ? (hosp ? 'Confirmed' : `Confirmed ${plural(sent.length, 'slot')}`) : 'Waiting to confirm'}`
+    : S.tellOpts?.clinicsOff?.includes(id) ? 'Not told. You turned this clinic off.' : 'Not told yet. Approve and tell everyone sends this list.';
+  const hbv = pid => { const d = S.people[pid]?.hbv_tested; return d ? `Hepatitis B test ${shortDate(d)}` : 'No hepatitis B test on file'; };
+  const li = r => `<li><button class="cvp" type="button" data-act="patient" data-id="${r.patient_id}" data-k="cv-${r.patient_id}">
+      <span class="cvn">${esc(pname(r.patient_id))}</span><span class="cvw num">${esc(r.slot ? slotText(r.slot) : `Usual treatment ${dayTime(r.affected_session)}`)}</span>
+      <span class="cvd">${esc([rideWord(r), hbv(r.patient_id), S.langs[r.patient_id] || 'English'].join(' · '))}</span>${icon('chev')}</button></li>`;
+  return `<h2 class="lead" id="panelH" tabindex="-1">What ${esc(cname(id))} gets</h2>
+    <div class="sheet">
+      <dl class="tf"><dt>To</dt><dd>${esc(f?.name || id)}${addr ? `<span>${esc(addr)}</span>` : ''}</dd>
+        <dt>From</dt><dd>${esc(home?.name || '')}<span class="num">Callback ${CALLBACK}</span></dd></dl>
+      <p class="arr">${plural(list.length, 'patient')} ${hosp ? 'may arrive' : 'arriving'}</p>
+      <ul class="cv">${list.map(li).join('')}</ul>
+      <p class="reply">${hosp ? 'Reply YES if you can take them.' : 'Reply YES to confirm these slots.'}</p>
+    </div>
+    <p class="cvs${ok ? ' ok' : sent.length ? ' wait' : ''}">${ok ? icon('ck') : ''}${esc(status)}</p>
+    <p class="note">Simulated for the demo. Nothing leaves Lumen.</p>`;
+}
+// The voice note in the patient view: one at a time; a second press stops it.
+async function playVoice(id, lang) {
+  const k = `${id}|${lang}`;
+  if (S.audio?.k === k && S.audio.state !== 'error') return stopVoice(true);
+  stopVoice();
+  const a = S.audio = { k, state: 'loading' };
+  renderPanel();
+  try {
+    const { url, note } = await voiceFor(id, lang);
+    if (S.audio !== a) return;
+    if (!url) throw new ApiError(note || 'No voice note for this language.', 0);
+    a.el = new Audio(url);
+    a.el.onended = () => { if (S.audio === a) { S.audio = null; renderPanel(); } };
+    await a.el.play();
+    a.state = 'playing'; announce('Playing the voice note.');
+  } catch (e) {
+    if (S.audio !== a) return;
+    a.el?.pause(); a.el = null; a.state = 'error'; a.err = e.name === 'NotAllowedError' ? 'The browser did not let the note play. Press Play again.' : e.message;
+  }
+  renderPanel();
+}
+function stopVoice(render) { S.audio?.el?.pause(); S.audio = null; if (render) renderPanel(); }
 function changeWords(entries) {
   const f = Object.fromEntries(entries.map(e => [e.field, e])), out = [];
-  if (f.status?.to === 'declined') return 'Said no · needs a phone call';  // the chair and the time are gone too; say it once
+  if (f.status?.to === 'declined') return 'Said no · needs a phone call';  // the slot and the time are gone too; say it once
   const toStaff = f.action?.to === 'hospital';
   if (f.clinic_id) out.push(toStaff ? `Moved from ${cname(f.clinic_id.from)} to the phone call list` : `Moved from ${cname(f.clinic_id.from)} to ${cname(f.clinic_id.to)}`);
   if (f.action && !toStaff) out.push(`now ${ACTION[f.action.to] || f.action.to}`);
-  if (f.slot && !toStaff) out.push(f.slot.to ? `new time ${slotText(f.slot.to)}` : 'no chair');
+  if (f.slot && !toStaff) out.push(f.slot.to ? `new time ${slotText(f.slot.to)}` : 'no slot');
   else if (f.pickup_time?.to && !f.clinic_id) out.push('new leave time');
   if (!out.length) out.push(`Updated ${join(entries.map(e => FIELD[e.field] || e.field))}`);
   return cap(out.join(' · '));
@@ -1283,7 +1416,7 @@ function summaryOf(r) {
   if (r.status === 'declined' && !r.slot) return 'Said no · needs a phone call';
   if (r.action === 'transfer') return `Moves to ${cname(r.clinic_id)} · ${slotText(r.slot)}`;
   if (r.action === 'early_session') return `Comes in early at ${cname(r.clinic_id)} · ${slotText(r.slot)}`;
-  if (r.action === 'hospital') return 'Needs a phone call · no chair fits';
+  if (r.action === 'hospital') return 'Needs a phone call · no slot fits';
   return 'Keeps the usual time · gets a notice';
 }
 // "Leave home by 5:28 AM · 21 min drive · 15.1 mi": the plan's own time and drive minutes, the same ones the patient's message
@@ -1335,7 +1468,7 @@ function viewRows() {
       clinicId: r.clinic_id || null, callInstead: ck.call.has(id), sheetSent: r.packet?.status === 'sent',
       id, rank: r.rank, name: pname(id), lang, langName: S.langs[id] || langName(lang), action: r.action,
       what: (WHAT[r.action] || WHAT.notify_only)(r), where: r.clinic_id ? destName(r) : '',
-      when: r.slot ? slotText(r.slot) : r.action === 'hospital' ? 'No chair fits' : '',
+      when: r.slot ? slotText(r.slot) : r.action === 'hospital' ? 'No slot fits' : '',
       pickup: r.slot ? `${rideWord(r)} · ${leaveBy(r)}` : rideWord(r),
       road: r.slot ? { minutes: r.drive_minutes, miles: rd?.miles ?? null, tooFar: r.drive_minutes > (S.rules.drive_cap_minutes ?? 40) } : null,
       summary: summaryOf(r), leave: leaveLine(r), why: whyLine(r), gap: gapOf(r),
@@ -1508,13 +1641,15 @@ function bind() {
     e.currentTarget.setAttribute('aria-expanded', on);
     requestAnimationFrame(() => M('resize'));
   });
+  // Esc closes the panel view first (bound before the map's own Esc, which then leaves the map as the view set it), then the drawer
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && $('#panel').classList.contains('open')) { openPanel(false); $('#planTog').focus(); }
+    if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open], :popover-open')) return;
+    if (S.view) { e.preventDefault(); closeView(); }
+    else if ($('#panel').classList.contains('open')) { openPanel(false); $('#planTog').focus(); }
   });
   // R8: closing the review list after picking a row there shows every route again
   document.addEventListener('close', e => { if (S.listSel && e.target.matches?.('dialog.rv')) { clearSel(); planView(); renderPanel(); } }, true);
   $('#railBody').addEventListener('click', e => { const b = e.target.closest('[data-retry]'); if (b) S.phases[b.dataset.retry]?.retry?.(); });
-  $('#howBtn').addEventListener('click', () => { S.howOpen = !S.howOpen; renderRail(); });
   $('#chgBtn').addEventListener('click', () => openChange(true));
   $('#chgX').addEventListener('click', () => openChange(false));
   $('#replan').addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); openChange(false); } });
@@ -1524,8 +1659,13 @@ function bind() {
   $('#suggs').addEventListener('click', e => { const b = e.target.closest('.sugg'); if (!b || b.disabled) return; $('#instr').value = b.textContent; $('#instr').focus(); });
   $('#panel').addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    const id = b.dataset.id;
     switch (b.dataset.act) {
-      case 'route': S.route?.toId === b.dataset.to ? (clearSel(), renderPanel()) : isoRoute(b.dataset.from || null, b.dataset.to); break;
+      case 'clinic': openView({ type: 'clinic', id }, b); break;
+      case 'patient': openView({ type: 'patient', id, back: S.view?.type === 'clinic' ? S.view : null }, b); break;
+      case 'back': closeView(); break;
+      case 'lang': S.msgLang[id] = b.dataset.lang; stopVoice(); renderPanel(); break;
+      case 'voice': playVoice(id, b.dataset.lang); break;
       case 'review': openReview(b); break;
       case 'recheck': S.checkErr = null; retryCheck(); renderPanel(); break;
       case 'print': window.print(); break;
@@ -1535,11 +1675,13 @@ function bind() {
   $('#panel').addEventListener('animationend', e => { if (e.target.dataset.k === 'review-panel') S.ring = false; });  // pulses once per run
   $('#panel').addEventListener('toggle', e => { if (e.target.matches?.('details.more')) S.chMore = e.target.open; }, true);
 }
+// After the plan a patient or a receiving place picked on the map opens what it gets (v6); before it, the map only focuses.
+const gets = id => S.stage >= 4 && S.plan?.patients.some(r => r.patient_id === id || (r.clinic_id === id && (r.action === 'transfer' || r.action === 'hospital')));
 function onSelect(sel) {
-  if (!sel) { clearSel(); renderPanel(); return; }  // R8: the map's "Show all routes" chip or Esc
-  if (sel.type === 'patient') selectRow(sel.id, true);
+  if (!sel) { S.view = null; stopVoice(); clearSel(); renderPanel(); return; }  // R8: the map's "Show all routes" chip or Esc
+  if (sel.type === 'patient') gets(sel.id) ? openView({ type: 'patient', id: sel.id }) : selectRow(sel.id, true);
   else if (sel.type === 'route') isoRoute(sel.fromId, sel.toId);
-  else if (sel.type === 'facility') M('focus', { facility: sel.id });
+  else if (sel.type === 'facility') gets(sel.id) && !S.affected?.closed_clinic_ids.includes(sel.id) ? openView({ type: 'clinic', id: sel.id }) : M('focus', { facility: sel.id });
 }
 
 async function boot() {
@@ -1547,22 +1689,19 @@ async function boot() {
   resetPhases();
   const motion = () => { $('#animTog').hidden = reduced.matches; };  // reduced motion already stops the animation
   motion(); reduced.addEventListener('change', motion);
-  S.B = live; indexFac();
+  // v6: Santa Clara by default; the county chosen in the menu stays across reloads
+  S.region = store.get('lumenRegion') === 'eldorado' ? 'eldorado' : 'santaclara';
+  $('#region').value = S.region;
+  S.B = live; S.clinics = S.region === 'eldorado' ? FALLBACK : []; indexFac();
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
   setTheme(theme, false);
   fitWidths();
   renderAll();
-  const dataP = fetch('data/eldorado.json').then(r => r.json()).catch(() => null);
   // init creates the map at once and resolves on its first load; the setters below queue until then
   const mapP = window.LumenMap ? Promise.resolve().then(() => LumenMap.init($('#map'), { theme, mapKey: CFG.mapKey || '', onSelect })) : Promise.reject(new Error('map.js missing'));
   mapP.catch(e => { console.warn('LumenMap.init', e); banner('The map did not load. The plan still works.'); });
-  S.data.eldorado = await dataP;
   M('set3D', true);  // first view: tilted 50 degrees over the home clinic
-  if (S.region === 'eldorado') {
-    if (S.data.eldorado) M('setRegion', S.data.eldorado, S.clinics); else banner('The map data did not load. Reload the page.');
-    M('focus', 'home');
-  }
-  await loadLive();
+  await setRegion(S.region);  // the region's map data, then the live plan (or the in-page tour)
 }
 boot();
 })();

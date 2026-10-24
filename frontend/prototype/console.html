@@ -40,17 +40,18 @@
   <symbol id="i-h" viewBox="0 0 16 16"><path d="M5 3.8v8.4M11 3.8v8.4M5 8h6"/></symbol>
   <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
   <symbol id="i-print" viewBox="0 0 16 16"><path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2M4.5 9.5h7v4h-7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></symbol>
   <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></symbol>
 </svg>
 
 <header class="top">
   <h1 class="logo"><i aria-hidden="true"></i>Lumen</h1>
   <span class="sep" aria-hidden="true"></span>
-  <p class="home"><span class="nm" id="homeName">DaVita Cameron Park Dialysis</span></p>
+  <p class="home"><span class="nm" id="homeName"></span></p>
   <label class="selw"><span class="vh">County</span>
     <select id="region">
-      <option value="eldorado">El Dorado County</option>
       <option value="santaclara">Santa Clara County</option>
+      <option value="eldorado">El Dorado County</option>
     </select><svg class="i"><use href="#i-chev"/></svg></label>
   <span class="spacer"></span>
   <p class="chip" id="chip"><span class="dot" aria-hidden="true"></span><span id="chipT">No shutoff notice</span></p>
@@ -67,9 +68,7 @@
       <button class="btn railtog" id="railTog" type="button" aria-expanded="false" aria-controls="railBody">Steps<svg class="i"><use href="#i-chev"/></svg></button>
     </div>
     <div class="rail-body" id="railBody">
-      <!-- after the run: 3 stages; the 8 steps fold behind "How this plan was made" -->
-      <ol class="phases stages" id="stages" aria-label="Stages" hidden></ol>
-      <button class="howbtn" id="howBtn" type="button" aria-expanded="false" aria-controls="phases" hidden>How this plan was made<svg class="i"><use href="#i-chev"/></svg></button>
+      <!-- every step stays on screen with its result line, during and after the run (v6) -->
       <ol class="phases steps" id="phases" aria-label="Steps"></ol>
       <div class="chg" id="chg" hidden>
         <button class="btn chgbtn" id="chgBtn" type="button" aria-expanded="false" aria-controls="replan">Something changed?</button>
@@ -110,7 +109,7 @@
         <dt data-s="3">Patients</dt>
         <dd data-s="3"><span data-s="3" data-x="4"><i class="sw dot" style="--c:var(--map-affected)"></i>Treatment in the shutoff</span><span data-s="4"><i class="sw dot" style="--c:var(--map-transfer)"></i>Moves</span><span data-s="4"><i class="sw dot" style="--c:var(--map-early)"></i>Comes in early</span><span data-s="4"><i class="sw dot" style="--c:var(--map-staff)"></i>Needs a phone call</span><span data-s="4" data-w="notice"><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span></dd>
         <dt data-s="4">Routes</dt>
-        <dd data-s="4"><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>To a clinic with chairs</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Phone call, no chair</span><span data-s="4" data-w="changed"><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed</span><span data-s="4" data-w="straight"><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Road route not available</span></dd>
+        <dd data-s="4"><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>To a clinic with open slots</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Phone call, no slot</span><span data-s="4" data-w="changed"><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed</span><span data-s="4" data-w="straight"><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Road route not available</span></dd>
       </dl>
       <p class="lgnote">Lines and substations: OpenStreetMap. Patient homes: synthetic.</p>
       <button class="lgbtn" id="animTog" type="button">Pause animation</button>

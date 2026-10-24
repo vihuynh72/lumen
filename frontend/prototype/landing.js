@@ -4,23 +4,35 @@
   'use strict';
   const RM = matchMedia('(prefers-reduced-motion: reduce)');
   const PHONE = matchMedia('(max-width: 859px)');
-  const K = Math.cos(38.7 * Math.PI / 180);  // longitude squeeze at El Dorado's latitude
+  const K = Math.cos(37.3 * Math.PI / 180);  // longitude squeeze at San Jose's latitude
 
-  // clinic positions from public CMS data (data/seed/clinics.json); C01 is the clinic that loses power
-  const HOME = { lng: -120.972, lat: 38.658, name: 'Cameron Park · no power', short: 'Cameron Park' };
-  const CLINICS = [
-    { lng: -121.133, lat: 38.645, name: 'DaVita Folsom', short: 'Folsom', at: 'b', bend: .12 },
-    { lng: -121.210, lat: 38.678, name: 'Orangevale', short: 'Orangevale', at: 't', bend: .2 },
-    { lng: -121.269, lat: 38.592, name: 'Sunset', short: 'Sunset', at: 'l', bend: -.16 },
-    { lng: -121.173, lat: 38.656 },  // SHC Folsom: no open chairs in the seed, so the plan sends nobody there
-    { lng: -121.307, lat: 38.574 },  // DCI Rancho: open, not needed
+  // The Santa Clara demo (backend data/seed/santaclara/): clinic positions from public CMS data (clinics.json); routes
+  // and counts from the plan's own steps run on that seed. The shutoff closes the three DARK clinics.
+  const DARK = [
+    { lng: -121.792, lat: 37.315, name: 'Evergreen', at: 'r' },     // C11 SHC Evergreen, the home clinic
+    { lng: -121.810, lat: 37.307, name: 'Silver Creek', at: 'b' },  // C12 SHC Silver Creek
+    { lng: -121.778, lat: 37.228, name: 'Santa Teresa', at: 'r' },  // C17 SHC Santa Teresa
   ];
-  // the demo's 40 synthetic patients at home (data/seed/patients.json), [lng, lat]
-  const HOMES = [[-120.932,38.670],[-120.811,38.724],[-121.073,38.672],[-121.025,38.893],[-120.903,38.805],[-121.073,38.698],[-121.071,38.679],[-120.597,38.754],[-121.007,38.892],[-120.896,38.808],[-120.880,38.801],[-120.920,38.811],[-120.574,38.750],[-121.089,38.681],[-120.922,38.673],[-120.891,38.802],[-120.799,38.742],[-120.796,38.729],[-121.066,38.691],[-121.071,38.681],[-120.826,38.697],[-120.905,38.802],[-121.070,38.691],[-121.083,38.689],[-120.784,38.734],[-120.917,38.798],[-121.067,38.690],[-120.901,38.801],[-120.803,38.696],[-120.939,38.675],[-120.998,38.665],[-121.097,38.693],[-120.927,38.653],[-121.075,38.682],[-120.896,38.802],[-120.916,38.667],[-121.095,38.676],[-120.897,38.788],[-120.827,38.682],[-121.080,38.689]];
-  // the simulated shutoff area (data/seed/outage_area.geojson)
-  const AREA = [[-121.03,38.69],[-121.02,38.64],[-120.95,38.615],[-120.82,38.64],[-120.74,38.69],[-120.75,38.77],[-120.86,38.785],[-120.98,38.73]];
-  // the view frames the clinics and the area; the four farthest homes (Cool, Pollock Pines) fall outside it
-  const SHOWN = HOMES.filter(([lng, lat]) => lng < -120.72 && lat < 38.82);
+  // where the plan sends them: n patients in all, drawn as one route from the dark clinic that sends the most
+  // (the console draws every trip); at = label side
+  const TO = [
+    { lng: -121.814, lat: 37.351, name: 'White Road', at: 'r', from: 0, n: 12 },      // C13
+    { lng: -121.847, lat: 37.308, name: 'Tully', at: 'l', from: 1, n: 18 },           // C15 DaVita Tully
+    { lng: -121.848, lat: 37.360, name: 'East San Jose', at: 'l', from: 0, n: 14 },   // C16
+    { lng: -121.827, lat: 37.251, name: 'South San Jose', at: 'r', from: 2, n: 15 },  // C18
+    { lng: -121.892, lat: 37.245, name: 'Blossom Valley', at: 'l', from: 2, n: 11, bend: -.16 },  // C19
+    { lng: -121.934, lat: 37.316, name: 'Valley Renal', at: 'l', from: 2, n: 3 },     // C22 Santa Clara Valley Renal Care Center
+    { lng: -121.902, lat: 37.379, name: 'Silicon Valley', at: 'l', from: 0, n: 2 },   // C25 DaVita Silicon Valley
+    // H11 Regional Medical Center gets the sheets of the 4 patients who need a phone call. It sits 400 m from
+    // SHC East San Jose, so it is drawn a few pixels up and right (nudge) to keep both marks readable.
+    { lng: -121.848, lat: 37.363, name: 'Hospital', at: 'r', from: 1, n: 4, h: true, nudge: [14, -14] },
+  ];
+  // in-center clinics in view that the plan does not need
+  const IDLE = [[-121.825,37.347],[-121.914,37.297],[-121.932,37.328],[-121.932,37.311]];
+  // the demo's 96 synthetic patients at home (patients.json): [lng, lat, DARK index of their clinic]
+  const HOMES = [[-121.766,37.361,0],[-121.78,37.367,0],[-121.76,37.351,0],[-121.851,37.383,0],[-121.793,37.294,0],[-121.847,37.377,0],[-121.829,37.328,0],[-121.837,37.365,0],[-121.832,37.323,0],[-121.849,37.381,0],[-121.844,37.347,0],[-121.835,37.332,0],[-121.82,37.346,0],[-121.83,37.347,0],[-121.843,37.385,0],[-121.819,37.341,0],[-121.873,37.396,0],[-121.769,37.35,0],[-121.778,37.354,0],[-121.84,37.325,0],[-121.829,37.34,0],[-121.776,37.361,0],[-121.785,37.362,0],[-121.841,37.327,0],[-121.786,37.298,0],[-121.829,37.342,0],[-121.873,37.404,0],[-121.85,37.377,0],[-121.837,37.335,0],[-121.857,37.381,0],[-121.771,37.366,0],[-121.77,37.362,0],[-121.821,37.288,1],[-121.766,37.279,1],[-121.766,37.311,1],[-121.831,37.274,1],[-121.834,37.27,1],[-121.849,37.31,1],[-121.868,37.305,1],[-121.836,37.338,1],[-121.78,37.306,1],[-121.763,37.294,1],[-121.823,37.272,1],[-121.827,37.326,1],[-121.845,37.331,1],[-121.777,37.282,1],[-121.764,37.294,1],[-121.828,37.269,1],[-121.834,37.329,1],[-121.843,37.323,1],[-121.817,37.276,1],[-121.824,37.328,1],[-121.823,37.329,1],[-121.829,37.274,1],[-121.775,37.298,1],[-121.831,37.291,1],[-121.837,37.274,1],[-121.82,37.271,1],[-121.845,37.29,1],[-121.769,37.316,1],[-121.827,37.288,1],[-121.813,37.279,1],[-121.791,37.309,1],[-121.834,37.27,1],[-121.834,37.244,2],[-121.781,37.221,2],[-121.846,37.261,2],[-121.784,37.219,2],[-121.769,37.234,2],[-121.784,37.232,2],[-121.866,37.218,2],[-121.813,37.267,2],[-121.781,37.218,2],[-121.816,37.265,2],[-121.771,37.234,2],[-121.828,37.262,2],[-121.754,37.241,2],[-121.827,37.256,2],[-121.82,37.269,2],[-121.826,37.264,2],[-121.815,37.27,2],[-121.758,37.226,2],[-121.83,37.251,2],[-121.864,37.211,2],[-121.866,37.218,2],[-121.828,37.266,2],[-121.876,37.23,2],[-121.826,37.257,2],[-121.782,37.22,2],[-121.854,37.229,2],[-121.846,37.208,2],[-121.831,37.277,2],[-121.861,37.228,2],[-121.851,37.223,2],[-121.835,37.257,2],[-121.855,37.25,2]];
+  // the simulated shutoff area (outage_area.geojson): the east foothills and south San Jose hills
+  const AREA = [[-121.801,37.395],[-121.76,37.405],[-121.715,37.37],[-121.705,37.31],[-121.72,37.255],[-121.745,37.205],[-121.775,37.2],[-121.792,37.218],[-121.788,37.25],[-121.8,37.278],[-121.817,37.298],[-121.817,37.315],[-121.803,37.342],[-121.805,37.37]];
 
   const $ = s => document.querySelector(s);
   const hero = $('.hero'), knob = $('.knob'), grab = $('.grab'), nav = $('.nav'), map = $('.map');
@@ -47,40 +59,48 @@
   // one SVG per side, drawn at the box's pixel size so labels keep their real size
   function svg(face, w, h) {
     const narrow = w < 520;
-    const pts = [[HOME.lng, HOME.lat], ...CLINICS.map(c => [c.lng, c.lat]), ...SHOWN, ...AREA];
+    // the view frames the clinics; the far homes and the ends of the area run past its edges
+    const pts = [...DARK, ...TO].map(c => [c.lng, c.lat]);
     const xs = pts.map(p => p[0] * K), ys = pts.map(p => -p[1]);
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const pl = narrow ? 52 : 64, pr = 12, pt = 30, pb = 26;
+    const pl = 104, pr = 96, pt = 22, pb = 26;  // room for the longest labels on both sides
     const sc = Math.min((w - pl - pr) / (x1 - x0), (h - pt - pb) / (y1 - y0));
     const ox = pl + (w - pl - pr - (x1 - x0) * sc) / 2, oy = pt + (h - pt - pb - (y1 - y0) * sc) / 2;
     const P = (lng, lat) => [ox + (lng * K - x0) * sc, oy + (-lat - y0) * sc];
     const f = n => n.toFixed(1);
-    const [hx, hy] = P(HOME.lng, HOME.lat);
-    const day = face === 'd';
+    const day = face === 'd', r = narrow ? 6 : 8;
+    const label = (x, y, at, gap) => ({ b: [x, y + gap + 13, 'middle'], t: [x, y - gap - 5, 'middle'], l: [x - gap - 5, y + 5, 'end'], r: [x + gap + 5, y + 5, 'start'] })[at];
+    const dk = DARK.map(c => P(c.lng, c.lat));
+    const to = TO.map(c => { const [x, y] = P(c.lng, c.lat), [nx, ny] = c.nudge || [0, 0]; return [x + nx, y + ny]; });
     let s = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true" focusable="false">`;
     s += `<path class="area" d="M${AREA.map(p => P(...p).map(f).join(' ')).join('L')}Z"/>`;
-    const homes = SHOWN.map(p => P(...p));
-    if (!day) s += `<g class="edges">${homes.map(([x, y]) => `<line x1="${f(x)}" y1="${f(y)}" x2="${f(hx)}" y2="${f(hy)}"/>`).join('')}</g>`;
-    s += `<g class="homes">${homes.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="3"/>`).join('')}</g>`;
-    let labels = '';
-    CLINICS.forEach((c, i) => {
-      const [x, y] = P(c.lng, c.lat);
-      if (!c.name) { s += `<circle class="cl ${day ? 'idle' : 'off'}" cx="${f(x)}" cy="${f(y)}" r="${day ? 4 : 5}"/>`; return; }
-      if (!day) { s += `<circle class="cl off" cx="${f(x)}" cy="${f(y)}" r="6"/>`; return; }
-      // a gentle arc from the dark clinic to each receiving clinic, bowed by c.bend
-      const dx = x - hx, dy = y - hy, mx = (hx + x) / 2 - dy * c.bend, my = (hy + y) / 2 + dx * c.bend;
-      const d = `M${f(hx)} ${f(hy)}Q${f(mx)} ${f(my)} ${f(x)} ${f(y)}`;
-      s += `<path class="rt-base" pathLength="1" style="--i:${i}" d="${d}"/><path class="rt-flow" style="--i:${i}" d="${d}"/>`;
-      labels += `<circle class="cl to" style="--i:${i}" cx="${f(x)}" cy="${f(y)}" r="7.5"/>`;
-      const name = narrow ? c.short : c.name;
-      if (!name) return;
-      const [tx, ty, a] = { b: [x, y + 26, 'middle'], t: [x, y - 15, 'middle'], l: [x - 14, y + 5, 'end'] }[c.at];
-      labels += `<text class="to" style="--i:${i}" x="${f(tx)}" y="${f(ty)}" text-anchor="${a}">${name}</text>`;
+    const homes = HOMES.map(([lng, lat, k]) => [...P(lng, lat), k]);
+    if (!day) s += `<g class="edges">${homes.map(([x, y, k]) => `<line x1="${f(x)}" y1="${f(y)}" x2="${f(dk[k][0])}" y2="${f(dk[k][1])}"/>`).join('')}</g>`;
+    s += `<g class="homes">${homes.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${narrow ? 2.25 : 3}"/>`).join('')}</g>`;
+    for (const [lng, lat] of IDLE) { const [x, y] = P(lng, lat); s += `<circle class="cl ${day ? 'idle' : 'off'}" cx="${f(x)}" cy="${f(y)}" r="${day ? 3.5 : 4.5}"/>`; }
+    if (day) TO.forEach((c, i) => {
+      // a gentle arc from the dark clinic to the place it sends patients; width follows the count
+      const [hx, hy] = dk[c.from], [x, y] = to[i], dx = x - hx, dy = y - hy, b = c.bend ?? .14;
+      const d = `M${f(hx)} ${f(hy)}Q${f((hx + x) / 2 - dy * b)} ${f((hy + y) / 2 + dx * b)} ${f(x)} ${f(y)}`;
+      const st = `style="--i:${i};--w:${(1.5 + c.n * .15).toFixed(2)}px"`;
+      // the hospital rows wait on a phone call from staff, so their line is dotted; the hospital gets their sheets
+      s += c.h ? `<path class="rt-call" ${st} d="${d}"/>` : `<path class="rt-base" pathLength="1" ${st} d="${d}"/><path class="rt-flow" ${st} d="${d}"/>`;
     });
-    s += labels;
-    s += `<circle class="ping" cx="${f(hx)}" cy="${f(hy)}" r="9"/><circle class="core" cx="${f(hx)}" cy="${f(hy)}" r="9"/>`;
-    s += `<text class="off" x="${f(hx + 14)}" y="${f(hy + 26)}">${narrow ? HOME.short : HOME.name}</text>`;
-    return s + '</svg>';
+    let labels = '';
+    TO.forEach((c, i) => {
+      const [x, y] = to[i], q = narrow ? 5.5 : 7;
+      if (!day) { s += `<circle class="cl off" cx="${f(x)}" cy="${f(y)}" r="${narrow ? 4.5 : 6}"/>`; return; }
+      labels += c.h ? `<rect class="cl to h" style="--i:${i}" x="${f(x - q)}" y="${f(y - q)}" width="${2 * q}" height="${2 * q}" rx="3"/>`
+        : `<circle class="cl to" style="--i:${i}" cx="${f(x)}" cy="${f(y)}" r="${q}"/>`;
+      const [tx, ty, an] = label(x, y, c.at, q);
+      labels += `<text class="to" style="--i:${i}" x="${f(tx)}" y="${f(ty)}" text-anchor="${an}">${c.name}</text>`;
+    });
+    DARK.forEach((c, i) => {
+      const [x, y] = dk[i], [tx, ty, an] = label(x, y, c.at, r);
+      s += `<circle class="ping" cx="${f(x)}" cy="${f(y)}" r="${r}"/><circle class="core" cx="${f(x)}" cy="${f(y)}" r="${r}"/>`;
+      labels += `<text class="off" x="${f(tx)}" y="${f(ty)}" text-anchor="${an}">${c.name}</text>`;
+    });
+    return s + labels + '</svg>';
   }
   let drawn = '';
   function drawMap() {

@@ -9,8 +9,11 @@
    - The plan is on the map once setFlows, setCapacity or setPatients (a row with an action) carries it. Then: homes fade out
      except the selected patient and a route selection's patients; the county outline fades out; no chair bars; route
      badges only on a route with no road ("Road route not available"; traceRoutes' item label is no longer drawn); once the
-     search is over, clinics that take nobody and an unused hospital hide. Receiving clinics read "name · N patients",
-     plus "Full" when full. */
+     search is over, clinics that take nobody and an unused hospital hide.
+   CONTRACT-v6 sections 2 and 3, still no new API: receiving clinics read "16 of 18 slots" (setCapacity used of open,
+   counting up as routes land) or "Full". For several dark clinics: a search keeps only the edges earlier clinics use, a
+   facility's search status sums them, crowded plan pins rise on longer stems, and a crowded label drops its early line,
+   then hides (lesser labels first) instead of overlapping. */
 (() => {
   'use strict';
 
@@ -27,6 +30,7 @@
   const TOO_FAR = 40;            // road minutes
   const FIT_PAD = 48;
   const FADE_MS = 500;           // v5 fades: the grid in and out, the homes and the county outline out
+  const LIFTS = [0, 8, 16, 24, 32, 40]; // px a pin may rise on its stem to clear a pin placed before it
   // Grid layers and their full opacity; lm-subs' icon opacity depends on power, so applyFx writes it apart.
   const GRID = [['lm-trans-line', 'line-opacity', 0.85], ['lm-trans-dead-casing', 'line-opacity', 1], ['lm-trans-dead', 'line-opacity', 1],
     ['lm-feeder-casing', 'line-opacity', 1], ['lm-feeder-live', 'line-opacity', 0.32], ['lm-feeder-flow', 'line-opacity', 1], ['lm-feeder-dead', 'line-opacity', 1],
@@ -261,8 +265,9 @@
 
   const rawStatus = (f) => S.status[f.id] || 'normal';
   // In a simulation (setScene) a closed clinic is drawn red only while its power is off.
-  // A running search (R9) has not resolved this facility yet: plain until its node forms, then neutral until it resolves.
-  const waiting = (f) => !!G.raf && G.nodes.some((n) => n.id === f.id && n.st !== 'ok' && n.st !== 'no');
+  // A running search (R9) has not resolved this facility yet: plain until its node forms, then neutral until it resolves
+  // (a facility another closed clinic already sends patients to stays receiving).
+  const waiting = (f) => !!G.raf && G.nodes.some((n) => n.id === f.id && n.st !== 'ok' && n.st !== 'no') && !G.nodes.some((n) => n.id === f.id && n.st === 'ok');
   const statusOf = (f) => { const st = rawStatus(f); return (st === 'closed' && S.scene && S.scene.power !== 'off') || (st === 'receiving' && waiting(f)) ? 'normal' : st; };
   const isDead = () => (S.scene ? S.scene.power === 'off' : S.dead);
   // v5: the plan is on the map (the app's mapStage 4): routes, capacity, or homes that carry an action.
@@ -387,7 +392,7 @@
       return { k, item: it, action: it.action || '', line, road, cum: line && measure(line), n,
         label: road ? '' : 'Road route not available', p: !line || old.has(k) ? 1 : 0 };
     });
-    // R9: the search's straight edge to a node gives way to its road trace; on arrival the node's label shows chairs again.
+    // R9: the search's straight edge to a node gives way to its road trace; on arrival the label shows its slots again.
     const gk = (r) => `${r.item.fromId}|${r.item.toId}`;
     const arrive = (r) => {
       r.p = 1;
@@ -423,10 +428,19 @@
 
   // ---------- R9 search graph ----------
 
-  const graphNode = (id) => G.nodes.filter((n) => n.id === id && n.st && !n.done).pop();
-  // The node's one status: forming "18 open chairs", then "+16 patients" / "4 need a phone call", or a gray "Full" / "Not needed".
+  // A facility's search status across closed clinics: the node forming now (its open slots less what earlier clinics
+  // took), else "+N patients" summed over the clinics that send patients there, else the latest "Full" / "Not needed";
+  // none once a road route has reached it (the hospital: once all have, so its phone calls never count back down).
+  function graphNode(id) {
+    const ns = G.nodes.filter((n) => n.id === id && n.st), last = ns[ns.length - 1], ok = ns.filter((n) => n.st === 'ok');
+    if (!last || (last.hosp ? ok.length && ok.every((n) => n.done) : ns.some((n) => n.done))) return null;
+    const used = ok.reduce((t, n) => t + n.used, 0);
+    if (last.st === 'form') return ok.length && last.open != null ? { ...last, open: Math.max(0, last.open - used) } : last;
+    return ok.length ? { ...ok[0], used } : last;
+  }
+  // The node's one status: forming "18 open slots", then "+16 patients" / "4 need a phone call", or a gray "Full" / "Not needed".
   function nodeText(n) {
-    if (n.st === 'form') return n.hosp ? 'Hospital' : n.open > 0 ? plural(n.open, 'open chair') : 'No open chairs';
+    if (n.st === 'form') return n.hosp ? 'Hospital' : n.open > 0 ? plural(n.open, 'open slot') : 'No open slots';
     if (n.st === 'ok') return n.hosp ? calls(n.used) : `+${plural(n.used, 'patient')}`;
     return n.open === 0 || (n.open != null && n.used >= n.open) ? 'Full' : 'Not needed';
   }
@@ -455,7 +469,8 @@
 
   // R9: zoom out slowly to the closed clinic and its candidates (skipped when they are already in view), then visit each
   // node in the given order: an edge draws from the clinic, the node forms, then resolves. A second call for another
-  // closed clinic keeps the first one's graph. Resolves after the last node; reduced motion: the final state at once.
+  // closed clinic keeps only the edges the first one uses (v6: three dark clinics would leave ~70 gray edges). Resolves
+  // after the last node; reduced motion: the final state at once.
   function searchGraph(o) {
     if (!o || o.sourceId == null) { clearGraph(); return Promise.resolve(); }
     const settle = (n) => { n.e = n.s = 1; n.st = n.ok ? 'ok' : 'no'; };
@@ -471,7 +486,7 @@
       return { k: `${o.sourceId}|${f.id}`, src: o.sourceId, id: f.id, a, b, hosp: f.kind === 'hospital', open: Number.isFinite(v.open) ? v.open : null, used,
         ok: v.accepted != null ? !!v.accepted : used > 0, d: Math.hypot((b[0] - a[0]) * k, b[1] - a[1]), e: 0, s: 0, st: '' };
     });
-    G.nodes = G.nodes.filter((n) => n.src !== o.sourceId).concat(mine);
+    G.nodes = G.nodes.filter((n) => n.src !== o.sourceId && n.st === 'ok').concat(mine);
     mine.forEach((n) => G.gone.delete(n.k));
     G.c = a; G.ring = 0;
     const pts = [a, ...mine.map((n) => n.b)], el = map && map.getContainer(), P = S.pad;
@@ -627,7 +642,7 @@
     const css = document.createElement('style');
     css.id = 'lm-css';
     css.textContent = `
-.lm-fac{--pin:26px;--stem:10px;appearance:none;background:none;border:0;margin:0;padding:0 0 var(--stem);display:block;width:var(--pin);cursor:pointer;font-family:var(--f-ui);text-align:left;color:var(--map-ink);-webkit-tap-highlight-color:transparent}
+.lm-fac{--pin:26px;--stem:10px;appearance:none;background:none;border:0;margin:0;padding:0 0 calc(var(--stem) + var(--lift,0px));display:block;width:var(--pin);cursor:pointer;font-family:var(--f-ui);text-align:left;color:var(--map-ink);-webkit-tap-highlight-color:transparent}
 .lm-fac.is-home{--pin:30px}
 .lm-fac.is-tall{--stem:30px}
 .lm-fac.is-small{--pin:24px;--stem:7px}
@@ -639,10 +654,13 @@
 .lm-fac[data-st=closed] .lm-pin{background:var(--map-outage);border-color:var(--map-outage);color:var(--map-halo)}
 .lm-fac[data-st=receiving] .lm-pin{background:var(--map-early);border-color:var(--map-early);color:var(--map-halo)}
 .lm-fac.is-home[data-st=closed] .lm-pin,.lm-fac.is-home[data-st=receiving] .lm-pin{border-color:var(--map-ink)}
-.lm-stem{position:absolute;left:calc(var(--pin) / 2 - .75px);top:var(--pin);width:1.5px;height:var(--stem);background:var(--map-ink);opacity:.75}
+.lm-stem{position:absolute;left:calc(var(--pin) / 2 - .75px);top:var(--pin);width:1.5px;height:calc(var(--stem) + var(--lift,0px));background:var(--map-ink);opacity:.75;transition:height .3s cubic-bezier(.16,1,.3,1)}
 .lm-stem::after{content:"";position:absolute;left:-2.25px;bottom:-3px;width:6px;height:6px;border-radius:50%;background:var(--map-ink);box-shadow:0 0 0 1.5px var(--map-halo)}
 .lm-txt{position:absolute;left:calc(var(--pin) + 4px);top:calc(var(--pin) / 2);transform:translateY(calc(-50% + var(--dy,0px)));display:flex;flex-direction:column;padding:1px 4px 2px;border-radius:4px;background:var(--map-halo);white-space:nowrap;line-height:1.15}
 .lm-fac.lbl-left .lm-txt{left:auto;right:calc(100% + 4px);align-items:flex-end;text-align:right}
+.lm-fac.lbl-up .lm-txt,.lm-fac.lbl-down .lm-txt{left:50%;align-items:center;text-align:center}
+.lm-fac.lbl-up .lm-txt{top:auto;bottom:calc(100% + 2px);transform:translateX(-50%)}
+.lm-fac.lbl-down .lm-txt{top:calc(100% + 5px);transform:translateX(-50%)}
 .lm-name{font-size:13px;font-weight:600;letter-spacing:.005em}
 .lm-sub{font-size:11.5px;font-weight:500;color:var(--ink-2);margin-top:1px;font-variant-numeric:tabular-nums}
 .lm-fac[data-st=closed] .lm-sub{color:var(--red-ink)}
@@ -653,12 +671,14 @@
 .lm-fac.is-narrow .lm-sep{display:none}
 .lm-fac.is-full .lm-sub{align-self:flex-start;margin-top:2px;padding:0 6px;border:1px solid var(--map-ink);border-radius:999px;color:var(--map-ink);font-weight:600}
 .lm-fac.lbl-left.is-full .lm-sub{align-self:flex-end}
+.lm-fac.lbl-up.is-full .lm-sub,.lm-fac.lbl-down.is-full .lm-sub,.lm-fac.lbl-up .lm-early,.lm-fac.lbl-down .lm-early{align-self:center}
 .lm-early{display:none;align-self:flex-start;margin:2px 0 1px;padding:0 5px;border-radius:4px;background:var(--green-bg);color:var(--green-ink);font-size:11.5px;font-weight:600}
 .lm-fac.lbl-left .lm-early{align-self:flex-end}
 .lm-fac.has-early .lm-early{display:block}
-.lm-fac{transition:opacity .4s cubic-bezier(.16,1,.3,1),visibility 0s}
-.lm-fac.lm-dim{opacity:.35}
+.lm-fac.no-early:not(:hover):not(:focus-visible) .lm-early{display:none}
+.lm-fac{transition:opacity .4s cubic-bezier(.16,1,.3,1),visibility 0s,padding-bottom .3s cubic-bezier(.16,1,.3,1)}
 /* !important: MapLibre writes each marker's opacity inline */
+.lm-fac.lm-dim{opacity:.35!important}
 .lm-fac.lm-off{opacity:0!important;visibility:hidden;pointer-events:none;transition:opacity .4s ease-out,visibility 0s .4s}
 .lm-call{pointer-events:none;box-sizing:border-box;max-width:260px;display:flex;flex-direction:column;gap:2px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--f-ui);font-size:12.5px;line-height:1.3;box-shadow:var(--shadow)}
 .lm-call-t{font-weight:600}
@@ -688,30 +708,32 @@
 .maplibregl-ctrl-scale{border-color:var(--ink-2)}
 :root[data-theme=dark] .maplibregl-ctrl-icon,:root[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1) hue-rotate(180deg)}
 @media (pointer:coarse){.lm-fac::before{content:"";position:absolute;left:calc(var(--pin) / 2 - 22px);top:calc(var(--pin) / 2 - 22px);width:44px;height:44px}.lm-iso button{min-height:44px}}
-@media (prefers-reduced-motion:reduce){.lm-fac,.lm-fac.lm-off,.lm-pin,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
+@media (prefers-reduced-motion:reduce){.lm-fac,.lm-fac.lm-off,.lm-pin,.lm-stem,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
     document.head.appendChild(css);
   }
 
   // Same rule as the panel's short name (app.js), so the visible pin text is part of its accessible name.
   const shortName = (n) => String(n || '').replace(/\s+Dialysis(\s+(Center|Clinic))?$/i, '');
 
-  // One status per label (R6). setCapacity wins: its text, else a receiving clinic's name gets "· 16 patients" (n) and
-  // its status line says "Full" only when full (v5). st is the real status (not the simulated look), so a closed clinic
-  // always says what happens to its power. plan: the status comes from the plan (patients, phone calls), so the label
-  // places before plain clinics. While the search (R9) visits a facility, its node status wins.
+  // One status per label (R6). setCapacity wins: its text, else a receiving clinic says "16 of 18 slots" (used of open,
+  // counting up while routes land) or "Full" (v6); with no slot count it says "· 16 patients" beside its name (n). st is
+  // the real status (not the simulated look), so a closed clinic always says what happens to its power. plan: the status
+  // comes from the plan, so the label places before plain clinics; w (patients) orders plan labels, biggest first. While
+  // the search (R9) visits a facility, its node status wins.
   function status(f, st, n) {
     const g = graphNode(f.id);
-    if (g) return { s: nodeText(g), plan: true, sg: g.st };
-    if (waiting(f)) return { s: f.kind === 'hospital' ? 'Hospital' : f.stations ? `${f.stations} chairs` : 'Dialysis' };
-    const c = S.cap[f.id], used = c && Number.isFinite(c.used) ? c.used : n;
-    if (c && c.text) return { s: c.text, plan: true };
-    if (f.kind === 'hospital') return used ? { s: calls(used), plan: true } : { s: 'Hospital' };
+    if (g) return { s: nodeText(g), plan: true, sg: g.st, w: g.used };
+    if (waiting(f)) return { s: f.kind === 'hospital' ? 'Hospital' : 'Dialysis' };
+    const c = S.cap[f.id], used = c && Number.isFinite(c.used) ? c.used : n, w = (c && c.n) || used;
+    if (c && c.text) return { s: c.text, plan: true, w };
+    if (f.kind === 'hospital') return used ? { s: calls(used), plan: true, w } : { s: 'Hospital' };
     if (st === 'receiving' || used > 0) {
-      const full = !!c && (c.full != null ? c.full : Number.isFinite(c.open) && used >= c.open);
-      return { s: full ? 'Full' : '', n: plural(used, 'patient'), full, plan: true };
+      const open = c && Number.isFinite(c.open) ? c.open : null, full = !!c && (c.full != null ? !!c.full : open != null && used >= open);
+      const slots = open != null ? `${used} of ${plural(open, 'slot')}` : ''; // a: what "Full" means, for screen readers
+      return { s: full ? 'Full' : slots, n: full || slots ? '' : plural(used, 'patient'), a: full ? slots : '', full, plan: true, w };
     }
     if (st === 'closed') return { s: S.scene && S.scene.power === 'restored' ? 'Power back' : isDead() ? 'No power' : 'Loses power' };
-    return { s: f.home ? 'Home clinic' : f.stations ? `${f.stations} chairs` : 'Dialysis' };
+    return { s: f.home ? 'Home clinic' : 'Dialysis' };
   }
 
   // v5: once the plan shows and the search is over, a facility with no part in the plan hides (the hospital too, unused).
@@ -771,39 +793,64 @@
       m.sub.innerHTML = x.sg === 'ok' ? OK : '';
       m.sub.append(keep(sub));
       m.early.textContent = early;
-      m.el.setAttribute('aria-label', [f.name + (x.n ? `, ${x.n}` : ''), sub, early].filter(Boolean).join('. '));
-      m.el.style.zIndex = f.home ? 3 : st === 'normal' ? 1 : 2;
+      m.el.setAttribute('aria-label', [f.name + (x.n ? `, ${x.n}` : ''), x.a, sub, early].filter(Boolean).join('. '));
+      // Dark clinics stay on top of a cluster; a raised pin is 1 lower. At most 2: the console's legend, map buttons, timeline,
+      // notice card and banner (z-index 2 to 5, after the map) stay over the pins; hover and focus (9) still rise above them.
+      m.z = f.home || raw === 'closed' ? 2 : st === 'normal' ? 0 : 1;
       m.rank = f.home ? 0 : raw === 'closed' ? 1 : x.plan || st === 'receiving' ? 2 : 3; // 3: plain clinic or hospital
+      m.w = x.w || 0;
+      // Full label size, and (with an early line) the compact size a crowded label falls back to before it hides.
+      const ne = m.el.classList.contains('no-early');
+      m.el.classList.remove('no-early');
       m.lw = m.txt.offsetWidth; m.lh = m.txt.offsetHeight;
+      m.el.classList.add('no-early');
+      [m.lw2, m.lh2] = early ? [m.txt.offsetWidth, m.txt.offsetHeight] : [0, 0];
+      m.el.classList.toggle('no-early', ne && !!early);
     });
     placeLabels();
   }
 
-  // Put each facility label beside its pin, on its current side, else the other side, else slid up or down along the pin,
-  // else hide it; never over another pin or an earlier label (pins always stay). Order: home (never hidden), the area label,
-  // labels with a plan status (closed, patients, phone calls), route badges, then plain clinics.
+  // Pins first: a pin whose head would sit on one placed before it rises on a longer stem (a leader line; its foot stays on
+  // the clinic), so clustered clinics stay apart; zoomed out to the county, only pins with a plan status rise (no forest of
+  // stems). Then each facility label goes beside its pin, on its current side, else the other side, above or below the
+  // pin, else slid up or down along it, else without its early line, else it hides; never over another pin or an earlier
+  // label (pins always stay). Order: home (never hidden), closed clinics, the area label, labels with a plan status (most
+  // patients first), route badges, then plain clinics.
   function placeLabels(force) {
     const box0 = map.getContainer(), W = box0.clientWidth, H = box0.clientHeight;
+    const faded = (m) => m.el.classList.contains('lm-dim');
+    const order = (m) => m.rank * 1e4 - (m.rank === 2 ? m.w || 0 : 0);
+    const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+    const ov = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
     const items = markers.map((m) => {
       const p = map.project(m.marker.getLngLat()), tab = !m.off && p.x >= 0 && p.x <= W && p.y >= 0 && p.y <= H ? 0 : -1;
       if (m.el.tabIndex !== tab) m.el.tabIndex = tab; // no focus stops on hidden pins or pins outside the map
-      return { m, p, pin: [p.x - m.pin / 2 - 2, p.y - m.stem - m.pin - 2, p.x + m.pin / 2 + 2, p.y + 3] };
-    }).filter((i) => !i.m.off); // a hidden pin (v5) takes no room
-    // While a selection is shown (R8), faded pins do not push labels away and show no label; the chip is kept clear.
-    const faded = (m) => m.el.classList.contains('lm-dim');
-    const placed = items.filter((i) => !faded(i.m)).map((i) => i.pin);
-    const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
-    if (S.iso && chip.w) { const x = W / 2 + (S.pad.left - S.pad.right) / 2, y = 12 + S.pad.top; placed.push([x - chip.w / 2 - 4, y - 4, x + chip.w / 2 + 4, y + chip.h + 4]); }
+      return { m, p };
+    }).filter((i) => !i.m.off).sort((a, b) => order(a.m) - order(b.m)); // a hidden pin (v5) takes no room
+    const heads = [], few = map.getZoom() >= 11, head = (i, l) => [i.p.x - i.m.pin / 2 - 1, i.p.y - i.m.stem - l - i.m.pin - 1, i.p.x + i.m.pin / 2 + 1, i.p.y - i.m.stem - l + 1];
+    items.forEach((i) => {
+      const cost = (l) => heads.reduce((t, b) => t + ov(head(i, l), b), 0); // no free height: the least covered one
+      const rise = few || i.m.rank <= 2, lift = !rise || i.p.x < -40 || i.p.x > W + 40 ? 0 : LIFTS.find((l) => !cost(l)) ?? LIFTS.reduce((a, l) => (cost(l) < cost(a) ? l : a));
+      if (rise) heads.push(head(i, lift));
+      if (lift !== (i.m.lift || 0)) { i.m.lift = lift; i.m.el.style.setProperty('--lift', `${lift}px`); }
+      const z = String(Math.max(0, i.m.z - !!lift)); // a raised pin's stem passes behind the pin it clears
+      if (i.m.el.style.zIndex !== z) i.m.el.style.zIndex = z;
+      const st = i.m.stem + lift;
+      i.pin = [i.p.x - i.m.pin / 2 - 2, i.p.y - st - i.m.pin - 2, i.p.x + i.m.pin / 2 + 2, i.p.y + 3];
+    });
+    // While a selection is shown (R8), faded pins do not push labels away and show no label; the chip and the map's own
+    // controls (zoom, scale, attribution) are kept clear.
+    const placed = items.filter((i) => !faded(i.m)).map((i) => i.pin), r0 = box0.getBoundingClientRect();
+    box0.querySelectorAll('.maplibregl-ctrl').forEach((el) => { const r = el.getBoundingClientRect(); if (r.width) placed.push([r.left - r0.left, r.top - r0.top, r.right - r0.left, r.bottom - r0.top]); });
+    if (S.iso && chip.w) { const x = W / 2 + chip.dx, y = 12 + S.pad.top; placed.push([x - chip.w / 2 - 4, y - 4, x + chip.w / 2 + 4, y + chip.h + 4]); }
     if (S.pr && call.w) { // route callout under the destination pin (above it near the bottom edge), kept inside the map
       const q = map.project(S.pr.to), w = call.w, h = call.h, below = q.y + 12, above = q.y - 46 - h;
       const y = below + h <= H - 8 || above < 8 ? below : above, x = clamp(q.x - w / 2, 8, Math.max(8, W - w - 8));
       call.marker.setOffset([x - q.x, y - q.y]);
       placed.push([x, y, x + w, y + h]);
     }
-    const npin = placed.length;
     const placeArea = () => { // area label: where it is now, else center, else the first nearby spot no pin or label covers
       if (!area.box) return;
-      const labels = placed.slice(npin); // pins (and the route callout) come first; after them only the home label is placed yet
       const c = map.project(area.marker.getLngLat()), [w, h] = area.box, dx = w / 2 + 12, dy = h + 6, cur = area.marker.getOffset();
       const at = ([x, y]) => [c.x + x - w / 2, c.y + y - h / 2, c.x + x + w / 2, c.y + y + h / 2];
       const fits = (o) => { const b = at(o); return b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !placed.some((p) => hit(b, p)); };
@@ -811,8 +858,8 @@
       const off = [[cur.x, cur.y], [0, 0], [dx, 0], [0, dy], [0, -dy], [-dx, 0], [dx, dy], [dx, -dy]].find(fits)
         || (c.x >= 0 && c.x <= W && c.y >= 0 && c.y <= H ? [clamp(0, w / 2 - c.x, W - w / 2 - c.x), clamp(0, h / 2 - c.y, H - h / 2 - c.y)] : [0, 0]);
       if (cur.x !== off[0] || cur.y !== off[1]) area.marker.setOffset(off);
-      // Over a label or past the map edge: hide it; the red area and its legend row still say what it is.
-      const b = at(off), show = b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !labels.some((p) => hit(b, p));
+      // Over a pin, a label or past the map edge: hide it; the red area and the dark clinics' "No power" still say what it is.
+      const b = at(off), show = fits(off);
       area.text.style.visibility = show ? '' : 'hidden';
       if (show) placed.push(b);
     };
@@ -829,24 +876,35 @@
       });
       if (moved) writeCounts();
     };
-    const pri = (m) => m.rank + 10 * faded(m);
     let areaDone = false, badgesDone = false;
-    items.sort((a, b) => pri(a.m) - pri(b.m)).forEach(({ m, p, pin }) => {
-      if (!m.f.home && !areaDone) { areaDone = true; placeArea(); }
-      if (pri(m) > 2 && !badgesDone) { badgesDone = true; placeBadges(); }
-      const cy = p.y - m.stem - m.pin / 2, h = Math.max(m.lh, m.pin), top = cy - h / 2, bottom = cy + h / 2 + 1; // label is centered on the pin
-      const at = (l, dy) => (l ? [p.x - m.pin / 2 - 6 - m.lw, top - 1 + dy, p.x - m.pin / 2 - 2, bottom + dy] : [p.x + m.pin / 2 + 2, top - 1 + dy, p.x + m.pin / 2 + 6 + m.lw, bottom + dy]);
-      const free = (box) => box[0] >= 0 && box[2] <= W && !placed.some((b) => b !== pin && hit(box, b));
-      const L = m.el.classList.contains('lbl-left'), a = (h + m.pin) / 2 - 6; // slid by a, the label still overlaps the pin by 6 px
-      const spots = [[L, m.dy || 0], ...[0, -a / 2, a / 2, -a, a].flatMap((dy) => [[L, dy], [!L, dy]])];
-      // The home label never hides: with no free spot it takes the one covering the least of other pins (a phone's clinics cluster).
-      const cover = (box) => placed.reduce((s, b) => s + (b === pin ? 0 : Math.max(0, Math.min(box[2], b[2]) - Math.max(box[0], b[0])) * Math.max(0, Math.min(box[3], b[3]) - Math.max(box[1], b[1]))), 0);
-      const least = () => spots.filter(([l, dy]) => { const b = at(l, dy); return b[0] >= 0 && b[2] <= W; }).reduce((x, s) => (x && cover(at(...x)) <= cover(at(...s)) ? x : s), null);
-      const spot = faded(m) ? null : spots.find(([l, dy]) => free(at(l, dy)))
-        || (m.f.home ? least() || [at(false, 0)[2] > W, 0] : null);
-      if (spot) placed.push(at(...spot));
+    items.sort((a, b) => faded(a.m) - faded(b.m)).forEach(({ m, p, pin }) => { // stable: the order above, faded labels last
+      if ((m.rank > 1 || faded(m)) && !areaDone) { areaDone = true; placeArea(); }
+      if ((m.rank > 2 || faded(m)) && !badgesDone) { badgesDone = true; placeBadges(); }
+      const st = m.stem + (m.lift || 0), cy = p.y - st - m.pin / 2; // a beside label is centered on the pin
+      const inside = (box) => box[0] >= 0 && box[2] <= W && box[1] >= 0 && box[3] <= H; // a label above or below its pin can leave the map
+      const free = (box) => inside(box) && !placed.some((b) => b !== pin && hit(box, b));
+      const side = m.side || 'r', hz = side === 'l' ? ['l', 'r'] : ['r', 'l'];
+      // Spots for the full label (k 0) or the compact one without its early line (k 1).
+      const geo = (k) => {
+        const lw = k ? m.lw2 : m.lw, lh = k ? m.lh2 : m.lh, h = Math.max(lh, m.pin), top = cy - h / 2, bottom = cy + h / 2 + 1, a = (h + m.pin) / 2 - 6; // slid by a, the label still overlaps the pin by 6 px
+        const at = (s, dy) => (s === 'l' ? [p.x - m.pin / 2 - 6 - lw, top - 1 + dy, p.x - m.pin / 2 - 2, bottom + dy]
+          : s === 'u' ? [p.x - lw / 2 - 2, p.y - st - m.pin - 4 - lh, p.x + lw / 2 + 2, p.y - st - m.pin]
+            : s === 'd' ? [p.x - lw / 2 - 2, p.y + 3, p.x + lw / 2 + 2, p.y + 7 + lh]
+              : [p.x + m.pin / 2 + 2, top - 1 + dy, p.x + m.pin / 2 + 6 + lw, bottom + dy]);
+        return { at, spots: [[side, m.dy || 0], ...hz.map((x) => [x, 0]), ['u', 0], ['d', 0], ...[-a / 2, a / 2, -a, a].flatMap((dy) => hz.map((x) => [x, dy]))] };
+      };
+      let spot = null, box = null, k = 0;
+      for (; !faded(m) && !spot && k < (m.lh2 ? 2 : 1); k++) { const g = geo(k); spot = g.spots.find((x) => free(g.at(...x))); if (spot) box = g.at(...spot); }
+      k = spot ? k - 1 : m.lh2 ? 1 : 0;
+      if (!spot && !faded(m) && m.f.home) { // the home label never hides: compact, on the spot covering the least of other pins
+        const g = geo(k), cover = (b) => placed.reduce((t, q) => t + (q === pin ? 0 : ov(b, q)), 0);
+        spot = g.spots.filter((x) => inside(g.at(...x))).reduce((a, x) => (a && cover(g.at(...a)) <= cover(g.at(...x)) ? a : x), null) || [g.at('r', 0)[2] > W ? 'l' : 'r', 0];
+        box = g.at(...spot);
+      }
+      if (spot) placed.push(box);
       m.el.classList.toggle('no-label', !spot);
-      m.el.classList.toggle('lbl-left', !!spot && spot[0]);
+      m.el.classList.toggle('no-early', !!spot && k === 1);
+      if (spot && spot[0] !== m.side) { m.side = spot[0]; ['l', 'u', 'd'].forEach((x) => m.el.classList.toggle(`lbl-${{ l: 'left', u: 'up', d: 'down' }[x]}`, m.side === x)); }
       const dy = spot ? spot[1] : 0;
       if (dy !== (m.dy || 0)) { m.dy = dy; m.el.style.setProperty('--dy', `${dy}px`); }
     });
@@ -882,12 +940,15 @@
       chip.el.lastChild.addEventListener('click', showAll);
       map.getContainer().appendChild(chip.el);
     }
-    const t = isoText();
+    const t = isoText(), W = map.getContainer().clientWidth;
     chip.el.hidden = !t;
     chip.txt.textContent = t;
-    chip.el.style.setProperty('--lm-dx', `${(S.pad.left - S.pad.right) / 2}px`);
     chip.el.style.setProperty('--lm-top', `${S.pad.top}px`);
     chip.w = t ? chip.el.offsetWidth : 0; chip.h = chip.el.offsetHeight;
+    // Centered in the padded view, but never past the map's 16 px edge (a phone's map controls pad the right side).
+    const room = Math.max(0, (W - chip.w) / 2 - 16);
+    chip.dx = clamp((S.pad.left - S.pad.right) / 2, -room, room);
+    chip.el.style.setProperty('--lm-dx', `${chip.dx}px`);
   }
 
   // The chip and Esc: back to every route; onSelect(null) tells the app the selection ended.
@@ -1047,7 +1108,7 @@
     map.on('mousemove', (e) => { map.getCanvas().style.cursor = hits(e.point).length ? 'pointer' : ''; });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.iso && !e.defaultPrevented && !document.querySelector('dialog[open]')) showAll(); });
     map.on('move', onMove);
-    map.on('resize', onMove);
+    map.on('resize', () => { if (S.iso) renderChip(); onMove(); }); // the chip's room changes with the map's width
     map.on('moveend', () => { flying = null; });
     // A person tilting with the mouse or resetting with the compass changes 3D; tell the app so its button stays true.
     map.on('pitchend', (e) => {
