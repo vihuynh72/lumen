@@ -38,7 +38,7 @@ WORDS = {
               "recogera recogida preguntas llame al llegue comienza nuevo horario clinica para se ha "
               "muerte peligro riesgo".split()),
 }
-ZH_CHARS = set("您的治疗透析已调整改到安排在请于出发前离家等候车辆来接您如有问题致电咨询停电计划时间地点死亡危险风险")
+ZH_CHARS = set("您的治疗透析已调整改到安排在请于出发前离家等候车辆来接送您如有问题致电咨询停电计划时间地点死亡危险风险")
 
 
 def _plain(value):
@@ -71,8 +71,8 @@ def _message_error(message, facts, lang):
         return "message length"
     if BANNED.search(_plain(message)):
         return "banned wording"
-    times = {facts["time"], facts["pickup_time"]}
-    if not all(clock in message for clock in times) or set(CLOCK.findall(message)) != times:
+    times = [facts["time"], facts["pickup_time"]]
+    if CLOCK.findall(message) != times:
         return "time strings"
     if not message.startswith(facts["day"] + " " + facts["time"]) or facts["clinic_name"] not in message:
         return "time and place first"
@@ -80,7 +80,24 @@ def _message_error(message, facts, lang):
         return "place first"
     if not _language_ok(message, facts, lang):
         return "language"
+    if not _ride_ok(message, facts, lang):
+        return "pickup wording"
     return None
+
+
+def _ride_ok(message, facts, lang):
+    clocks = list(CLOCK.finditer(message))
+    if len(clocks) != 2:
+        return False
+    own = facts["ride"] in ("self", "family")
+    before, after = message[:clocks[1].start()], message[clocks[1].end():]
+    if lang == "zh":
+        return bool(re.match(r"(?:请)?(?:出发|离家)" if own else r"(?:接您|等候接送)", after))
+    if lang == "en":
+        pattern = r"leave home by\s*$" if own else r"(?:ride|paratransit|transport) picks you up at\s*$"
+    else:
+        pattern = r"salga de casa a las\s*$" if own else r"transporte le recoge a las\s*$"
+    return bool(re.search(pattern, _plain(before)))
 
 
 def _row_error(row, facts):

@@ -15,7 +15,8 @@ that language. zh means Mandarin in Simplified characters.
 Messages start with the exact day and time, then the exact clinic name. Use the
 clinic address only if it fits; street-only is fine. Preserve both the supplied
 treatment time and pickup time exactly, including leading zeros. No other clock
-time is allowed. Each message contains exactly one literal {name} placeholder.
+time is allowed. Use each exactly once, in that order. Each message contains
+exactly one literal {name} placeholder.
 Use calm, simple language at about a sixth-grade reading level. English and
 Spanish must have fewer than 40 words; Chinese must have at most 80 characters,
 including Latin clinic names and punctuation. Avoid filler to keep Chinese short.
@@ -24,7 +25,10 @@ language (death/dead/die/danger/risk; muerte/morir/peligro/riesgo; 死亡/危险
 
 Style: time and clinic first, then "{name}, your treatment has moved." Explain
 the ride: self/family leave home by the pickup time; other rides pick the person
-up at that time. When space permits, end "Questions? Call 555-0100." The callback
+up at that time. Use "Please leave home by TIME" or "A ride picks you up at TIME"
+in English; "Salga de casa a las TIME" or "Un transporte le recoge a las TIME"
+in Spanish; "TIME请出发" or "TIME接您" in Chinese. TIME is the exact pickup string.
+When space permits, end "Questions? Call 555-0100." The callback
 is fictional; never use a real clinic phone number. Do not add facts or advice.
 
 For the separate summary request, return only summary. Copy its supplied two
