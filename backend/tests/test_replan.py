@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "contracts" / "fixtures"
 GOOD = "1 patient row changed at C02, H01. New actions: 1 hospital."
-SUMMARY = "1 patient row changed at DaVita Folsom Dialysis, Mercy Hospital of Folsom. New actions: 1 patient needs a staff call."
+SUMMARY = "1 patient row changed at DaVita Folsom Dialysis, Mercy Hospital of Folsom. New actions: 1 patient needs a staff call; 1 pickup change."
 CAPACITY = {"clinic_id": "C02", "date": "2026-10-29", "shift": 1, "chairs": 2}
 PIN = ("pin_patient", {"patient_id": "P003", "clinic_id": "C02", "date": "2026-10-29", "shift": 1})
 
@@ -153,7 +153,7 @@ def test_invented_ids_take_error_path(monkeypatch, setup, name, args):
 
 
 @pytest.mark.parametrize("error,expected", [
-    (ValueError("C02 holds pinned or confirmed patients"), "C02 holds pinned or confirmed patients"),
+    (ValueError("C02 holds pinned or confirmed patients"), "Tool failed"),
     (RuntimeError("private database password traceback"), "Tool failed"),
 ])
 def test_tool_errors_are_readable_or_generic(monkeypatch, setup, error, expected):
@@ -197,6 +197,7 @@ def test_no_names_or_home_locations_reach_any_converse_call(monkeypatch, setup):
     plan, tools, _, matched, _, clinics = setup
     for value in (plan, matched):
         value["patients"][0].update(name="Private Patient", home={"lat": 38.731234, "lng": -120.791234})
+        value["patients"][0]["slot"]["note"] = "Private clinic slot note"
     tools["rerun_matching"].side_effect = lambda: deepcopy(matched)
     clinics[0].update(address="Private clinic address", phone="555-private", lat=38.731234)
     clinics[0]["slots"][0]["note"] = "Private clinic slot note"
@@ -486,17 +487,17 @@ def test_sixth_tool_turn_is_rejected_before_any_tool_execution(monkeypatch, setu
     tools["decline_patient"].assert_not_called()
 
 
-@pytest.mark.parametrize("error,forward", [(ValueError("x" * 199), True),
-    (ValueError("x" * 200), False), (RuntimeError("database unavailable"), False)])
-def test_tool_warning_and_bounded_error_text(monkeypatch, setup, caplog, error, forward):
+@pytest.mark.parametrize("error", [ValueError("Private Patient, Private Address, 555-private"),
+    ValueError("x" * 200), RuntimeError("database unavailable")])
+def test_tool_warning_and_error_text_are_sanitized(monkeypatch, setup, caplog, error):
     plan, tools, _, _, _, clinics = setup
     tools["pin_patient"].side_effect = error
     replan, seen = install(monkeypatch, [turn(PIN), turn(text="Done.")])
     with pytest.raises(RuntimeError, match="all tool calls failed"):
         replan("Pin P003", plan, tools, clinics)
-    assert tool_results(seen[1])[0]["content"] == [{"text": str(error) if forward else "Tool failed"}]
-    assert any(r.levelname == "WARNING" and "pin_patient" in r.message
-               and type(error).__name__ in r.message and str(error) in r.message and r.exc_info is None
+    assert tool_results(seen[1])[0]["content"] == [{"text": "Tool failed"}]
+    assert str(error) not in json.dumps(seen) and str(error) not in caplog.text
+    assert any(r.levelname == "WARNING" and r.message == f"Replan tool failed: {type(error).__name__}" and r.exc_info is None
                for r in caplog.records)
 
 
@@ -549,7 +550,7 @@ def test_summary_uses_plain_actions_and_clinics_of_changed_rows(monkeypatch, set
     ]
     replan, _ = install(monkeypatch, [turn(PIN), turn(text="P999 is changed.")])
     summary = replan("Pin P003", plan, tools, clinics)["summary"]
-    assert summary == f"1 patient row changed at DaVita Folsom Dialysis. New actions: 1 patient {words}."
+    assert summary == f"1 patient row changed at DaVita Folsom Dialysis. New actions: 1 patient {words}; 1 patient pinned."
     assert "P999" not in summary and "Cameron" not in summary
 
 
@@ -561,9 +562,8 @@ def test_finalization_tool_failures_are_logged_and_propagate(monkeypatch, setup,
     replan, _ = install(monkeypatch, [turn(PIN), turn(text="Done.")])
     with pytest.raises(RuntimeError) as caught:
         replan("Pin P003", plan, tools, clinics)
-    assert caught.value is error
-    assert any(r.levelname == "WARNING" and tool_name in r.message
-               and "RuntimeError" in r.message and "store unavailable" in r.message
+    assert str(caught.value) == "Tool failed"
+    assert any(r.levelname == "WARNING" and r.message == "Replan tool failed: RuntimeError"
                and r.exc_info is None for r in caplog.records)
 
 
@@ -585,3 +585,102 @@ def test_expired_tool_budget_stops_remaining_work(monkeypatch, setup, slow_tool,
     with pytest.raises(TimeoutError):
         replan("Pin or decline P003", plan, tools, clinics)
     tools[next_tool].assert_not_called()
+
+
+@pytest.mark.parametrize("instruction", [
+    "C02 no more", "C02 zero more", "C02 can only take no more", "C02 can only take zero more", "C02 can't take any more",
+    "C02 can now only take 4 more", "Only 4 more at C02", "C01 and C02 can only take 2 more",
+    *[f"C02 can only take {n} more" for n in "eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()],
+])
+def test_review_limits_never_drop_a_cap(monkeypatch, setup, instruction):
+    # Port of adversarial test 1: keeping the existing chairs must not succeed.
+    plan, tools, _, _, _, clinics = setup
+    clinics[1]["slots"] = [{**CAPACITY, "open_chairs": 25}]
+    chairs = 25
+    if instruction.startswith("C01 and"):
+        clinics[0]["slots"][0]["open_chairs"] = 25
+        chairs = 2
+    replan, _ = install(monkeypatch, [turn(("set_clinic_capacity", {**CAPACITY, "chairs": chairs})), turn()])
+    with pytest.raises(RuntimeError, match="capacity"):
+        replan(instruction, plan, tools, clinics)
+    zeros = [("set_clinic_capacity", {"clinic_id": c["id"], "date": s["date"], "shift": s["shift"], "chairs": 0})
+             for c in clinics[:2] if c["id"] == "C02" or instruction.startswith("C01 and") for s in c["slots"]]
+    replan, _ = install(monkeypatch, [turn(*zeros), turn()])
+    assert replan(instruction, plan, tools, clinics)["plan"]
+
+
+@pytest.mark.parametrize("instruction", ["C02 can only take a few more", "Only twenty-one more at C02", "C02 can only take 1.5 more", "C02 no more than 3"])
+def test_review_unparsed_limit_fails_closed(monkeypatch, setup, instruction):
+    plan, tools, _, _, _, clinics = setup
+    replan, seen = install(monkeypatch, [])
+    with pytest.raises(ValueError, match="limit"):
+        replan(instruction, plan, tools, clinics)
+    assert not seen
+
+
+@pytest.mark.parametrize("instruction,patient,allowed", [
+    ("Leave P001 alone; C02 can only take 4 more", "P001", False),
+    ("Do not touch P100", "P100", False), ("P001 is waiting", "P001", False),
+    ("Do not decline P001", "P001", False), ("Decline a different patient after reviewing P001", "P001", False), ("Pin P002; leave P001 alone", "P001", False),
+    ("P001 didn't decline the chair", "P001", False), ("P001 hasn't declined", "P001", False),
+    ("Keep P001 away from C02 at all costs", "P001", False),
+    ("P001 declined the new chair", "P001", True), ("Drop p001-p002", "P002", True),
+    ("Decline P001's chair", "P001", True), ("Decline P1", "P001", False),
+])
+def test_review_patient_action_scope(monkeypatch, setup, instruction, patient, allowed):
+    # Ports adversarial test 2 and preserves ID range/possessive boundaries.
+    plan, tools, _, _, _, clinics = setup
+    plan["patients"] += [{**plan["patients"][0], "patient_id": "P100"}]
+    replan, seen = install(monkeypatch, [turn(("decline_patient", {"patient_id": patient})), turn()])
+    if allowed:
+        replan(instruction, plan, tools, clinics)
+    else:
+        with pytest.raises(RuntimeError, match="all tool calls failed"):
+            replan(instruction, plan, tools, clinics)
+        tools["decline_patient"].assert_not_called()
+        assert "not requested" in str(tool_results(seen[1]))
+
+
+@pytest.mark.parametrize("separate", [False, True])
+def test_review_nested_clinic_names(monkeypatch, setup, separate):
+    plan, tools, _, _, _, clinics = setup
+    clinics[0]["name"], clinics[1]["name"] = "Folsom Dialysis", "North Folsom Dialysis"
+    args = {"clinic_id": "C01", "date": "2026-10-27", "shift": 1, "chairs": 0}
+    replan, _ = install(monkeypatch, [turn(("set_clinic_capacity", args)), turn()])
+    instruction = "Adjust North Folsom Dialysis" + ("; adjust Folsom Dialysis" if separate else "")
+    if separate:
+        replan(instruction, plan, tools, clinics)
+    else:
+        with pytest.raises(RuntimeError, match="all tool calls failed"):
+            replan(instruction, plan, tools, clinics)
+        tools["set_clinic_capacity"].assert_not_called()
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("decline", ["1 patient declined", "1 patient needs a staff call"]),
+    ("pin", ["1 pinned move", "1 pickup change"]),
+    ("capacity", ["DaVita Folsom Dialysis", "nobody moved"]),
+    ("unknown", ["1 patient has an updated action"]),
+])
+def test_review_summary_reports_operational_changes(monkeypatch, setup, case, expected):
+    # Adversarial test 3: a declined chair and new staff-call flag must be visible.
+    plan, tools, _, matched, _, clinics = setup
+    changes = {"decline": [("status", "draft", "declined"), ("flags", [], ["staff_call"]), ("slot", {}, None)],
+               "pin": [("pinned", False, True), ("clinic_id", "C01", "C02"), ("pickup_time", None, "10:00")],
+               "capacity": [], "unknown": [("action", "transfer", "future_action")]}
+    tools["diff_plans"].side_effect = lambda: [{"patient_id": "P003", "field": f, "from": a, "to": b}
+                                             for f, a, b in changes[case]]
+    mutation = ("decline_patient", {"patient_id": "P003"}) if case == "decline" else PIN
+    requests = ([] if case == "capacity" else [mutation]) + [("set_clinic_capacity", {**CAPACITY, "chairs": 0})]
+    replan, _ = install(monkeypatch, [turn(*requests), turn()])
+    summary = replan("P003 declined the chair; adjust C02" if case == "decline" else "Pin P003 and adjust C02", plan, tools, clinics)["summary"]
+    assert all(value in summary for value in expected)
+    assert summary.count(".") == 2
+
+
+@pytest.mark.parametrize("instruction", ["Move P003 to C02", "Send P003 to C02", "Keep P003 at C02"])
+def test_review_positive_pin_actions(monkeypatch, setup, instruction):
+    plan, tools, _, _, _, clinics = setup
+    replan, _ = install(monkeypatch, [turn(PIN), turn()])
+    replan(instruction, plan, tools, clinics)
+    tools["pin_patient"].assert_called_once()
