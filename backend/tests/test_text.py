@@ -128,3 +128,113 @@ def test_missing_model_is_clear(monkeypatch, inputs):
     with pytest.raises(ValueError, match="BEDROCK_MODEL_FAST"):
         write(*inputs)
     assert calls == []
+
+
+def corrupt(result, defect):
+    rows = result["tool_uses"][0]["input"]["patients"]
+    if defect == "invented_id":
+        rows[0]["patient_id"] = "P999"
+    elif defect == "missing_row":
+        rows.pop()
+    elif defect == "duplicate_row":
+        rows.append(deepcopy(rows[0]))
+    elif defect == "long_en":
+        rows[0]["messages"]["en"] += " please" * 40
+    elif defect == "long_zh":
+        rows[2]["messages"]["zh"] += "请" * 81
+    elif defect.startswith("banned:"):
+        _, lang, word = defect.split(":")
+        row = next(row for row in rows if lang in row["messages"])
+        row["messages"][lang] += " " + word
+    elif defect == "wrong_time":
+        rows[0]["messages"]["en"] = rows[0]["messages"]["en"].replace("05:15", "23:59")
+    elif defect == "extra_time":
+        rows[0]["messages"]["en"] += " Come at 11:42 PM."
+    elif defect == "wrong_language":
+        rows[1]["messages"]["es"] = rows[1]["messages"]["en"]
+    elif defect == "traditional_zh":
+        rows[2]["messages"]["zh"] = rows[2]["messages"]["zh"].replace("请", "請")
+    elif defect == "missing_name":
+        rows[0]["messages"]["en"] = rows[0]["messages"]["en"].replace("{name}", "")
+    elif defect == "extra_name":
+        rows[0]["messages"]["en"] += " {name}"
+    elif defect == "invented_reason":
+        rows[0]["reason_text"] = "The clinic is 99 miles away."
+    elif defect == "changed_rank":
+        rows[0]["rank"] = 999
+    elif defect == "hospital_message":
+        rows[3]["messages"] = {"en": rows[0]["messages"]["en"]}
+
+
+@pytest.mark.parametrize("defect", [
+    "invented_id", "missing_row", "duplicate_row", "long_en", "long_zh",
+    "banned:en:death", "banned:en:danger", "banned:en:risk",
+    "banned:es:muerte", "banned:es:peligro", "banned:es:riesgo",
+    "banned:zh:死亡", "banned:zh:危险", "banned:zh:风险",
+    "wrong_time", "extra_time", "wrong_language", "traditional_zh", "missing_name", "extra_name",
+    "invented_reason", "changed_rank", "hospital_message",
+])
+def test_invalid_batch_retries_once(monkeypatch, inputs, defect):
+    attempts = []
+
+    def change(payload, result):
+        if "patients" in payload:
+            attempts.append(payload)
+            if len(attempts) == 1:
+                corrupt(result, defect)
+        return result
+
+    write, _ = install(monkeypatch, change)
+    result = write(*inputs)
+    assert len(attempts) == 2
+    assert attempts[1]["errors"]
+    for row, facts in zip(result["patients"], attempts[1]["patients"]):
+        assert {k: row[k] for k in ("patient_id", "reason_text", "messages")} == generated(facts)
+
+
+def test_second_failure_templates_only_bad_row(monkeypatch, inputs, caplog):
+    def change(payload, result):
+        if "patients" in payload:
+            corrupt(result, "wrong_time")
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    batches = [call for call in calls if "patients" in call]
+    assert len(batches) == 2
+    assert "23:59" not in result["patients"][0]["messages"]["en"]
+    assert "05:15" in result["patients"][0]["messages"]["en"]
+    assert "555-0100" in result["patients"][0]["messages"]["en"]
+    for row, facts in zip(result["patients"][1:], batches[-1]["patients"][1:]):
+        assert row["messages"] == generated(facts)["messages"]
+    assert "P002" in caplog.text
+    assert "P001" not in caplog.text
+    assert "23:59" not in caplog.text
+
+
+def test_summary_retries_then_uses_only_code_counts(monkeypatch, inputs):
+    def change(payload, result):
+        if "summary" in payload:
+            result["tool_uses"][0]["input"]["summary"] = "99 patients moved. Book 88 rides."
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    summaries = [call for call in calls if "summary" in call]
+    assert len(summaries) == 2
+    assert result["summary"] == summaries[-1]["summary"]
+    assert "99" not in result["summary"]
+
+
+def test_notify_only_never_gets_a_message(monkeypatch, inputs):
+    inputs[0]["patients"][0].update(action="notify_only", slot=None, clinic_id=None, pickup_time=None)
+
+    def change(payload, result):
+        if "patients" in payload:
+            result["tool_uses"][0]["input"]["patients"][0]["messages"] = {"en": "Wrong message"}
+        return result
+
+    write, _ = install(monkeypatch, change)
+    result = write(*inputs)
+    assert result["patients"][0]["messages"] == {}
+    assert result["patients"][0]["reason_text"]
