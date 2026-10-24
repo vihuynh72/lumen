@@ -26,7 +26,7 @@ Success: every affected patient has a confirmed chair or a staff call before the
 
 ## Positioning
 
-AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks, writes messages and applies plain-language re-plan instructions. Deterministic code picks chairs and checks capacity. No message goes out without staff approval. The screen credits Amazon Bedrock only for steps the model actually ran, and never claims AI that did not run.
+AI reads and explains, rules decide, people approve. A model on Amazon Bedrock reads the notice, rewords the plan check into plain sentences, and reads plain-language re-plan instructions into changes that code checks and applies. Deterministic code ranks patients, picks chairs, checks capacity and decides who gets a voice note. No message goes out without staff approval. The screen shows no source or model labels, and never claims AI that did not run.
 
 ## Operating Context
 
@@ -40,7 +40,7 @@ AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks,
 
 * API routes: `GET /state`, `POST /alert`, `/plan`, `/approve`, `/voice`, `/replan`, `/reset`. Header `X-Demo-Key` on every request.
 * Plan actions: `early_session`, `transfer`, `hospital` (staff call), `notify_only`. Row statuses: `draft`, `approved`, `confirmed`, `declined`, `no_answer`.
-* Bedrock model: Claude Haiku 4.5 in us-east-2. Message writing calls Bedrock and falls back to an English template. Notice parsing and re-plan always use their rule-based fallbacks today, because the backend has no `lumen.ai.parse` or `lumen.ai.replan` module yet. The API reports the source of each AI step (`parse_source`, `ai_sources`). The UI names Bedrock only when it did the work ("Written by Claude on Amazon Bedrock") and shows no source label otherwise; it never shows fallback, rules or Lambda labels (user decision, Oct 23).
+* Bedrock model: Qwen2.5-7B-Instruct, imported with Custom Model Import in us-east-2, because the account's foundation-model quota is 0. The Lambda env `AI_STEPS=parse,check,intent` turns on notice parsing, plan-check sentences and re-plan reading. Message writing and the re-plan tool loop are off because the imported model is too slow for them, so messages come from templates (en, es, zh). The first call after a quiet period can take about 2 minutes: warm the model before a demo. The API reports the source of each AI step (`parse_source`, `ai_sources`). The UI never shows it: no source, model, fallback, rules or Lambda labels anywhere (user decision, Oct 24).
 * Polly standard voices: English, Spanish, Chinese.
 * All patients are synthetic. Patient names never go to Bedrock.
 * The PG&E notice is simulated, and the feeders (distribution circuits) and their de-energized state are illustrative; both must be labeled as such. Real distribution circuit data is not public.
