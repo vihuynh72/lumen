@@ -7,7 +7,7 @@ from time import perf_counter, sleep
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ParamValidationError
 
 
 logger = logging.getLogger(__name__)
@@ -69,9 +69,13 @@ def converse(model_id: str, system: str, messages: list, tools: list | None = No
             "usage": usage,
             "message": message,
         }
+    except ParamValidationError:
+        # Raise outside the handler so sensitive details aren't retained as context.
+        pass
     finally:
         logger.info(
             "bedrock model_id=%r input_tokens=%s output_tokens=%s milliseconds=%.1f",
             model_id, usage["input_tokens"], usage["output_tokens"],
             (perf_counter() - started) * 1000,
         )
+    raise ValueError("invalid Converse request") from None
