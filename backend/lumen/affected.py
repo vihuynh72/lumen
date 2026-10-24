@@ -1,6 +1,12 @@
 """Find closed clinics, homes in the outage area, affected sessions and the plan mode."""
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+try:
+    LOCAL = ZoneInfo("America/Los_Angeles")  # shifts are clinic-local time
+except ZoneInfoNotFoundError:
+    LOCAL = timezone(timedelta(hours=-7))  # shortcut: PDT only; add tzdata if the runtime lacks zoneinfo
 
 SHIFT_START = {1: time(6, 0), 2: time(10, 30), 3: time(15, 0), 4: time(19, 30)}
 WEEKDAY = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
@@ -25,8 +31,8 @@ def outage_ring(polygon):
     return polygon["features"][0]["geometry"]["coordinates"][0]
 
 
-def session_start(date, shift, tz):
-    return datetime.combine(date, SHIFT_START[shift], tzinfo=tz)
+def session_start(date, shift):
+    return datetime.combine(date, SHIFT_START[shift], tzinfo=LOCAL)
 
 
 def mode_for(lead_hours, modes):
@@ -49,11 +55,10 @@ def find_affected(event, clinics, patients, polygon, now, modes=None):
         for p in patients:
             days = {WEEKDAY[d] for d in p["days"]}
             for offset in range(5):  # the demo week, from the notice day on
-                day = now.date() + timedelta(days=offset)
+                day = now.astimezone(LOCAL).date() + timedelta(days=offset)
                 if day.weekday() not in days:
                     continue
-                # shortcut: uses now's fixed UTC offset; fine for Oct 26-30, wrong across a DST change
-                s = session_start(day, p["shift"], now.tzinfo)
+                s = session_start(day, p["shift"])
                 e = s + timedelta(hours=p["hours"])
                 if s < end and e > start:
                     sessions.append({"patient_id": p["id"], "clinic_id": home["id"], "start": s.isoformat(), "end": e.isoformat()})
