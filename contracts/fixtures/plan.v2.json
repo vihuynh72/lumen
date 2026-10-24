@@ -10,6 +10,10 @@
     "text": 2150,
     "total": 8410
   },
+  "ai_sources": {
+    "replan": "bedrock",
+    "text": "bedrock"
+  },
   "patients": [
     {
       "patient_id": "P002",

@@ -91,17 +91,19 @@ def replan_with_bedrock(instruction, plan, tools):
     return replan(instruction, plan, tools)
 
 
-def write_text(plan, seed, only_ids=None):
-    """Bedrock text (write_plan_text returns the plan with text filled), else the English template."""
+def write_text(plan, seed, sources, only_ids=None):
+    """Bedrock text (write_plan_text returns the plan with text filled), else the English template. sources["text"] says which."""
     try:
         from lumen.ai.text import write_plan_text
         out = with_deadline("text", write_plan_text, plan, seed["clinics"], {p["id"]: p["language"] for p in seed["patients"]}, only_ids)
         if not isinstance(out, dict) or "patients" not in out:
             raise ValueError("write_plan_text did not return a plan")
         log(step="text", source="bedrock")
+        sources["text"] = "bedrock"
         return out
     except Exception as exc:
         log(step="text", fallback=True, reason=repr(exc)[:300])
+        sources["text"] = "fallback"
         return text_fallback.fill(plan, seed["clinics"], only_ids)
 
 
@@ -179,7 +181,7 @@ def plan(body):
     if not event:
         raise ApiError(404, f"no event {event_id}", "plan")
     start = time.perf_counter()
-    timing = {}
+    timing, sources = {}, {}
     seed = timed(timing, "store", store.load_seed)
     clinics, patients, rules = seed["clinics"], seed["patients"], seed["rules"]
     now = demo_now(event)
@@ -189,10 +191,11 @@ def plan(body):
     matched = timed(timing, "match", match, ranked, affected, patients, clinics, rules, drive)
     new = {
         "event_id": event_id, "version": 1, "created_at": clock(event).isoformat(timespec="seconds"),
-        "mode": affected["mode"], "lead_hours": affected["lead_hours"], "timing_ms": timing,
+        "mode": affected["mode"], "lead_hours": affected["lead_hours"], "timing_ms": timing, "ai_sources": sources,
         "patients": matched["patients"], "overflow": matched["overflow"], "audit": [], "summary": "",
     }
-    new = timed(timing, "text", write_text, new, seed)
+    new = timed(timing, "text", write_text, new, seed, sources)
+    new["ai_sources"] = sources  # the Bedrock text step may return a copy made before it set its source
     timing["total"] = round((time.perf_counter() - start) * 1000)
     timed({}, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))  # logged, not in timing_ms: total is final
     return with_names(new, patients)
@@ -206,17 +209,17 @@ def replan_route(body):
     if len(instruction) > MAX_INSTRUCTION_CHARS:
         raise ApiError(400, f"instruction is longer than {MAX_INSTRUCTION_CHARS} characters", "replan")
     start = time.perf_counter()
-    timing = {}
+    timing, sources = {}, {}
     seed = timed(timing, "store", store.load_seed)
     tools = timed(timing, "tools", build_tools, event_id, old, seed)
     t = time.perf_counter()
     try:
-        result = with_deadline("replan", replan_with_bedrock, instruction, old, tools)
+        result, sources["replan"] = with_deadline("replan", replan_with_bedrock, instruction, old, tools), "bedrock"
         log(step="replan", source="bedrock")
     except Exception as exc:
         log(step="replan", fallback=True, reason=repr(exc)[:300])
         try:  # fresh tools: a failed Bedrock loop may have changed the working copy
-            result = replan_by_rules(instruction, old, build_tools(event_id, old, seed), seed["clinics"])
+            result, sources["replan"] = replan_by_rules(instruction, old, build_tools(event_id, old, seed), seed["clinics"]), "fallback"
         except ValueError as exc2:
             raise ApiError(400, str(exc2), "replan") from exc2
     timing["replan"] = round((time.perf_counter() - t) * 1000)
@@ -225,10 +228,10 @@ def replan_route(body):
     new = {**old, "version": old["version"] + 1, "created_at": now,
            "patients": result["plan"]["patients"], "overflow": result["plan"]["overflow"], "summary": result["summary"],
            "audit": old["audit"] + [{"ts": now, "actor": "Rosa", "change": f"re-plan: {instruction.strip()[:200]}"}]}
-    new = timed(timing, "text", write_text, new, seed, changed)
+    new = timed(timing, "text", write_text, new, seed, sources, changed)
     new["summary"] = result["summary"]
     timing["total"] = round((time.perf_counter() - start) * 1000)
-    new["timing_ms"] = timing
+    new["timing_ms"], new["ai_sources"] = timing, sources  # replaces the ai_sources copied from the old version
     save_new_version(new, "replan")
     return {"plan": with_names(new, seed["patients"]), "diff": result["diff"], "summary": result["summary"]}
 
