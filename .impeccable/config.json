@@ -1,0 +1,53 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/rail.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.492Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/rail.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.511Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/split.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.528Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/command.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.544Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T03:50:58.443Z",
+        "reason": "Claude: the dot pulses only on the rail phase whose API request is in flight (.ph.running), next to a text status; off under prefers-reduced-motion"
+      }
+    ]
+  }
+}

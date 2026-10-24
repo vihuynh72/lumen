@@ -1,0 +1,28 @@
+---
+version: 1
+slug: "frontend-prototype-index-html"
+primary_target: "frontend/prototype/index.html"
+related_targets: []
+---
+
+# Lumen app screen (frontend/prototype)
+
+Scope: the single working screen of Lumen. Mode: Operate.
+Audience and job: the manager of DaVita Cameron Park Dialysis (home clinic C01) plans patient treatment through a PG&E shutoff, then approves it. Secondary: judges watching a recorded run at 1920 x 1080.
+Content: live API (El Dorado County) plus an illustrative Santa Clara tour computed in the page. OSM power lines and substations, illustrative feeders, synthetic patients.
+Constraints: static files, no build step, Amplify manual upload, demo key in the page, Amazon Location tiles when a key exists, OpenFreeMap otherwise.
+Unresolved: Amazon Location API key (needs geo-maps permission for lumen-cli or a console-created key).
+
+## Direction contract
+
+THESIS: The screen is a run sheet. A dark left rail logs the AI run step by step, the map shows what each step changed on the home grid, and the right panel holds the plan the manager approves. It refuses the KPI-tile dashboard and the marketing hero.
+
+OWN-WORLD: The incumbent world: Atkinson Hyperlegible Next for all UI, Atkinson Hyperlegible Mono only for times, counts and IDs. Green-tinted neutrals (paper #FBFCFB, ground #E6EBE8, ink #13201C), a near-black green rail #15211D, amber #E39A1E only for the primary action and the running step, red for power off, blue for transfers, green for powered and confirmed. Light by default (office daylight), dark on toggle. Facilities are extruded real building outlines under pin labels. Live feeders carry a moving current dash. Dead lines turn dashed red-gray.
+
+STORY: The manager sees the home clinic and its grid, presses Run demo, and watches each step land in the rail while the map shows the shutoff area, the dead feeders, the closed clinic, the affected patients and their new destinations. Then the manager reviews the plan, re-plans in plain words, approves, confirms a patient and plays the voice note.
+
+FIRST VIEWPORT: A 56 px top bar holds Lumen, the home clinic with a Home tag, the region select, the event countdown, Run demo (amber) and Reset. A 336 px dark left rail holds "AI run" with seven phases on a connector line, the active phase raised, and an instruction box at the bottom. The map fills the center at full height, with the camera tilted 50 degrees over the home clinic, the legend bottom-left and the controls bottom-right. A 380 px paper right panel holds the home clinic status, then the plan counts, Approve all and the patient rows.
+
+FORM: Run rail, position 1 of my ordered structural list (dealt hand index 1). seed:325b73432be7cf66. Signature move: the rail is the AI run log. Each phase lights when its API answer lands and shows its AWS service, its true source (model, rules fallback or rules) and its server time, and the map camera moves to what that phase changed. Raise from the gate-board challenger: a re-plan reranks plan rows in place, and changed rows hold amber until the manager acknowledges them.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
