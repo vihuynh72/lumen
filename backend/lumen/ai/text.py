@@ -367,3 +367,24 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
         result["summary"] = _summary(result)
     logger.info("text generation bedrock_rows=%d template_rows=%d", len(facts) - template_rows, template_rows)
     return result
+
+
+def template_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | None = None) -> dict:
+    """write_plan_text without Bedrock: reasons and messages from the templates, summary from code counts."""
+    result = deepcopy(plan)
+    by_clinic = {clinic["id"]: clinic for clinic in clinics}
+    template_rows = 0
+    for row in result["patients"]:
+        if only_ids is not None and row["patient_id"] not in only_ids:
+            continue
+        try:
+            facts = _facts(row, by_clinic, langs.get(row["patient_id"], "en"))
+            row.update({key: value for key, value in _template(facts).items() if key != "patient_id"})
+            template_rows += 1
+        except ValueError as error:
+            logger.warning("text template patient_id=%s error=%s", row["patient_id"], error)
+            row["messages"] = {}
+    if only_ids is None:
+        result["summary"] = _summary(result)
+    logger.info("text generation bedrock_rows=0 template_rows=%d", template_rows)
+    return result

@@ -732,3 +732,112 @@ def test_sdk_boundary_rechecks_deadline(monkeypatch, inputs, caplog, expires_dur
     assert len(attempts) == (0 if expires_during_setup else 1)
     assert "error=deadline" in caplog.text
     assert all(row["reason_text"] for row in result["patients"])
+
+
+# template_plan_text: the same output shape as write_plan_text, with no Bedrock at all
+
+def template_module(monkeypatch):
+    module = importlib.import_module("lumen.ai.text")
+
+    def converse(*args, **kwargs):
+        raise AssertionError("template_plan_text must never call Bedrock")
+
+    monkeypatch.setattr(module.bedrock, "converse", converse)
+    return module
+
+
+def facts_for(module, row, clinics, langs):
+    by_clinic = {clinic["id"]: clinic for clinic in clinics}
+    return module._facts(row, by_clinic, langs[row["patient_id"]])
+
+
+def test_template_rows_get_en_plus_the_patient_language(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    plan, clinics, langs = inputs
+    result = module.template_plan_text(plan, clinics, langs)
+    by_id = {row["patient_id"]: row for row in result["patients"]}
+    assert list(by_id["P001"]["messages"]) == ["en", "es"]
+    assert list(by_id["P003"]["messages"]) == ["en", "zh"]
+    assert list(by_id["P002"]["messages"]) == ["en"] and list(by_id["P004"]["messages"]) == ["en"]
+    assert by_id["P005"]["messages"] == {} and by_id["P005"]["reason_text"]
+    assert all(row["reason_text"] for row in result["patients"])
+
+
+def test_template_messages_pass_the_model_output_validator(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    plan, clinics, langs = inputs
+    result = module.template_plan_text(plan, clinics, langs)
+    for row in result["patients"]:
+        facts = facts_for(module, row, clinics, langs)
+        checked = {key: row[key] for key in ("patient_id", "reason_text", "messages")}
+        assert module._row_error(checked, facts) is None, row["patient_id"]
+        assert all(message.count("{name}") == 1 for message in row["messages"].values())
+
+
+def test_template_does_not_mutate_the_input(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    before = deepcopy(inputs)
+    result = module.template_plan_text(*inputs)
+    assert inputs == before
+    assert result is not inputs[0] and result["patients"] is not inputs[0]["patients"]
+    result["patients"][0]["flags"].append("changed copy")
+    assert inputs == before
+
+
+def test_template_only_ids_limits_rows_and_keeps_the_summary(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    plan = inputs[0]
+    for row in plan["patients"]:
+        row["reason_text"], row["messages"] = "old", {"en": "old"}
+    before = deepcopy(plan)
+    result = module.template_plan_text(plan, inputs[1], inputs[2], only_ids=["P001"])
+    assert result["summary"] == before["summary"]
+    for old, new in zip(before["patients"], result["patients"]):
+        if old["patient_id"] == "P001":
+            assert list(new["messages"]) == ["en", "es"] and new["reason_text"] != "old"
+        else:
+            assert new == old
+
+
+def test_template_works_without_a_model_id(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    monkeypatch.delenv("BEDROCK_MODEL_FAST")
+    assert module.template_plan_text(*inputs)["patients"][1]["messages"]
+
+
+def test_template_summary_is_counted_from_the_rows(monkeypatch, inputs):
+    module = template_module(monkeypatch)
+    result = module.template_plan_text(*inputs)
+    assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
+                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
+    plan = deepcopy(inputs[0])
+    plan["patients"][0]["action"] = "hospital"
+    assert module.template_plan_text(plan, inputs[1], inputs[2])["summary"].startswith("1 patient dialyzes early, 2 move")
+
+
+def test_template_row_that_cannot_fit_is_empty_and_logged(monkeypatch, inputs, caplog):
+    module = template_module(monkeypatch)
+    real = module._template
+
+    def picky(facts):
+        if facts["patient_id"] == "P001":
+            raise ValueError("plan facts cannot fit message limits")
+        return real(facts)
+
+    monkeypatch.setattr(module, "_template", picky)
+    with caplog.at_level(logging.INFO, logger="lumen.ai.text"):
+        result = module.template_plan_text(*inputs)
+    by_id = {row["patient_id"]: row for row in result["patients"]}
+    assert by_id["P001"]["messages"] == {}
+    assert list(by_id["P003"]["messages"]) == ["en", "zh"]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "P001" in warnings[0].getMessage()
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.INFO] == [
+        "text generation bedrock_rows=0 template_rows=4"]
+
+
+def test_template_logs_one_info_line_with_the_row_count(monkeypatch, inputs, caplog):
+    module = template_module(monkeypatch)
+    with caplog.at_level(logging.INFO, logger="lumen.ai.text"):
+        module.template_plan_text(*inputs)
+    assert [r.getMessage() for r in caplog.records] == ["text generation bedrock_rows=0 template_rows=5"]
