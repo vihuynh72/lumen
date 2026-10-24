@@ -136,3 +136,19 @@ def test_fixture_validates():
     fixture = json.loads((CONTRACTS / "fixtures" / "speak.response.json").read_text())
     assert not list(SCHEMA.iter_errors(fixture))
     assert fixture["voice"] == speak.VOICES[fixture["lang"]][0]
+
+
+def test_pretranslated_text_skips_translate(fakes):
+    s3, polly, translate = fakes
+    translate.error = ClientError("AccessDeniedException")  # works even while Translate is denied
+    text = "Su tratamiento del martes pasa a las 3:00 p. m."
+    status, body = call({"text": text, "lang": "es", "translated": True})
+    assert status == 200 and body["text"] == text and body["voice"] == "Lupe" and body["url"]
+    assert translate.calls == [] and polly.calls[0]["Text"] == text and polly.calls[0]["VoiceId"] == "Lupe"
+    assert not list(SCHEMA.iter_errors(body))
+    status, body = call({"text": "Xin chào", "lang": "vi", "translated": True})
+    assert status == 200 and body["voice"] is None and body["note"] == "Polly has no Vietnamese voice"
+
+
+def test_translated_must_be_a_boolean():
+    assert call({"text": TEXT, "lang": "es", "translated": "yes"})[0] == 400

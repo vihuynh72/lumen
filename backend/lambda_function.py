@@ -283,8 +283,11 @@ def speak_route(body):
         raise ApiError(400, f"text of 1 to {speak.MAX_CHARS} characters is required", "speak")
     if not isinstance(lang, str) or lang not in speak.LANGS:
         raise ApiError(400, f"lang must be one of {', '.join(speak.LANGS)}", "speak")
+    translated = body.get("translated", False)
+    if not isinstance(translated, bool):
+        raise ApiError(400, "translated must be true or false", "speak")
     try:
-        return timed({}, "speak", speak.speak, text, lang)
+        return timed({}, "speak", speak.speak, text, lang, translated)
     except ApiError as exc:
         if isinstance(exc.__cause__, speak.TranslateDenied):  # until Vi adds translate:TranslateText to the Lambda role
             raise ApiError(500, "translate not permitted", "speak") from None
