@@ -2,6 +2,8 @@
 
 import logging
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from time import perf_counter, sleep
 
@@ -11,6 +13,22 @@ from botocore.exceptions import ClientError, ParamValidationError
 
 
 logger = logging.getLogger(__name__)
+_attempt_guard = ContextVar("bedrock_attempt_guard", default=None)
+
+
+@contextmanager
+def attempt_guard(callback):
+    """Scope a caller's budget check to each service attempt in this context."""
+    token = _attempt_guard.set(callback)
+    try:
+        yield
+    finally:
+        _attempt_guard.reset(token)
+
+
+def _check_attempt():
+    if (guard := _attempt_guard.get()) is not None:
+        guard()
 
 
 @lru_cache(maxsize=1)
@@ -20,11 +38,16 @@ def _get_client():
         "bedrock-runtime",
         region_name=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
         # The adapter owns retries, including when AWS_MAX_ATTEMPTS is set.
-        config=Config(retries={"mode": "standard", "total_max_attempts": 1}),
+        config=Config(
+            retries={"mode": "standard", "total_max_attempts": 1},
+            connect_timeout=5,
+            read_timeout=20,
+        ),
     )
 
 
 def _invoke(client, request):
+    _check_attempt()
     try:
         return client.converse(**request)
     except ClientError as error:
@@ -34,6 +57,7 @@ def _invoke(client, request):
         ):
             raise
         sleep(0.25)
+        _check_attempt()
         return client.converse(**request)
 
 
