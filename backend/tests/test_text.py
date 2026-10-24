@@ -4,6 +4,7 @@ from copy import deepcopy
 import importlib
 import json
 from pathlib import Path
+from threading import Barrier, Event, Lock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -24,13 +25,17 @@ def generated(facts):
     messages = {}
     if facts["time"]:
         day, clock, place, pickup = (facts[k] for k in ("day", "time", "clinic_name", "pickup_time"))
+        own_ride = facts["ride"] in ("self", "family")
+        ride = f"Please leave home by {pickup}." if own_ride else f"A ride picks you up at {pickup}."
         messages["en"] = (f"{day} {clock}, {place}. {{name}}, your treatment is scheduled. "
-                          f"A ride picks you up at {pickup}.")
+                          + ride)
         if facts["language"] == "es":
+            viaje = f"Salga de casa a las {pickup}." if own_ride else f"Un transporte le recoge a las {pickup}."
             messages["es"] = (f"{day} {clock}, {place}. {{name}}, su tratamiento está programado. "
-                              f"Un transporte le recoge a las {pickup}.")
+                              + viaje)
         if facts["language"] == "zh":
-            messages["zh"] = f"{day} {clock}，{place}。{{name}}，请于{pickup}出发。"
+            travel = "出发" if own_ride else "等候接送"
+            messages["zh"] = f"{day} {clock}，{place}。{{name}}，请于{pickup}{travel}。"
     return {"patient_id": facts["patient_id"], "reason_text": facts["reason_text"], "messages": messages}
 
 
@@ -238,3 +243,56 @@ def test_notify_only_never_gets_a_message(monkeypatch, inputs):
     result = write(*inputs)
     assert result["patients"][0]["messages"] == {}
     assert result["patients"][0]["reason_text"]
+
+
+def test_max_tokens_batch_splits(monkeypatch, inputs):
+    def truncate(payload, result):
+        return {"stop_reason": "max_tokens"} if len(payload["patients"]) > 3 else result
+
+    write, calls = install(monkeypatch, truncate)
+    result = write(*inputs, only_ids=list(LANGS))
+    assert [len(call["patients"]) for call in calls] == [5, 2, 3]
+    assert [row["patient_id"] for row in result["patients"]] == [row["patient_id"] for row in inputs[0]["patients"]]
+
+
+def test_max_tokens_singletons_are_bounded(monkeypatch, inputs):
+    inputs[0]["patients"] = inputs[0]["patients"][:2]
+    write, calls = install(monkeypatch, lambda *_: {"stop_reason": "max_tokens"})
+    result = write(*inputs, only_ids=["P001", "P002"])
+    assert [len(call["patients"]) for call in calls] == [2, 1, 1, 1, 1]
+    assert all(row["messages"]["en"] for row in result["patients"])
+
+
+def test_parallel_batches_are_bounded_and_ordered(monkeypatch, inputs):
+    original = inputs[0]["patients"][0]
+    inputs[0]["patients"] = [{**deepcopy(original), "patient_id": f"P{i:03}", "rank": i}
+                             for i in range(1, 43)]
+    inputs = (inputs[0], inputs[1], {f"P{i:03}": "en" for i in range(1, 43)})
+    barrier, later_finished, lock = Barrier(4, timeout=3), Event(), Lock()
+    active = peak = 0
+
+    def finish_out_of_order(payload, result):
+        nonlocal active, peak
+        rows = payload["patients"]
+        assert len(rows) <= 10
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        if rows[0]["rank"] <= 31:
+            barrier.wait()
+        if rows[0]["rank"] == 1:
+            assert later_finished.wait(3)
+        else:
+            later_finished.set()
+        with lock:
+            active -= 1
+        result["tool_uses"][0]["input"]["patients"].reverse()
+        return result
+
+    write, calls = install(monkeypatch, finish_out_of_order)
+    result = write(*inputs, only_ids=list(inputs[2]))
+    assert peak == 4
+    assert sorted(len(call["patients"]) for call in calls) == [2, 10, 10, 10, 10]
+    assert [row["patient_id"] for row in result["patients"]] == list(inputs[2])
+    for row in result["patients"]:
+        assert row["reason_text"]
