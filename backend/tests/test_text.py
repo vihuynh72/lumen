@@ -169,6 +169,16 @@ def corrupt(result, defect):
         rows[0]["rank"] = 999
     elif defect == "hospital_message":
         rows[3]["messages"] = {"en": rows[0]["messages"]["en"]}
+    elif defect == "clock_roles":
+        rows[0]["messages"]["en"] = ("2026-10-27 06:00, DaVita Cameron Park Dialysis. "
+                                     "{name}, your treatment is at 05:15. A ride picks you up at 06:00.")
+    elif defect == "pickup_claimed_as_treatment":
+        rows[0]["messages"]["en"] = ("2026-10-27 06:00, DaVita Cameron Park Dialysis. "
+                                     "{name}, your treatment is at 05:15.")
+    elif defect == "invented_ride":
+        rows[0]["messages"]["en"] = rows[0]["messages"]["en"].replace("Please leave home by", "A ride picks you up at")
+    elif defect == "missing_ride":
+        rows[1]["messages"]["en"] = rows[1]["messages"]["en"].replace("A ride picks you up at", "Please leave home by")
 
 
 @pytest.mark.parametrize("defect", [
@@ -178,6 +188,7 @@ def corrupt(result, defect):
     "banned:zh:死亡", "banned:zh:危险", "banned:zh:风险",
     "wrong_time", "extra_time", "wrong_language", "traditional_zh", "missing_name", "extra_name",
     "invented_reason", "changed_rank", "hospital_message",
+    "clock_roles", "pickup_claimed_as_treatment", "invented_ride", "missing_ride",
 ])
 def test_invalid_batch_retries_once(monkeypatch, inputs, defect):
     attempts = []
