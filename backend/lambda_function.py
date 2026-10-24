@@ -7,13 +7,14 @@ import logging
 import os
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from lumen import store
+from lumen import approve, store, text_fallback, voice
 from lumen.affected import find_affected
 from lumen.geo import drive_minutes
 from lumen.match import match
 from lumen.notice import parse_fallback
+from lumen.replan_tools import build_tools, replan_by_rules
 
 try:
     from lumen._version import VERSION  # written by scripts/deploy_lambda.sh
@@ -62,8 +63,45 @@ def rank(affected, patients, rules, drive):
     return rank_patients(affected, patients, rules, drive)
 
 
+def replan_with_bedrock(instruction, plan, tools):
+    from lumen.ai.replan import replan
+    return replan(instruction, plan, tools)
+
+
+def write_text(plan, seed, only_ids=None):
+    """Bedrock text (write_plan_text returns the plan with text filled), else the English template."""
+    try:
+        from lumen.ai.text import write_plan_text
+        out = write_plan_text(plan, seed["clinics"], {p["id"]: p["language"] for p in seed["patients"]}, only_ids)
+        if not isinstance(out, dict) or "patients" not in out:
+            raise ValueError("write_plan_text did not return a plan")
+        log(step="text", source="bedrock")
+        return out
+    except Exception as exc:
+        log(step="text", fallback=True, reason=repr(exc)[:300])
+        return text_fallback.fill(plan, seed["clinics"], only_ids)
+
+
 def demo_now(event):
+    """The plan's fixed demo clock: the notice's issued_at + 30 min."""
     return datetime.fromisoformat(event["issued_at"]) + DEMO_CLOCK_DELAY
+
+
+def clock(event):
+    """A demo clock that moves: demo_now plus the real time since the alert (for created_at and audit entries)."""
+    saved = store.get_json(f"plans/{event['event_id']}/clock.json")
+    elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(saved["alert_at"]) if saved else timedelta(0)
+    return demo_now(event) + min(max(elapsed, timedelta(0)), timedelta(hours=12))
+
+
+def latest(body, step):
+    event_id = body.get("event_id")
+    if not event_id:
+        raise ApiError(400, "event_id is required", step)
+    plan = store.latest_plan(event_id)
+    if not plan:
+        raise ApiError(404, f"no plan for {event_id}", step)
+    return event_id, plan
 
 
 def with_names(plan, patients):
@@ -104,6 +142,7 @@ def alert(body):
     log(step="parse", source=source, ms=round((time.perf_counter() - start) * 1000))
     event = {**{k: event[k] for k in EVENT_KEYS}, "source_text": text, "parse_source": source}
     store.save_event(event)
+    store.put_json(f"plans/{event['event_id']}/clock.json", {"alert_at": datetime.now(timezone.utc).isoformat()})
     return event
 
 
@@ -123,21 +162,82 @@ def plan(body):
     drive = timed(timing, "drive", drive_minutes, patients, clinics)
     ranked = timed(timing, "rank", rank, affected, patients, rules, drive)
     matched = timed(timing, "match", match, ranked, affected, patients, clinics, rules, drive)
-    timing["total"] = round((time.perf_counter() - start) * 1000)
     new = {
-        "event_id": event_id, "version": 1, "created_at": now.isoformat(timespec="seconds"),
+        "event_id": event_id, "version": 1, "created_at": clock(event).isoformat(timespec="seconds"),
         "mode": affected["mode"], "lead_hours": affected["lead_hours"], "timing_ms": timing,
         "patients": matched["patients"], "overflow": matched["overflow"], "audit": [], "summary": "",
     }
+    new = timed(timing, "text", write_text, new, seed)
+    timing["total"] = round((time.perf_counter() - start) * 1000)
     timed(timing, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))
     return with_names(new, patients)
+
+
+def replan_route(body):
+    event_id, old = latest(body, "replan")
+    instruction = body.get("instruction")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise ApiError(400, "instruction is required", "replan")
+    start = time.perf_counter()
+    timing = {}
+    seed = timed(timing, "store", store.load_seed)
+    tools = timed(timing, "tools", build_tools, event_id, old, seed)
+    t = time.perf_counter()
+    try:
+        result = replan_with_bedrock(instruction, old, tools)
+        log(step="replan", source="bedrock")
+    except Exception as exc:
+        log(step="replan", fallback=True, reason=repr(exc)[:300])
+        try:  # fresh tools: a failed Bedrock loop may have changed the working copy
+            result = replan_by_rules(instruction, old, build_tools(event_id, old, seed), seed["clinics"])
+        except ValueError as exc2:
+            raise ApiError(400, str(exc2), "replan") from exc2
+    timing["replan"] = round((time.perf_counter() - t) * 1000)
+    changed = sorted({d["patient_id"] for d in result["diff"]})
+    now = clock(store.load_event(event_id)).isoformat(timespec="seconds")
+    new = {**old, "version": old["version"] + 1, "created_at": now,
+           "patients": result["plan"]["patients"], "overflow": result["plan"]["overflow"], "summary": result["summary"],
+           "audit": old["audit"] + [{"ts": now, "actor": "Rosa", "change": f"re-plan: {instruction.strip()[:200]}"}]}
+    new = timed(timing, "text", write_text, new, seed, changed)
+    new["summary"] = result["summary"]
+    timing["total"] = round((time.perf_counter() - start) * 1000)
+    new["timing_ms"] = timing
+    store.save_plan(new)
+    return {"plan": with_names(new, seed["patients"]), "diff": result["diff"], "summary": result["summary"]}
+
+
+def approve_route(body):
+    event_id, old = latest(body, "approve")
+    try:
+        new = approve.apply(old, body.get("patient_ids", []), body.get("edits", []), clock(store.load_event(event_id)))
+    except ValueError as exc:
+        raise ApiError(400, str(exc), "approve") from exc
+    store.save_plan(new)
+    return with_names(new, store.load_seed()["patients"])
+
+
+def voice_route(body):
+    event_id, plan = latest(body, "voice")
+    patient_id, lang = body.get("patient_id"), body.get("lang")
+    row = next((r for r in plan["patients"] if r["patient_id"] == patient_id), None)
+    if row is None:
+        raise ApiError(404, f"no patient {patient_id} in the plan", "voice")
+    reason = voice.eligible(row, lang)
+    if reason:
+        raise ApiError(409, reason, "voice")
+    key = timed({}, "voice", voice.make_voice, event_id, patient_id, lang, row["messages"][lang])
+    if row["audio"].get(lang) != key:  # record the key on the current version; no new version for audio
+        row["audio"][lang] = key
+        store.save_plan(plan)
+    return {"url": voice.presign(key)}
 
 
 def reset(_body):
     return {"ok": True, "deleted": store.reset()}
 
 
-ROUTES = {("GET", "/state"): state, ("POST", "/alert"): alert, ("POST", "/plan"): plan, ("POST", "/reset"): reset}
+ROUTES = {("GET", "/state"): state, ("POST", "/alert"): alert, ("POST", "/plan"): plan, ("POST", "/replan"): replan_route,
+          ("POST", "/approve"): approve_route, ("POST", "/voice"): voice_route, ("POST", "/reset"): reset}
 
 
 def lambda_handler(event, context):

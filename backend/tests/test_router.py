@@ -113,7 +113,7 @@ def test_reset(env):
     call("POST", "/alert", {"notice_text": NOTICE})
     call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})
     status, body = call("POST", "/reset")
-    assert status == 200 and body == {"ok": True, "deleted": 2}
+    assert status == 200 and body == {"ok": True, "deleted": 3}  # event, clock, plan v1
     assert call("GET", "/state")[1]["event"] is None
 
 
@@ -126,3 +126,47 @@ def test_names_filled_only_in_responses(env):
     first = call("GET", "/state")[1]["plan"]["patients"][0]
     assert first["messages"]["en"].startswith("Maria Delgado") or not first["messages"]["en"].startswith("{name}")
     assert store.latest_plan("PSPS-DEMO-01")["patients"][0]["messages"]["en"].startswith("{name}")
+
+
+def plan_v1():
+    call("POST", "/alert", {"notice_text": NOTICE})
+    return call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})[1]
+
+
+def test_plan_gets_template_messages_when_text_fails():
+    plan = plan_v1()
+    moves = [r for r in plan["patients"] if r["action"] in ("early_session", "transfer")]
+    assert moves and all("{name}" not in r["messages"]["en"] for r in moves)
+    assert plan["summary"].count(".") == 2
+    stored = store.latest_plan("PSPS-DEMO-01")
+    assert all(r["messages"]["en"].startswith("{name}") for r in stored["patients"] if r["action"] in ("early_session", "transfer"))
+
+
+def test_replan_falls_back_to_rules(monkeypatch):
+    def blocked(*args):
+        raise RuntimeError("ThrottlingException: Too many tokens per day")
+    monkeypatch.setattr(router, "replan_with_bedrock", blocked)
+    plan_v1()
+    status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take one more"})
+    assert status == 200, body
+    assert body["plan"]["version"] == 2 and body["diff"] and body["summary"]
+    assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
+    assert body["plan"]["audit"][-1]["change"].startswith("re-plan: DaVita Folsom")
+    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"})[0] == 400
+
+
+def test_approve_then_voice(monkeypatch):
+    plan_v1()
+    status, plan = call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"], "edits": []})
+    assert status == 200 and plan["version"] == 2 and {r["status"] for r in plan["patients"]} == {"approved"}
+    move = next(r for r in plan["patients"] if r["action"] == "transfer")
+    pid = move["patient_id"]
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})[0] == 409  # approved, not confirmed
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": [], "edits": [{"patient_id": pid, "status": "confirmed"}]})
+    monkeypatch.setattr(router.voice, "make_voice", lambda e, p, lang, text: f"audio/{e}/{p}.{lang}.mp3")
+    monkeypatch.setattr(router.voice, "presign", lambda key: f"https://example.com/{key}")
+    status, body = call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})
+    assert status == 200 and body["url"].endswith(f"{pid}.en.mp3")
+    row = next(r for r in store.latest_plan("PSPS-DEMO-01")["patients"] if r["patient_id"] == pid)
+    assert row["audio"] == {"en": f"audio/PSPS-DEMO-01/{pid}.en.mp3"}
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": "all"})[0] == 400
