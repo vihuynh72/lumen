@@ -1,0 +1,40 @@
+{
+  "closed_clinic_ids": [
+    "C01"
+  ],
+  "sessions": [
+    {
+      "patient_id": "P001",
+      "clinic_id": "C01",
+      "start": "2026-10-28T06:00:00-07:00",
+      "end": "2026-10-28T10:00:00-07:00"
+    },
+    {
+      "patient_id": "P003",
+      "clinic_id": "C01",
+      "start": "2026-10-29T06:00:00-07:00",
+      "end": "2026-10-29T10:00:00-07:00"
+    },
+    {
+      "patient_id": "P004",
+      "clinic_id": "C01",
+      "start": "2026-10-29T06:00:00-07:00",
+      "end": "2026-10-29T09:30:00-07:00"
+    },
+    {
+      "patient_id": "P005",
+      "clinic_id": "C01",
+      "start": "2026-10-28T10:30:00-07:00",
+      "end": "2026-10-28T14:30:00-07:00"
+    }
+  ],
+  "home_in_outage": {
+    "P001": true,
+    "P002": true,
+    "P003": false,
+    "P004": false,
+    "P005": false
+  },
+  "mode": "early",
+  "lead_hours": 33.0
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/clinic.schema.json",
+  "version": 1,
+  "title": "Clinic",
+  "description": "One dialysis clinic or hospital. data/seed/clinics.json is an array of these.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "address", "phone", "lat", "lng", "stations", "late_shift", "chain", "home", "kind", "backup_power", "isolation_station", "accepts_visiting", "slots", "simulated"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^(C|H)\\d{2}$", "description": "C01, C02, ... for dialysis clinics; H01, ... for hospitals."},
+    "name": {"type": "string", "minLength": 1, "description": "Name from the CMS list."},
+    "address": {"type": "string", "minLength": 1, "description": "street, city, CA ZIP"},
+    "phone": {"type": "string", "minLength": 1, "description": "Phone from the CMS list."},
+    "lat": {"type": "number", "minimum": -90, "maximum": 90},
+    "lng": {"type": "number", "minimum": -180, "maximum": 180},
+    "stations": {"type": ["integer", "null"], "minimum": 0, "description": "Dialysis stations (CMS). null for a hospital."},
+    "late_shift": {"type": "boolean", "description": "true when CMS SHIFT is Y. Only then can the clinic have shift 4 (late, 19:30 to 23:30)."},
+    "chain": {"type": ["string", "null"], "description": "CMS chain organization, or null."},
+    "home": {"type": "boolean", "description": "true for exactly one clinic: Rosa's, inside the outage area."},
+    "kind": {"type": "string", "enum": ["dialysis", "hospital"], "description": "A hospital is the last resort only."},
+    "backup_power": {"type": "string", "enum": ["none", "partial", "full"], "description": "A clinic inside the outage polygon closes unless this is full."},
+    "isolation_station": {"type": "boolean", "description": "Needed to take a hep_b_positive patient."},
+    "accepts_visiting": {"type": "boolean"},
+    "slots": {"type": "array", "items": {"$ref": "#/$defs/slot"}, "description": "Open chairs per date and shift. A missing slot means no open chairs."},
+    "simulated": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["stations", "late_shift", "backup_power", "isolation_station", "accepts_visiting", "slots"]},
+      "description": "Fields that are simulated, not from CMS. The UI shows a Simulated tag on them."
+    }
+  },
+  "$defs": {
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "shift", "open_chairs"],
+      "properties": {
+        "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Local date, YYYY-MM-DD."},
+        "shift": {"$ref": "#/$defs/shift"},
+        "open_chairs": {"type": "integer", "minimum": 0}
+      }
+    },
+    "shift": {
+      "type": "integer",
+      "enum": [1, 2, 3, 4],
+      "description": "1 = 06:00-10:00, 2 = 10:30-14:30, 3 = 15:00-19:00, 4 = late 19:30-23:30 (late_shift clinics only). Local time, America/Los_Angeles."
+    }
+  }
+}

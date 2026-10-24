@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/event.schema.json",
+  "version": 1,
+  "title": "Event",
+  "description": "A parsed shutoff notice. POST /alert returns it and saves it as plans/(event_id)/event.json. It is also the input schema of the Bedrock tool record_event.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "notice_type", "issued_at", "start", "end", "area_name", "source_text"],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1, "description": "Event ID from the notice, for example PSPS-DEMO-01."},
+    "notice_type": {"type": "string", "enum": ["watch", "warning", "cancel"]},
+    "issued_at": {"$ref": "#/$defs/timestamp", "description": "When the utility issued the notice."},
+    "start": {"$ref": "#/$defs/timestamp", "description": "Estimated power-off time."},
+    "end": {"$ref": "#/$defs/timestamp", "description": "Estimated restoration time."},
+    "area_name": {"type": "string", "minLength": 1, "description": "Area name exactly as written in the notice. Matches outage_area.geojson properties.event_area."},
+    "source_text": {"type": "string", "minLength": 1, "description": "The full notice text as received."}
+  },
+  "$defs": {
+    "timestamp": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?[+-]\\d{2}:\\d{2}$", "description": "ISO 8601 with an explicit offset, for example 2026-10-27T18:00:00-07:00."}
+  }
+}
