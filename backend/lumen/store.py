@@ -4,6 +4,7 @@ import json
 import os
 import re
 
+ROOT = "plans/"  # where this request's events and plans live; lambda_handler sets it per request (one space per browser session)
 SEED_FILES = {"clinics": "clinics.json", "patients": "patients.json", "outage_area": "outage_area.geojson", "rules": "rules.json"}
 _client = None
 
@@ -75,38 +76,39 @@ def load_seed():
 
 
 def save_event(event):
-    put_json(f"plans/{event['event_id']}/event.json", event)
+    put_json(f"{ROOT}{event['event_id']}/event.json", event)
 
 
 def load_event(event_id):
-    return get_json(f"plans/{event_id}/event.json")
+    return get_json(f"{ROOT}{event_id}/event.json")
 
 
 def latest_event():
-    events = [o for o in list_objects("plans/") if o["Key"].endswith("/event.json")]
+    events = [o for o in list_objects(ROOT) if o["Key"].endswith("/event.json")]
     return get_json(max(events, key=lambda o: o["LastModified"])["Key"]) if events else None
 
 
 def plan_versions(event_id):
-    found = (re.search(r"/plan\.v(\d+)\.json$", o["Key"]) for o in list_objects(f"plans/{event_id}/plan.v"))
+    found = (re.search(r"/plan\.v(\d+)\.json$", o["Key"]) for o in list_objects(f"{ROOT}{event_id}/plan.v"))
     return sorted(int(m.group(1)) for m in found if m)
 
 
 def save_plan(plan, new=False):
     """new=True: refuse to overwrite an existing version (two edits on the same version)."""
-    put_json(f"plans/{plan['event_id']}/plan.v{plan['version']}.json", plan, if_none_match=new)
+    put_json(f"{ROOT}{plan['event_id']}/plan.v{plan['version']}.json", plan, if_none_match=new)
 
 
 def latest_plan(event_id):
     versions = plan_versions(event_id)
-    return get_json(f"plans/{event_id}/plan.v{versions[-1]}.json") if versions else None
+    return get_json(f"{ROOT}{event_id}/plan.v{versions[-1]}.json") if versions else None
 
 
 def delete_plans(event_id):
     """Delete every plan version of an event (a new POST /plan starts again at v1)."""
-    return delete_keys([f"plans/{event_id}/plan.v{v}.json" for v in plan_versions(event_id)])
+    return delete_keys([f"{ROOT}{event_id}/plan.v{v}.json" for v in plan_versions(event_id)])
 
 
 def reset():
-    """Delete everything under plans/ and audio/. Seed files stay."""
-    return delete_keys([o["Key"] for prefix in ("plans/", "audio/") for o in list_objects(prefix)])
+    """Delete this space's events and plans. The shared space also clears the audio cache. Seed files stay."""
+    prefixes = [ROOT, "audio/"] if ROOT == "plans/" else [ROOT]  # a session's Reset keeps the shared audio cache
+    return delete_keys([o["Key"] for prefix in prefixes for o in list_objects(prefix)])
