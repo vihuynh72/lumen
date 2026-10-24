@@ -236,5 +236,8 @@
       ]
     }
   ],
-  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call."
+  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call.",
+  "understood": [
+    "DaVita Folsom Dialysis takes at most 1 more patient."
+  ]
 }

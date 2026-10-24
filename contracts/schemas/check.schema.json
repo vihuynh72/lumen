@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/check.schema.json",
+  "version": 1,
+  "title": "CheckResponse",
+  "description": "POST /check response. Code finds every issue from the seed and the saved capacity cuts. Bedrock only rewords the sentences and can add soft warnings from a fixed list. Bedrock never changes a severity and never removes an issue.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issues",
+    "counts",
+    "explained_by"
+  ],
+  "properties": {
+    "issues": {
+      "type": "array",
+      "description": "Blocks first, then warnings, then soft warnings.",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "block",
+        "warning"
+      ],
+      "properties": {
+        "block": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Soft warnings count here too."
+        }
+      }
+    },
+    "explained_by": {
+      "type": "string",
+      "enum": [
+        "bedrock",
+        "template"
+      ],
+      "description": "bedrock when at least one issue has source bedrock. template when the model failed, ran past 25 s, or returned no valid sentence."
+    }
+  },
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "patient_id",
+        "facility_id",
+        "severity",
+        "code",
+        "text",
+        "source"
+      ],
+      "properties": {
+        "patient_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^P\\d{3}$",
+          "description": "null for a facility issue (over_capacity)."
+        },
+        "facility_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^(C|H)\\d{2}$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "block",
+            "warning"
+          ],
+          "description": "block: POST /packet skips the row. warning: staff review it."
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "hbv_no_isolation",
+            "over_capacity",
+            "clinic_closed",
+            "no_visitors",
+            "no_late_shift",
+            "hbv_test_missing",
+            "early_paratransit_pickup",
+            "same_day_paratransit",
+            "long_drive",
+            "long_gap_after",
+            "no_message_in_language",
+            "heart_failure_long_gap",
+            "lives_alone_night_pickup",
+            "wheelchair_long_drive",
+            "language_unconfirmed"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One plain sentence. Patient IDs, never names."
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "bedrock",
+            "template"
+          ],
+          "description": "Who wrote text. bedrock only for a sentence that the model returned and that passed validation (not empty, 30 words or fewer). Show an AI tag on bedrock sentences."
+        },
+        "slot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "date",
+            "shift"
+          ],
+          "properties": {
+            "date": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "shift": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4
+              ]
+            }
+          },
+          "description": "over_capacity only: the overbooked slot."
+        },
+        "soft": {
+          "const": true,
+          "description": "Present on soft warnings only. The model raised the warning, and code kept it because its facts are true. The text is a template."
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,8 @@
-"""Re-plan tools (team rules, Rule 3). AI's replan() decides when to call them; this module decides what they do."""
+"""Re-plan tools (team rules, Rule 3). AI's replan() and the intent step decide what to change; this module decides what each change does."""
 
 import copy
 import re
+import unicodedata
 from datetime import datetime, timedelta
 
 from lumen import store
@@ -12,6 +13,7 @@ from lumen.match import match
 DIFF_FIELDS = ("action", "clinic_id", "slot", "drive_minutes", "drive_source", "pickup_time", "book_today", "flags", "status", "pinned")
 DECISION = ("action", "clinic_id", "slot")
 RANK_FIELDS = ("patient_id", "rank", "urgency", "difficulty", "reasons")
+DECLINE = re.compile(r"^\s*(?P<name>.+?)\s+(?:declined|declines|can'?t come|cannot come|will not come|won'?t come)\W*$", re.IGNORECASE)
 NUMBERS = {"no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 
 
@@ -23,7 +25,7 @@ def diff_rows(old_rows, new_rows):
 
 
 def build_tools(event_id, plan, seeds):
-    """The five functions replan() calls. They share one working copy of the slots and rows."""
+    """The five functions replan() calls, plus the capacity cuts they applied. They share one working copy of the slots and rows."""
     event = store.load_event(event_id)
     if event is None:
         raise LookupError(f"no event {event_id}")
@@ -35,6 +37,7 @@ def build_tools(event_id, plan, seeds):
     old_rows = {r["patient_id"]: r for r in plan["patients"]}
     work = {"rows": copy.deepcopy(plan["patients"]), "overflow": list(plan["overflow"])}
     changed_clinics, touched = set(), set()
+    overrides = []  # the cuts this working copy applied; the router saves them as plan["capacity_overrides"]
 
     def row(patient_id):
         found = next((r for r in work["rows"] if r["patient_id"] == patient_id), None)
@@ -69,7 +72,8 @@ def build_tools(event_id, plan, seeds):
         else:
             slot["open_chairs"] = chairs
         changed_clinics.add(clinic_id)
-        return {"clinic_id": clinic_id, "date": date, "shift": shift, "open_chairs": chairs}
+        overrides.append({"clinic_id": clinic_id, "date": date, "shift": shift, "open_chairs": chairs})
+        return dict(overrides[-1])
 
     def pin_patient(patient_id, clinic_id, date, shift):
         r = row(patient_id)
@@ -113,11 +117,62 @@ def build_tools(event_id, plan, seeds):
         return diff_rows(plan["patients"], work["rows"])
 
     return {"set_clinic_capacity": set_clinic_capacity, "pin_patient": pin_patient, "decline_patient": decline_patient,
-            "rerun_matching": rerun_matching, "diff_plans": diff_plans}
+            "rerun_matching": rerun_matching, "diff_plans": diff_plans, "capacity_overrides": overrides}
 
 
-def replan_by_rules(instruction, plan, tools, clinics):
-    """Rule-based re-plan for "(clinic name) can only take N more". Used until, or when, Bedrock replan() fails."""
+def apply_changes(changes, plan, tools, clinics, names):
+    """Apply checked re-plan changes with the tools, re-match once, and write the summary and the understood sentences in
+    code. changes: {"kind": "clinic_limit", clinic_id, more} | {"kind": "decline", patient_id} | {"kind": "pin", patient_id,
+    clinic_id, date, shift}. names: patient names, for the understood sentences only (the response, never the stored plan)."""
+    by_id = {c["id"]: c for c in clinics}
+    limits, understood = [], []
+    for ch in changes:
+        if ch["kind"] == "clinic_limit":
+            clinic, n = by_id[ch["clinic_id"]], ch["more"]
+            # N more = at most N visiting patients at that clinic across all slots: pinned and confirmed rows first, then rank order
+            keep = sorted((r for r in plan["patients"] if r["clinic_id"] == clinic["id"] and r["slot"] and r["status"] != "declined"),
+                          key=lambda r: (not (r["pinned"] or r["status"] == "confirmed"), r["rank"]))[:n]
+            for s in clinic["slots"]:
+                tools["set_clinic_capacity"](clinic["id"], s["date"], s["shift"],
+                                             sum(1 for r in keep if (r["slot"]["date"], r["slot"]["shift"]) == (s["date"], s["shift"])))
+            limits.append(f"{clinic['name']} can take only {n} more")
+            understood.append(f"{clinic['name']} takes at most {n} more patient{'' if n == 1 else 's'}.")
+        elif ch["kind"] == "decline":
+            tools["decline_patient"](ch["patient_id"])
+            understood.append(f"{names[ch['patient_id']]} will not come. Staff call them.")
+        else:
+            tools["pin_patient"](ch["patient_id"], ch["clinic_id"], ch["date"], ch["shift"])
+            at = session_start(datetime.fromisoformat(ch["date"]).date(), ch["shift"])
+            understood.append(f"{names[ch['patient_id']]} goes to {by_id[ch['clinic_id']]['name']}, "
+                              f"{at:%a %b} {at.day}, {at.hour % 12 or 12}:{at:%M %p}.")
+    result = tools["rerun_matching"]()
+    diff = tools["diff_plans"]()
+    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id"}
+    to_staff = set(result["overflow"]) - set(plan["overflow"])
+
+    def count(k, noun, one, many):
+        return f"{k} {noun}{'' if k == 1 else 's'} {one if k == 1 else many}"
+
+    lead = f"{' and '.join(limits)}, so " if limits else ""
+    summary = (f"{lead}{count(len(moved), 'patient', 'moves', 'move')} to other chairs or the staff call list. "
+               f"{count(len(to_staff), 'more patient', 'needs', 'need')} a staff call.")
+    return {"plan": {**plan, **result}, "diff": diff, "summary": summary, "understood": understood}
+
+
+def _plain(text):
+    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)).casefold()
+
+
+def replan_by_rules(instruction, plan, tools, clinics, patients=()):
+    """Rule-based re-plan for "(clinic name) can only take N more" and "(full name) declined". Used when the model steps
+    are off or fail."""
+    d = DECLINE.match(instruction)
+    if d:
+        rows = {r["patient_id"] for r in plan["patients"]}
+        hits = [p for p in patients if p["id"] in rows and _plain(p["name"]) == _plain(d["name"].strip())]
+        if len(hits) != 1:
+            raise ValueError(f"no single patient in the plan is named '{d['name'].strip()}'")
+        return apply_changes([{"kind": "decline", "patient_id": hits[0]["id"]}], plan, tools, clinics, {hits[0]["id"]: hits[0]["name"]})
     m = re.match(r"^\s*(?P<name>.+?)\s+can only take (?P<n>\d+|\w+) more(\s+patients?)?\W*$", instruction, re.IGNORECASE)
     n = m and (int(m.group("n")) if m.group("n").isdigit() else NUMBERS.get(m.group("n").lower()))
     if n is None:
@@ -128,21 +183,4 @@ def replan_by_rules(instruction, plan, tools, clinics):
     if len(exact or hits) != 1:
         found = ", ".join(c["name"] for c in hits) or "no clinic"
         raise ValueError(f"'{m.group('name').strip()}' matches {found}; use the full clinic name")
-    clinic = (exact or hits)[0]
-    # N more = at most N visiting patients at that clinic across all slots: pinned and confirmed rows first, then rank order
-    keep = sorted((r for r in plan["patients"] if r["clinic_id"] == clinic["id"] and r["slot"] and r["status"] != "declined"),
-                  key=lambda r: (not (r["pinned"] or r["status"] == "confirmed"), r["rank"]))[:n]
-    for s in clinic["slots"]:
-        tools["set_clinic_capacity"](clinic["id"], s["date"], s["shift"],
-                                     sum(1 for r in keep if (r["slot"]["date"], r["slot"]["shift"]) == (s["date"], s["shift"])))
-    result = tools["rerun_matching"]()
-    diff = tools["diff_plans"]()
-    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id" and d["from"] == clinic["id"]}
-    to_staff = set(result["overflow"]) - set(plan["overflow"])
-
-    def count(k, noun, one, many):
-        return f"{k} {noun}{'' if k == 1 else 's'} {one if k == 1 else many}"
-
-    summary = (f"{clinic['name']} can take only {n} more, so {count(len(moved), 'patient', 'moves', 'move')} to other chairs or the staff call list. "
-               f"{count(len(to_staff), 'more patient', 'needs', 'need')} a staff call.")
-    return {"plan": {**plan, **result}, "diff": diff, "summary": summary}
+    return apply_changes([{"kind": "clinic_limit", "clinic_id": (exact or hits)[0]["id"], "more": n}], plan, tools, clinics, {})

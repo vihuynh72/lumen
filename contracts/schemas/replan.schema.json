@@ -1,15 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lumen.demo/schemas/replan.schema.json",
-  "version": 1,
+  "version": 2,
   "title": "ReplanResponse",
-  "description": "POST /replan response: the next plan version, a flat diff and a two-sentence summary. plan follows plan.schema.json.",
+  "description": "POST /replan response: the next plan version, a flat diff, a two-sentence summary and the changes Lumen read from the instruction. plan follows plan.schema.json.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "plan",
     "diff",
-    "summary"
+    "summary",
+    "understood"
   ],
   "properties": {
     "plan": {
@@ -24,6 +25,14 @@
     },
     "summary": {
       "type": "string"
+    },
+    "understood": {
+      "type": "array",
+      "description": "One plain sentence per change that code applied, with patient names, for example \"DaVita Folsom Dialysis takes at most 4 more patients.\" Written by code, never by the model. Empty when the Bedrock tool loop made the change. Schema v2.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "$defs": {
