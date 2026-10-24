@@ -25,8 +25,8 @@ PROMPT = Path(__file__).with_name("prompts").joinpath("text.md").read_text()
 logger = logging.getLogger(__name__)
 CLOCK = re.compile(r"(?<!\d)\d{1,2}[:：.]\d{2}(?:\s*[ap]\.?m\.?)?|\b\d{1,2}\s*[ap]\.?m\.?|"
                    r"[零一二三四五六七八九十两\d]+[点點时時](?:[零一二三四五六七八九十两\d分半刻]+)?", re.I)
-BANNED = re.compile(r"\b(?:death\w*|dead\w*|die|dies|died|dying|danger\w*|risk\w*|fatal\w*|"
-                    r"mortal\w*|muert\w*|muer\w*|morir|fallec\w*|pelig\w*|riesg\w*)\b|[死危险險]", re.I)
+BANNED = re.compile(r"\b(?:death\w*|dead\w*|die|dies|died|dying|danger\w*|risk\w*|fatal\w*|lethal\w*|"
+                    r"mortal\w*|muert\w*|muer\w*|murio|morir\w*|fallec\w*|pelig\w*|riesg\w*)\b|致命|丧命|[死亡危险險]", re.I)
 # A deliberately small vocabulary keeps ambiguous/mixed-language prose out.
 WORDS = {
     "en": set("your treatment has moved is scheduled dialysis session appointment on at to for a the "
@@ -64,24 +64,26 @@ def _language_ok(message, facts, lang):
 
 def _message_error(message, facts, lang):
     if not isinstance(message, str):
-        return "message type"
-    if message.count("{name}") != 1:
-        return "name placeholder"
+        return "message_type"
+    if message.count("{name}") != 1 or not re.search(r"(?<![\w{}])\{name\}(?![\w{}])", message):
+        return "name_placeholder"
     if (len(message) > 80 if lang == "zh" else len(message.split()) >= 40):
-        return "message length"
+        return "message_length"
+    if any(unicodedata.category(c)[0] in "CS" or c in "\ufe0e\ufe0f\u20e3" for c in message):
+        return "unsupported_character"
     if BANNED.search(_plain(message)):
-        return "banned wording"
+        return "banned_word"
     times = [facts["time"], facts["pickup_time"]]
     if CLOCK.findall(message) != times:
-        return "time strings"
+        return "time_strings"
     if not message.startswith(facts["day"] + " " + facts["time"]) or facts["clinic_name"] not in message:
-        return "time and place first"
+        return "time_place_first"
     if message.index(facts["clinic_name"]) > message.index("{name}"):
-        return "place first"
+        return "place_first"
     if not _language_ok(message, facts, lang):
         return "language"
     if not _ride_ok(message, facts, lang):
-        return "pickup wording"
+        return "pickup_wording"
     return None
 
 
@@ -102,11 +104,11 @@ def _ride_ok(message, facts, lang):
 
 def _row_error(row, facts):
     if set(row) != {"patient_id", "reason_text", "messages"} or row.get("reason_text") != facts["reason_text"]:
-        return "row fields or reason"
+        return "row_fields_or_reason"
     messages = row.get("messages")
     langs = (["en"] if facts["language"] == "en" else ["en", facts["language"]]) if facts["time"] else []
     if not isinstance(messages, dict) or set(messages) != set(langs):
-        return "message languages"
+        return "message_languages"
     return next((error for lang in langs if (error := _message_error(messages[lang], facts, lang))), None)
 
 
@@ -122,18 +124,19 @@ def _body(response):
 def _validated(response, facts):
     body = _body(response)
     expected = {row["patient_id"]: row for row in facts}
-    bad_batch = ({}, {pid: "batch shape or IDs" for pid in expected})
+    bad_batch = ({}, {pid: "batch_shape" for pid in expected})
     if not isinstance(body, dict) or set(body) != {"patients"} or not isinstance(body["patients"], list):
         return bad_batch
     rows = body["patients"]
-    if any(not isinstance(row, dict) or not isinstance(row.get("patient_id"), str) for row in rows):
-        return bad_batch
-    ids = [row["patient_id"] for row in rows]
-    if len(set(ids)) != len(ids) or set(ids) - expected.keys():
-        return bad_batch
-    good, errors = {}, {pid: "missing row" for pid in expected.keys() - set(ids)}
+    good, errors, seen = {}, {pid: "missing_row" for pid in expected}, set()
     for row in rows:
-        pid = row["patient_id"]
+        if not isinstance(row, dict):
+            continue
+        pid = row.get("patient_id")
+        if not isinstance(pid, str) or pid not in expected or pid in seen:
+            continue
+        seen.add(pid)
+        errors.pop(pid)
         if error := _row_error(row, expected[pid]):
             errors[pid] = error
         else:
@@ -162,14 +165,14 @@ def _template(facts):
     return result
 
 
-def _batch(model, facts):
+def _batch(model, facts, fallback_ids):
     good, errors = {}, {}
     for attempt in range(2):
         payload = {"patients": facts, **({"errors": errors} if attempt else {})}
         response = _call(model, payload)
         if isinstance(response, dict) and response.get("stop_reason") == "max_tokens" and len(facts) > 1:
             middle = len(facts) // 2
-            return {**_batch(model, facts[:middle]), **_batch(model, facts[middle:])}
+            return {**_batch(model, facts[:middle], fallback_ids), **_batch(model, facts[middle:], fallback_ids)}
         valid, errors = _validated(response, facts)
         good.update(valid)
         if not errors:
@@ -178,18 +181,9 @@ def _batch(model, facts):
         pid = facts_row["patient_id"]
         if pid not in good:
             good[pid] = _template(facts_row)
-            logger.warning("text fallback patient_id=%s", pid)
+            fallback_ids.add(pid)
+            logger.warning("text fallback patient_id=%s error=%s", pid, errors.get(pid, "missing_row"))
     return good
-
-
-def _summary(model, plan):
-    payload = _counts(plan)
-    for attempt in range(2):
-        body = _body(_call(model, {**payload, **({"errors": ["summary must match supplied counts"]} if attempt else {})}))
-        if isinstance(body, dict) and body == {"summary": payload["summary"]}:
-            return body["summary"]
-    logger.warning("text summary fallback")
-    return payload["summary"]
 
 
 def _reason(codes):
@@ -222,8 +216,7 @@ def _call(model, payload):
                       "patient_id": {"type": "string"}, "reason_text": {"type": "string"},
                       "messages": {"type": "object", "additionalProperties": False,
                                    "properties": {lang: {"type": "string"} for lang in ("en", "es", "zh")}}}}
-    fields = ({"patients": {"type": "array", "items": row_schema}} if "patients" in payload
-              else {"summary": {"type": "string"}})
+    fields = {"patients": {"type": "array", "items": row_schema}}
     tools = [{"toolSpec": {"name": "write_plan_text", "description": "Return only the requested plan text.",
                           "inputSchema": {"json": {"type": "object", "additionalProperties": False,
                                                    "required": list(fields), "properties": fields}}}}]
@@ -231,13 +224,15 @@ def _call(model, payload):
         {"text": json.dumps(payload, ensure_ascii=False)}]}], tools=tools, tool_choice="write_plan_text")
 
 
-def _counts(plan):
-    counts = {action: str(sum(row["action"] == action for row in plan["patients"]))
+def _summary(plan):
+    counts = {action: sum(row["action"] == action for row in plan["patients"])
               for action in ("early_session", "transfer", "hospital")}
-    counts["book_today"] = str(sum(row["book_today"] for row in plan["patients"]))
-    summary = (f"{counts['early_session']} patients dialyze early, {counts['transfer']} move to another clinic, "
-               f"and {counts['hospital']} need a staff call. Book {counts['book_today']} paratransit rides today.")
-    return {"counts": counts, "summary": summary}
+    early, transfers, hospital = (counts[action] for action in MOVES + ("hospital",))
+    rides = sum(row["book_today"] for row in plan["patients"])
+    return (f"{early} {'patient dialyzes' if early == 1 else 'patients dialyze'} early, "
+            f"{transfers} {'moves' if transfers == 1 else 'move'} to another clinic, "
+            f"and {hospital} {'needs' if hospital == 1 else 'need'} a staff call. "
+            f"Book {rides} paratransit {'ride' if rides == 1 else 'rides'} today.")
 
 
 def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | None = None) -> dict:
@@ -249,13 +244,15 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
     selected = [row for row in result["patients"] if only_ids is None or row["patient_id"] in only_ids]
     by_clinic = {clinic["id"]: clinic for clinic in clinics}
     facts = [_facts(row, by_clinic, langs.get(row["patient_id"], "en")) for row in selected]
+    fallback_ids = set()
     if facts:
         batches = [facts[start:start + 10] for start in range(0, len(facts), 10)]
         with ThreadPoolExecutor(max_workers=4) as pool:
-            by_id = {pid: row for batch in pool.map(lambda rows: _batch(model, rows), batches)
+            by_id = {pid: row for batch in pool.map(lambda rows: _batch(model, rows, fallback_ids), batches)
                      for pid, row in batch.items()}
         for row in selected:
             row.update({key: by_id[row["patient_id"]][key] for key in ("reason_text", "messages")})
     if only_ids is None:
-        result["summary"] = _summary(model, result)
+        result["summary"] = _summary(result)
+    logger.info("text generation bedrock_rows=%d template_rows=%d", len(facts) - len(fallback_ids), len(fallback_ids))
     return result
