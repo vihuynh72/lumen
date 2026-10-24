@@ -91,6 +91,19 @@ def replan_with_bedrock(instruction, plan, tools, clinics):
     return replan(instruction, plan, tools, clinics)  # seed clinics: names and slots for the model, no patient data
 
 
+def model_written_rows(out, plan, clinics, langs, only_ids):
+    """Rows whose text differs from the code templates. write_plan_text swaps rejected model rows for those templates,
+    so 0 means Bedrock wrote nothing that was kept. None when the templates are unavailable."""
+    try:
+        from lumen.ai.text import template_plan_text
+        tmpl = {r["patient_id"]: (r.get("reason_text"), r.get("messages"))
+                for r in template_plan_text(plan, clinics, langs, only_ids)["patients"]}
+    except Exception:
+        return None
+    return sum(1 for r in out["patients"] if r["patient_id"] in tmpl and (only_ids is None or r["patient_id"] in only_ids)
+               and (r.get("reason_text"), r.get("messages")) != tmpl[r["patient_id"]])
+
+
 def write_text(plan, seed, sources, only_ids=None):
     """Bedrock text (write_plan_text), else AI's code templates in each patient's language (template_plan_text),
     else the English template. sources["text"] is "bedrock" or "fallback"."""
@@ -100,8 +113,9 @@ def write_text(plan, seed, sources, only_ids=None):
         out = with_deadline("text", write_plan_text, plan, seed["clinics"], langs, only_ids)
         if not isinstance(out, dict) or "patients" not in out:
             raise ValueError("write_plan_text did not return a plan")
-        log(step="text", source="bedrock")
-        sources["text"] = "bedrock"
+        model_rows = model_written_rows(out, plan, seed["clinics"], langs, only_ids)
+        sources["text"] = "fallback" if model_rows == 0 else "bedrock"
+        log(step="text", source=sources["text"], model_rows=model_rows)
         return out
     except Exception as exc:
         log(step="text", fallback=True, reason=repr(exc)[:300])

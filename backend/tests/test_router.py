@@ -241,6 +241,14 @@ def test_text_fallback_writes_each_patient_language(monkeypatch):
     assert any(langs[r["patient_id"]] != "en" for r in moves)
 
 
+def test_text_source_is_fallback_when_every_model_row_was_rejected(monkeypatch):
+    from lumen.ai import text
+    # write_plan_text returned, but every row is the code template (the model's rows failed validation)
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=text.template_plan_text, template_plan_text=text.template_plan_text))
+    assert plan_v1()["ai_sources"] == {"text": "fallback"}
+
+
 def test_text_fallback_ends_at_the_english_template(monkeypatch):
     monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
         write_plan_text=bedrock_blocked, template_plan_text=bedrock_blocked))
