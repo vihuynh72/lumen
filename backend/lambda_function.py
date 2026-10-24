@@ -8,6 +8,8 @@ import logging
 import os
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime, timedelta, timezone
 
 from lumen import approve, store, text_fallback, voice
@@ -26,6 +28,10 @@ except ImportError:
 logging.getLogger().setLevel(logging.INFO)  # the Lambda runtime defaults to WARNING; AI modules log Bedrock calls at INFO
 
 DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at + 30 min (master plan section 5)
+# Seconds a Bedrock step may take before the router uses its rule-based fallback (Lambda timeout is 120 s).
+DEADLINES = {"parse": 20, "text": 25, "replan": 45}
+MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
+_pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
 
 
@@ -54,6 +60,16 @@ def timed(timing, step, fn, *args):
         log(step=step, ms=timing[step])
 
 
+def with_deadline(step, fn, *args):
+    """Run fn; raise TimeoutError after DEADLINES[step] seconds so the caller falls back instead of hitting the Lambda timeout."""
+    # shortcut: a timed-out call keeps running in its thread until it ends; it only touches its own working copy
+    future = _pool.submit(fn, *args)
+    try:
+        return future.result(timeout=DEADLINES[step])
+    except FutureTimeout:
+        raise TimeoutError(f"{step} took longer than {DEADLINES[step]} s") from None
+
+
 # AI-lane functions are imported when called, so the router runs before they land.
 def parse_with_bedrock(text):
     from lumen.ai.parse import parse_notice
@@ -79,7 +95,7 @@ def write_text(plan, seed, only_ids=None):
     """Bedrock text (write_plan_text returns the plan with text filled), else the English template."""
     try:
         from lumen.ai.text import write_plan_text
-        out = write_plan_text(plan, seed["clinics"], {p["id"]: p["language"] for p in seed["patients"]}, only_ids)
+        out = with_deadline("text", write_plan_text, plan, seed["clinics"], {p["id"]: p["language"] for p in seed["patients"]}, only_ids)
         if not isinstance(out, dict) or "patients" not in out:
             raise ValueError("write_plan_text did not return a plan")
         log(step="text", source="bedrock")
@@ -134,9 +150,11 @@ def alert(body):
     text = body.get("notice_text")
     if not isinstance(text, str) or not text.strip():
         raise ApiError(400, "notice_text is required", "alert")
+    if len(text) > MAX_NOTICE_CHARS:
+        raise ApiError(400, f"notice_text is longer than {MAX_NOTICE_CHARS} characters", "alert")
     start = time.perf_counter()
     try:
-        event, source = parse_with_bedrock(text), "bedrock"
+        event, source = with_deadline("parse", parse_with_bedrock, text), "bedrock"
         missing = set(EVENT_KEYS) - set(event)
         if missing:
             raise ValueError(f"Bedrock parse missed {sorted(missing)}")
@@ -185,13 +203,15 @@ def replan_route(body):
     instruction = body.get("instruction")
     if not isinstance(instruction, str) or not instruction.strip():
         raise ApiError(400, "instruction is required", "replan")
+    if len(instruction) > MAX_INSTRUCTION_CHARS:
+        raise ApiError(400, f"instruction is longer than {MAX_INSTRUCTION_CHARS} characters", "replan")
     start = time.perf_counter()
     timing = {}
     seed = timed(timing, "store", store.load_seed)
     tools = timed(timing, "tools", build_tools, event_id, old, seed)
     t = time.perf_counter()
     try:
-        result = replan_with_bedrock(instruction, old, tools)
+        result = with_deadline("replan", replan_with_bedrock, instruction, old, tools)
         log(step="replan", source="bedrock")
     except Exception as exc:
         log(step="replan", fallback=True, reason=repr(exc)[:300])
@@ -284,5 +304,6 @@ def lambda_handler(event, context):
     except Exception as exc:
         log(error=repr(exc)[:500], trace=traceback.format_exc()[-2000:])
         status, payload = 500, {"error": "internal error", "step": path.strip("/") or "router"}
-    log(method=method, path=path, status=status, ms=round((time.perf_counter() - start) * 1000), version=VERSION)
+    log(method=method, path=path, status=status, ms=round((time.perf_counter() - start) * 1000), version=VERSION,
+        request_id=getattr(context, "aws_request_id", None), **({"error": payload["error"]} if status >= 400 else {}))
     return {"statusCode": status, "headers": {"content-type": "application/json"}, "body": json.dumps(payload, ensure_ascii=False)}

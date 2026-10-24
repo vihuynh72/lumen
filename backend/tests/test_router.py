@@ -209,3 +209,29 @@ def test_field_errors_are_4xx():
 def test_plan_timing_total_covers_every_reported_step():
     t = plan_v1()["timing_ms"]
     assert "save" not in t and t["total"] >= sum(v for k, v in t.items() if k != "total")
+
+
+def test_slow_bedrock_steps_fall_back_before_the_lambda_timeout(monkeypatch):
+    import time as _time
+    monkeypatch.setattr(router, "DEADLINES", {"parse": 0.05, "text": 0.05, "replan": 0.05})
+    monkeypatch.setattr(router, "parse_with_bedrock", lambda text: _time.sleep(1))
+    monkeypatch.setattr(router, "replan_with_bedrock", lambda *a: _time.sleep(1))
+    start = _time.perf_counter()
+    assert call("POST", "/alert", {"notice_text": NOTICE})[1]["parse_source"] == "fallback"
+    assert call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})[0] == 200
+    status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})
+    assert status == 200 and body["diff"] and _time.perf_counter() - start < 1
+
+
+def test_oversized_input_is_a_400():
+    assert call("POST", "/alert", {"notice_text": "x" * 20_001})[0] == 400
+    plan_v1()
+    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "y" * 501})[0] == 400
+
+
+def test_reset_twice_in_a_row():
+    plan_v1()
+    assert call("POST", "/reset")[0] == 200
+    assert call("POST", "/reset") == (200, {"ok": True, "deleted": 0})
+    state = call("GET", "/state")[1]
+    assert state["event"] is None and state["plan"] is None and state["affected"] is None
