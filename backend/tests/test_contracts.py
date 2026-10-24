@@ -39,6 +39,7 @@ PLANS = {
     "replan.response.json plan": load(FIXTURES / "replan.response.json")["plan"],
     "approve.response.json": load(FIXTURES / "approve.response.json"),
     "packet.response.json plan": load(FIXTURES / "packet.response.json")["plan"],
+    "notify.response.json plan": load(FIXTURES / "notify.response.json")["plan"],
     "state.json plan": STATE["plan"],
 }
 
@@ -169,6 +170,17 @@ def test_packet_response():
     assert [a["change"] for a in body["plan"]["audit"][-len(body["sent"]):]] == [
         f"{p} packet sent (simulated fax to {CLINICS[rows[p]['clinic_id']]['phone']})" for p in body["sent"]]
     assert body["skipped"] == [{"patient_id": "P001", "reason": "early_session rows get no packet"}]
+
+
+def test_notify_response():
+    body = load(FIXTURES / "notify.response.json")
+    rows = {r["patient_id"]: r for r in body["plan"]["patients"]}
+    assert {p for p, r in rows.items() if "note" in r} == set(body["sent"] + body["queued"])
+    assert all(rows[p]["action"] in ("early_session", "transfer") and rows[p]["status"] in ("approved", "confirmed")
+               and rows[p]["note"]["lang"] == PATIENTS[p]["language"] for p in body["sent"])
+    assert {s["patient_id"] for s in body["skipped"]} | set(body["sent"]) == set(rows)  # ["all"]: one outcome per row
+    assert body["plan"]["audit"][-1]["change"] == f"voice notes sent to {len(body['sent'])} patients (simulated)"
+    assert body["plan"]["version"] == PLANS["approve.response.json"]["version"] + 1 and body["dry_run"] is False
 
 
 def test_voice_response():

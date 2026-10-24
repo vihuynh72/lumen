@@ -6,7 +6,7 @@ import pytest
 
 from fake_s3 import FakeS3
 from lumen import store
-from lumen.replan_tools import build_tools, diff_rows, replan_by_rules
+from lumen.replan_tools import apply_changes, build_tools, diff_rows, replan_by_rules
 
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "fixtures"
 STATE = json.loads((FIXTURES / "state.json").read_text())
@@ -95,6 +95,7 @@ def test_replan_by_rules_matches_the_fixture():
     assert result["diff"] == REPLAN["diff"]
     assert result["plan"]["overflow"] == PLAN2["overflow"]
     assert "1 patient moves" in result["summary"]
+    assert result["understood"] == ["DaVita Folsom Dialysis takes at most 1 more patient."]
 
 
 def test_replan_by_rules_rejects_other_instructions():
@@ -144,3 +145,17 @@ def test_pin_needs_a_real_slot_and_capacity_respects_locks():
     t["pin_patient"]("P004", "C02", "2026-10-29", 1)
     with pytest.raises(ValueError):
         t["set_clinic_capacity"]("C02", "2026-10-29", 1, 0)
+
+
+def test_apply_changes_decline_and_pin_write_the_sentences_in_code():
+    names = {p["id"]: p["name"] for p in SEEDS["patients"]}
+    result = apply_changes([{"kind": "decline", "patient_id": "P003"},
+                            {"kind": "pin", "patient_id": "P005", "clinic_id": "C02", "date": "2026-10-29", "shift": 1}],
+                           PLAN1, tools(), SEEDS["clinics"], names)
+    by = rows(result["plan"])
+    assert by["P003"]["status"] == "declined" and result["plan"]["overflow"] == ["P003"]
+    assert by["P005"]["pinned"] and by["P005"]["action"] == "transfer" and by["P005"]["slot"] == {"date": "2026-10-29", "shift": 1}
+    assert result["understood"] == [f"{names['P003']} will not come. Staff call them.",
+                                    f"{names['P005']} goes to DaVita Folsom Dialysis, Thu Oct 29, 6:00 AM."]
+    assert result["summary"] == "2 patients move to other chairs or the staff call list. 1 more patient needs a staff call."
+    assert not any(n in result["summary"] for n in names.values())  # the summary is stored: no names
