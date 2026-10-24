@@ -12,7 +12,11 @@ def s3():
     global _client
     if _client is None:
         import boto3  # in the Lambda runtime; tests swap in a fake client
-        _client = boto3.client("s3")
+        from botocore.config import Config
+        region = os.environ.get("AWS_REGION", "us-east-2")
+        # Regional endpoint: presigned URLs on the global host are signed for the wrong region and return 400.
+        _client = boto3.client("s3", region_name=region, endpoint_url=f"https://s3.{region}.amazonaws.com",
+                               config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}))
     return _client
 
 

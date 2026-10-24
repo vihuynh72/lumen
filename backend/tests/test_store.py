@@ -56,3 +56,12 @@ def test_reset_keeps_seed(fake):
     fake.put_object(Bucket="b", Key="audio/E1/P001.es.mp3", Body=b"mp3")
     assert store.reset() == 3
     assert all(k.startswith("seed/") for k in fake.objects)
+
+
+def test_real_client_presigns_on_the_regional_host(monkeypatch):
+    monkeypatch.setattr(store, "_client", None)
+    monkeypatch.setenv("AWS_REGION", "us-east-2")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    url = store.s3().generate_presigned_url("get_object", Params={"Bucket": "lumen-test", "Key": "audio/x.mp3"}, ExpiresIn=60)
+    assert url.startswith("https://lumen-test.s3.us-east-2.amazonaws.com/audio/x.mp3?") and "us-east-2" in url
