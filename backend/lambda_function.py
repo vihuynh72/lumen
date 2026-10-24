@@ -3,6 +3,7 @@
 import base64
 import hmac
 import json
+import logging
 import os
 import time
 import traceback
@@ -18,6 +19,8 @@ try:
     from lumen._version import VERSION  # written by scripts/deploy_lambda.sh
 except ImportError:
     VERSION = "dev"
+
+logging.getLogger().setLevel(logging.INFO)  # the Lambda runtime defaults to WARNING; AI modules log Bedrock calls at INFO
 
 DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at + 30 min (master plan section 5)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
