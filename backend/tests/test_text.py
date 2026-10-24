@@ -24,19 +24,22 @@ def inputs(monkeypatch):
 
 def generated(facts):
     messages = {}
-    if facts["time"]:
-        day, clock, place, pickup = (facts[k] for k in ("day", "time", "clinic_name", "pickup_time"))
+    # Retain the old wire shape until the localization RED checkpoint is fixed.
+    strings = facts.get("strings", {lang: {"when": f"{facts.get('day', '')} {facts.get('time', '')}",
+                                         "pickup_time": facts.get("pickup_time", "")}
+                                  for lang in ("en", facts["language"])} if facts.get("time") else {})
+    for lang, values in strings.items():
+        when, pickup, place = values["when"], values["pickup_time"], facts["clinic_name"]
         own_ride = facts["ride"] in ("self", "family")
-        ride = f"Please leave home by {pickup}." if own_ride else f"A ride picks you up at {pickup}."
-        messages["en"] = (f"{day} {clock}, {place}. {{name}}, your treatment is scheduled. "
-                          + ride)
-        if facts["language"] == "es":
+        if lang == "en":
+            ride = f"Please leave home by {pickup}." if own_ride else f"A ride picks you up at {pickup}."
+            messages[lang] = f"{when}, {place}. {{name}}, your treatment is scheduled. {ride}"
+        elif lang == "es":
             viaje = f"Salga de casa a las {pickup}." if own_ride else f"Un transporte le recoge a las {pickup}."
-            messages["es"] = (f"{day} {clock}, {place}. {{name}}, su tratamiento está programado. "
-                              + viaje)
-        if facts["language"] == "zh":
+            messages[lang] = f"{when}, {place}. {{name}}, su tratamiento está programado. {viaje}"
+        else:
             travel = "出发" if own_ride else "等候接送"
-            messages["zh"] = f"{day} {clock}，{place}。{{name}}，请于{pickup}{travel}。"
+            messages[lang] = f"{when}，{place}。{{name}}，请于{pickup}{travel}。"
     return {"patient_id": facts["patient_id"], "reason_text": facts["reason_text"], "messages": messages}
 
 
@@ -153,7 +156,7 @@ def corrupt(result, defect):
         row = next(row for row in rows if lang in row["messages"])
         row["messages"][lang] += " " + word
     elif defect == "wrong_time":
-        rows[0]["messages"]["en"] = rows[0]["messages"]["en"].replace("05:15", "23:59")
+        rows[0]["messages"]["en"] = rows[0]["messages"]["en"].replace("5:15 AM", "11:59 PM").replace("05:15", "23:59")
     elif defect == "extra_time":
         rows[0]["messages"]["en"] += " Come at 11:42 PM."
     elif defect == "wrong_language":
@@ -219,8 +222,8 @@ def test_second_failure_templates_only_bad_row(monkeypatch, inputs, caplog):
     result = write(*inputs)
     batches = [call for call in calls if "patients" in call]
     assert len(batches) == 2
-    assert "23:59" not in result["patients"][0]["messages"]["en"]
-    assert "05:15" in result["patients"][0]["messages"]["en"]
+    assert "11:59 PM" not in result["patients"][0]["messages"]["en"]
+    assert "5:15 AM" in result["patients"][0]["messages"]["en"]
     assert "555-0100" in result["patients"][0]["messages"]["en"]
     for row, facts in zip(result["patients"][1:], batches[-1]["patients"][1:]):
         assert row["messages"] == generated(facts)["messages"]
@@ -401,3 +404,152 @@ def test_fallback_log_codes_and_per_call_counts(monkeypatch, inputs, caplog):
     assert "text fallback patient_id=P002 error=time_strings" in lines
     assert lines.count("text generation bedrock_rows=4 template_rows=1") == 1
     assert all("23:59" not in line and "DaVita" not in line for line in lines)
+
+
+@pytest.mark.parametrize("lang,when,pickup", [
+    ("en", "Wednesday, October 28 at 6:00 AM", "5:15 AM"),
+    ("es", "miércoles 28 de octubre a las 6:00 a. m.", "5:15 a. m."),
+    ("zh", "10月28日 周三 上午6:00", "上午5:15"),
+])
+def test_human_readable_strings_are_preformatted_by_language(monkeypatch, inputs, lang, when, pickup):
+    row = inputs[0]["patients"][0]
+    row["slot"] = {"date": "2026-10-28", "shift": 1}
+    inputs[2][row["patient_id"]] = lang
+    write, calls = install(monkeypatch)
+    result = write(*inputs, only_ids=[row["patient_id"]])
+    facts = calls[0]["patients"][0]
+    assert facts.get("strings", {}).get(lang) == {"when": when, "pickup_time": pickup}
+    assert result["patients"][0]["messages"][lang].startswith(when)
+    assert pickup in result["patients"][0]["messages"][lang]
+    assert result["patients"][0]["messages"] == generated(facts)["messages"]
+
+
+@pytest.mark.parametrize("clock,en,es,zh", [
+    ("00:00", "12:00 AM", "12:00 a. m.", "凌晨12:00"),
+    ("12:00", "12:00 PM", "12:00 p. m.", "中午12:00"),
+    ("15:07", "3:07 PM", "3:07 p. m.", "下午3:07"),
+])
+def test_pickup_noon_midnight_and_minutes(monkeypatch, inputs, clock, en, es, zh):
+    for lang, expected in (("en", en), ("es", es), ("zh", zh)):
+        inputs[0]["patients"][0]["pickup_time"] = f"2026-10-27T{clock}:00-07:00"
+        inputs[2]["P002"] = lang
+        write, calls = install(monkeypatch)
+        write(*inputs, only_ids=["P002"])
+        assert calls[0]["patients"][0].get("strings", {}).get(lang, {}).get("pickup_time") == expected
+
+
+def test_address_amador_is_not_a_clock(monkeypatch, inputs):
+    row = inputs[0]["patients"][0]
+    clinic = next(c for c in inputs[1] if c["id"] == row["clinic_id"])
+    clinic.update(name="SHC", address="12 Amador Way")
+
+    def change(payload, result):
+        message = result["tool_uses"][0]["input"]["patients"][0]["messages"]
+        message["en"] = message["en"].replace("SHC.", "SHC, 12 Amador Way.")
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=[row["patient_id"]])
+    assert len(calls) == 1
+    assert "12 Amador Way" in result["patients"][0]["messages"]["en"]
+
+
+@pytest.mark.parametrize("extra", ["12 AM", "12:30", "12 a. m.", "五点", "12：30", "12.30"])
+def test_extra_clock_forms_are_rejected(monkeypatch, inputs, extra):
+    def change(payload, result):
+        result["tool_uses"][0]["input"]["patients"][0]["messages"]["en"] += " " + extra
+        return result
+
+    write, calls = install(monkeypatch, change)
+    write(*inputs, only_ids=["P002"])
+    assert len(calls) == 2
+    assert calls[1]["errors"] == {"P002": "time_strings"}
+
+
+def test_all_seed_clinic_templates_fit_localized_limits(monkeypatch, inputs):
+    clinics = json.loads((FIXTURES.parents[1] / "data" / "seed" / "clinics.json").read_text())
+    plan, _, _ = inputs
+    row = plan["patients"][0]
+    for clinic in clinics:
+        for lang in ("en", "es", "zh"):
+            row.update(clinic_id=clinic["id"], ride="paratransit", slot={"date": "2026-09-30", "shift": 4})
+            write, _ = install(monkeypatch, lambda *_: {"stop_reason": "max_tokens"})
+            result = write(plan, clinics, {row["patient_id"]: lang}, only_ids=[row["patient_id"]])
+            for code, message in result["patients"][0]["messages"].items():
+                assert len(message) <= 80 if code == "zh" else len(message.split()) < 40
+                assert message.count("{name}") == 1
+                assert "2026-" not in message
+
+
+# Ported from the review's test_adv_text.py, updated for localized facts.
+ADV_FACTS = {
+    "patient_id": "P1", "reason_text": "Session during shutoff.", "language": "en", "ride": "paratransit",
+    "clinic_name": "SHC Folsom", "clinic_address": "210 Blue Ravine Rd Suite 100, Folsom, CA 95630",
+    "action": "transfer", "rank": 1, "reasons": ["session_in_window"],
+    "strings": {"en": {"when": "Wednesday, October 28 at 6:00 AM", "pickup_time": "5:06 AM"}},
+    "day": "2026-10-28", "time": "06:00", "pickup_time": "05:06",
+}
+F_EN = ADV_FACTS
+F_ES = {**F_EN, "language": "es", "ride": "self", "strings": {
+    **F_EN["strings"], "es": {"when": "miércoles 28 de octubre a las 6:00 a. m.", "pickup_time": "5:06 a. m."}}}
+F_ZH = {**F_EN, "language": "zh", "ride": "family", "clinic_name": "DaVita Orangevale Dialysis Center",
+        "strings": {**F_EN["strings"], "zh": {"when": "10月28日 周三 上午6:00", "pickup_time": "上午5:06"}}}
+EN = generated(F_EN)["messages"]["en"].replace("is scheduled", "has moved")
+ES = generated(F_ES)["messages"]["es"].replace("está programado", "cambio")
+ZH = generated(F_ZH)["messages"]["zh"].replace("请于", "治疗已调整；")
+REJECT = [
+    ("en", EN.replace("6:00 AM", "06:00 AM"), "changed supplied clock"),
+    ("en", EN.replace("6:00 AM", "06:00"), "24-hour clock"),
+    ("en", EN.replace("moved.", "moved. Arrive 05:30."), "extra clock time"),
+    ("en", EN.replace("{name}", ""), "missing name"),
+    ("en", EN.replace("{name},", "{name}, {name},"), "duplicate name"),
+    ("en", EN.replace("{name}", "{ name }"), "spaced placeholder"),
+    ("en", EN.replace("{name}", "{Name}"), "capitalised placeholder"),
+    ("en", EN.replace("moved.", "moved." + " the" * 25), "40+ words"),
+    ("en", EN.replace("moved.", "moved. Danger."), "Danger"),
+    ("en", EN.replace("moved.", "moved. ＲＩＳＫ."), "full-width RISK"),
+    ("en", EN.replace("moved.", "moved. dan​ger."), "zero-width split danger"),
+    ("en", EN.replace("moved.", "moved. dаnger."), "Cyrillic a in danger"),
+    ("en", EN.replace("moved.", "moved. This is unsafe."), "unsafe"),
+    ("en", EN.replace("moved.", "moved. Emergency."), "emergency"),
+    ("en", EN.replace("your treatment has moved", "su tratamiento cambio"), "Spanish in en slot"),
+    ("en", EN.replace("A ride picks you up at", "Please leave home by"), "own-ride wording for paratransit"),
+    ("en", EN.replace("SHC Folsom", "DaVita Folsom Dialysis"), "wrong clinic"),
+    ("en", EN.replace("October 28", "October 29"), "wrong day"),
+    ("en", "{name}, " + EN.replace("{name}, ", ""), "name before time"),
+    ("es", ES.replace("cambio.", "cambio. Peligro."), "peligro"),
+    ("es", ES.replace("cambio.", "cambio. RIESGO."), "RIESGO"),
+    ("es", ES.replace("cambio.", "cambio. Nadie morirá."), "morirá"),
+    ("es", ES.replace("cambio.", "cambio. muerte."), "muerte"),
+    ("es", ES.replace("su tratamiento cambio", "your treatment has moved"), "English in es slot"),
+    ("es", ES.replace("cambio.", "cambio. Call now."), "English tail in es"),
+    ("zh", ZH.replace("治疗已调整", "治疗已调整，无危险"), "危险"),
+    ("zh", ZH.replace("治疗已调整", "治疗已调整，无风险"), "风险"),
+    ("zh", ZH.replace("治疗已调整", "治療已調整"), "Traditional characters"),
+    ("zh", ZH.replace("治疗已调整", "治療を調整"), "Japanese kana"),
+    ("zh", ZH.replace("治疗已调整", "su tratamiento"), "Spanish in zh slot"),
+    ("zh", ZH.replace("治疗已调整", "治疗已调整五点"), "zh numeral time"),
+    ("zh", ZH.replace("治疗已调整", "治疗已调整" + "请" * 40), "zh over 80 characters"),
+]
+ACCEPT = [
+    ("en", EN.replace("moved.", "moved." + " the" * (39 - len(EN.split()))), "exactly 39 words"),
+    ("zh", ZH.replace("治疗已调整", "治疗已调整" + "请" * (80 - len(ZH))), "exactly 80 characters"),
+]
+
+
+def check(lang, message):
+    facts = {"en": F_EN, "es": F_ES, "zh": F_ZH}[lang]
+    row = generated(facts)
+    row["messages"][lang] = message
+    return importlib.import_module("lumen.ai.text")._row_error(row, facts)
+
+
+@pytest.mark.parametrize("lang, message, label", REJECT, ids=[r[2] for r in REJECT])
+def test_validator_rejects(lang, message, label):
+    assert check(lang, message), f"accepted: {label}: {message!r}"
+
+
+@pytest.mark.parametrize("lang, message, label", ACCEPT, ids=[r[2] for r in ACCEPT])
+def test_validator_accepts_boundaries(lang, message, label):
+    assert check(lang, message) is None, label
+
