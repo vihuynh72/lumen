@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/speak.schema.json",
+  "version": 1,
+  "title": "SpeakResponse",
+  "description": "POST /speak response: the text in lang, the Polly voice and a presigned MP3 URL. voice and url are null and note says why when Polly has no voice for lang.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "text",
+    "lang",
+    "voice",
+    "url",
+    "note"
+  ],
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "The text translated into lang by Amazon Translate. The request text when lang is en."
+    },
+    "lang": {
+      "type": "string",
+      "description": "The request lang: en, es, zh, ko, vi, tl, yue, ja, ar, pt, fr, ru, hi or te."
+    },
+    "voice": {
+      "type": ["string", "null"],
+      "description": "The Polly standard voice ID, for example Lupe. null when Polly has no voice for lang."
+    },
+    "url": {
+      "type": ["string", "null"],
+      "description": "Presigned MP3 URL, valid for 1 hour. null when voice is null."
+    },
+    "note": {
+      "type": ["string", "null"],
+      "description": "For example \"Polly has no Vietnamese voice\" when voice is null. null otherwise."
+    }
+  }
+}

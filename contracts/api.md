@@ -16,7 +16,7 @@ One Lambda function URL. The handler routes on method and path. The JSON schemas
 * IDs: dialysis clinics `C01`, `C02`, ...; hospitals `H01`, ...; patients `P001`, ...; the demo event `PSPS-DEMO-01`.
 * A session runs from the shift start for the patient's `hours`. It is affected when it is at a closed clinic, starts before the window end and ends after the window start.
 * Names: plan rows have no name field. The frontend joins names from `GET /state` by `patient_id`. Stored plan files keep the `{name}` placeholder in `messages`. The router fills names only in HTTP responses, so the fixtures show names. AI modules get stored plans and never see names.
-* Schemas: `clinic`, `patient`, `event`, `rules`, `affected` (find_affected output), `plan`, `replan` (POST /replan response).
+* Schemas: `clinic`, `patient`, `event`, `rules`, `affected` (find_affected output), `plan`, `replan` (POST /replan response), `speak` (POST /speak response).
 
 ## Errors
 
@@ -32,7 +32,7 @@ Every error has this shape:
 | 401 | Missing or wrong `X-Demo-Key`. `step` is `"auth"`. |
 | 404 | Unknown route, event or patient. |
 | 409 | The request does not fit the plan state, for example a voice note for a row with no confirmed move. |
-| 500 | A pipeline step failed. `step` is that step: `parse`, `affected`, `rank`, `match`, `drive`, `text`, `replan`, `voice`, `store`. |
+| 500 | A pipeline step failed. `step` is that step: `parse`, `affected`, `rank`, `match`, `drive`, `text`, `replan`, `voice`, `speak`, `store`. |
 
 The frontend shows `error` and never a stack trace.
 
@@ -210,6 +210,48 @@ Response `200` (fixture: `fixtures/voice.response.json`):
 
 Voice notes exist only for confirmed moves: an `early_session` or `transfer` row with `status: "confirmed"`. Any other row returns `409 {"error": "no confirmed move for P005", "step": "voice"}`. The MP3 is saved as `audio/(event_id)/(patient_id).(lang).mp3`, and the plan row's `audio` gets that key.
 
+## POST /speak
+
+Translates English text into one language with Amazon Translate and reads it with a Polly standard voice. Returns the text and a presigned MP3 URL valid for 1 hour.
+
+Request:
+
+```json
+{"text": "Your Wednesday session moves to Tuesday at 10:30 AM.", "lang": "es"}
+```
+
+* `text`: 1 to 600 characters of English.
+* `lang`: `en`, `es`, `zh`, `ko`, `vi`, `tl`, `yue`, `ja`, `ar`, `pt`, `fr`, `ru`, `hi` or `te`. Any other value returns `400`.
+
+Response `200` (fixture: `fixtures/speak.response.json`, schema: `speak.schema.json`):
+
+```json
+{"text": "Su sesión del miércoles pasa al martes a las 10:30 a. m.", "lang": "es", "voice": "Lupe", "url": "https://example.com/speak.mp3", "note": null}
+```
+
+Polly in us-east-2 has no Vietnamese, Tagalog, Cantonese or Telugu voice. For those, `voice` and `url` are `null` and `note` says why:
+
+```json
+{"text": "Buổi lọc thận thứ Tư của bạn chuyển sang thứ Ba lúc 10:30 sáng.", "lang": "vi", "voice": null, "url": null, "note": "Polly has no Vietnamese voice"}
+```
+
+| lang | Polly voice |
+| -- | -- |
+| `en` | Joanna (en-US) |
+| `es` | Lupe (es-US) |
+| `zh` | Zhiyu (cmn-CN) |
+| `ko` | Seoyeon (ko-KR) |
+| `ja` | Mizuki (ja-JP) |
+| `ar` | Zeina (arb) |
+| `pt` | Camila (pt-BR) |
+| `fr` | Celine (fr-FR) |
+| `ru` | Tatyana (ru-RU) |
+| `hi` | Aditi (hi-IN) |
+
+* `en` skips Translate. `yue` is translated to Traditional Chinese (`zh-TW`), because Translate has no Cantonese.
+* The route saves the MP3 and the text as `speak/(sha256 of lang and text).mp3` and `.json`. The same `lang` and `text` reuse them.
+* Until the Lambda role may call Translate, the route returns `500 {"error": "translate not permitted", "step": "speak"}`. Show that error inline.
+
 ## POST /reset
 
 Deletes `plans/` and `audio/` for the demo event, so the demo starts clean.
@@ -234,4 +276,5 @@ Response `200` (fixture: `fixtures/reset.response.json`):
 | `replan.response.json` | `POST /replan` response for that instruction |
 | `approve.response.json` | `POST /approve` with `["all"]` on plan v1 |
 | `voice.response.json` | `POST /voice` response |
+| `speak.response.json` | `POST /speak` response for `es` |
 | `reset.response.json` | `POST /reset` response |
