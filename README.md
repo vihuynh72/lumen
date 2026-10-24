@@ -30,6 +30,17 @@ The plan and the team rules live in the Linear project "Lumen". The repo holds n
 Every request needs the header `X-Demo-Key`. The demo key is in Discord only, never in the repo.
 Only Vi changes the Lambda's environment variables, IAM role or function URL settings.
 
-## Deploy and setup
+## Deploy the backend
 
-Deploy notes go here (VI-172).
+Anyone may deploy, but only through `scripts/deploy_lambda.sh`. The script refuses to run unless you are on `main`, your working tree is clean, and `main` matches `origin/main`.
+
+1. Post "deploying (short SHA)" in Discord first.
+2. Have AWS CLI credentials for the team account (`aws sts get-caller-identity` works).
+3. Run:
+
+```bash
+git switch main && git pull
+DEMO_KEY=<demo key from Discord> scripts/deploy_lambda.sh
+```
+
+The script zips `backend/lambda_function.py` and `backend/lumen/`, stamps the short SHA into `lumen/_version.py`, updates `lumen-api` in us-east-2, waits, and prints the `version` from `GET /state`. It never touches environment variables, IAM or the function URL.
