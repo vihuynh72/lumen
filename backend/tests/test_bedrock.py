@@ -22,6 +22,10 @@ TOOLS = [{"toolSpec": {
     "inputSchema": {"json": {"type": "object", "properties": {}}},
 }}]
 REQUEST = {"modelId": MODEL, "system": [{"text": SYSTEM}], "messages": MESSAGES}
+TRANSIENT_CODES = [
+    "ThrottlingException", "ServiceUnavailableException",
+    "InternalServerException", "ModelNotReadyException",
+]
 
 
 def response(content=None, stop_reason="end_turn"):
@@ -134,18 +138,18 @@ def test_tool_only_reply(stub):
     assert bedrock.converse(MODEL, SYSTEM, MESSAGES, TOOLS)["text"] == ""
 
 
-def test_throttle_then_success(stub, sleep, caplog):
+@pytest.mark.parametrize("code", TRANSIENT_CODES)
+def test_transient_error_then_success(stub, sleep, caplog, code):
     caplog.set_level(logging.INFO, logger=bedrock.__name__)
-    stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+    stub.add_client_error("converse", code, expected_params=REQUEST)
     stub.add_response("converse", response(), REQUEST)
     assert bedrock.converse(MODEL, SYSTEM, MESSAGES)["text"] == "Hello there!"
-    sleep.assert_called_once()
-    assert 0 < sleep.call_args.args[0] <= 1
+    sleep.assert_called_once_with(0.25)
     assert len(caplog.records) == 1
 
 
 @pytest.mark.parametrize("code", ["ValidationException", "AccessDeniedException"])
-def test_non_throttle_not_retried(stub, sleep, caplog, code):
+def test_permanent_error_not_retried(stub, sleep, caplog, code):
     caplog.set_level(logging.INFO, logger=bedrock.__name__)
     stub.add_client_error("converse", code, "private service error", expected_params=REQUEST)
     with pytest.raises(ClientError) as caught:
@@ -157,13 +161,15 @@ def test_non_throttle_not_retried(stub, sleep, caplog, code):
     assert "private" not in caplog.text
 
 
-def test_second_throttle_raises(stub, sleep):
-    for _ in range(2):
-        stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+@pytest.mark.parametrize("code", TRANSIENT_CODES)
+def test_second_transient_error_raises(stub, sleep, code):
+    for message in ("first failure", "second failure"):
+        stub.add_client_error("converse", code, message, expected_params=REQUEST)
     with pytest.raises(ClientError) as caught:
         bedrock.converse(MODEL, SYSTEM, MESSAGES)
-    assert caught.value.response["Error"]["Code"] == "ThrottlingException"
-    sleep.assert_called_once()
+    assert caught.value.response["Error"]["Code"] == code
+    assert caught.value.response["Error"]["Message"] == "second failure"
+    sleep.assert_called_once_with(0.25)
 
 
 def test_log_has_metrics_without_content(stub, monkeypatch, caplog):
