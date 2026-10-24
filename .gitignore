@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Secrets and local env
+.env*
+
+# OS
+.DS_Store
+
+# Written by scripts/deploy_lambda.sh, never committed
+backend/lumen/_version.py
