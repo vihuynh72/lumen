@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SEED = ROOT / "data" / "seed"
 SCHEMAS = ROOT / "contracts" / "schemas"
+sys.path.insert(0, str(ROOT / "backend"))
+from lumen.affected import point_in_polygon  # noqa: E402
 
 MWF = ["Mon", "Wed", "Fri"]
 TTS = ["Tue", "Thu", "Sat"]
@@ -50,19 +52,6 @@ def load_json(name):
     except json.JSONDecodeError as exc:
         errors.append(f"{name}: invalid JSON ({exc})")
         return None
-
-
-def point_in_polygon(lng, lat, ring):
-    """Ray casting. ring is a list of [lng, lat]."""
-    inside = False
-    j = len(ring) - 1
-    for i in range(len(ring)):
-        xi, yi = ring[i]
-        xj, yj = ring[j]
-        if (yi > lat) != (yj > lat) and lng < (xj - xi) * (lat - yi) / (yj - yi) + xi:
-            inside = not inside
-        j = i
-    return inside
 
 
 def check_schema(name, items, schema_file):
