@@ -165,7 +165,7 @@ def test_replan_falls_back_to_rules(monkeypatch):
     assert body["understood"] == ["DaVita Folsom Dialysis takes at most 1 more patient."]
     assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
     assert body["plan"]["audit"][-1]["change"].startswith("re-plan: DaVita Folsom")
-    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"}) == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"}) == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
 
 
 def test_approve_then_voice(monkeypatch):
@@ -349,6 +349,16 @@ def test_santaclara_plan_end_to_end():
     assert vi and all(r["messages"]["vi"].count("buổi lọc máu") == 1 for r in vi)
     issues = call("POST", "/check", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")[1]["issues"]
     assert not [i for i in issues if i["severity"] == "block"] and len(issues) <= 15
+
+
+@pytest.mark.parametrize("region,notice", [("eldorado", NOTICE), ("santaclara", SC_NOTICE)])
+def test_replan_error_examples_work_in_their_region(region, notice):
+    event_id = call("POST", "/alert", {"notice_text": notice}, region=region)[1]["event_id"]
+    call("POST", "/plan", {"event_id": event_id}, region=region)
+    text = router.NOT_UNDERSTOOD[region]
+    assert call("POST", "/replan", {"event_id": event_id, "instruction": "do something"}, region=region) == (400, {"error": text, "step": "replan"})
+    for example in text.split("'")[1::2]:  # the quoted examples name a clinic and a patient of this region
+        assert call("POST", "/replan", {"event_id": event_id, "instruction": example}, region=region)[0] == 200, example
 
 
 def test_regions_keep_their_own_events_and_plans(env):
@@ -655,7 +665,7 @@ def test_ai_steps_without_intent_skips_the_model(monkeypatch):
     plan_v1()
     assert replan("DaVita Folsom Dialysis can only take four more")[1]["plan"]["ai_sources"]["replan"] == "fallback"
     assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come. Staff call them."]
-    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
     assert seen["calls"] == 0
 
 
@@ -663,5 +673,5 @@ def test_replan_400_when_every_step_fails(monkeypatch):
     seen = fake_intent(monkeypatch, bedrock_blocked, steps="parse,text,replan,check,intent")
     plan_v1()
     seen["calls"] = 0  # the text step also asked the model
-    assert replan("please sort it out") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert replan("please sort it out") == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
     assert seen["calls"] == 1  # the tool loop failed without BEDROCK_MODEL_ID; the intent step ran once

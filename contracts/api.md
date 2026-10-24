@@ -181,7 +181,7 @@ The router tries three steps in this order. The first step that works makes the 
 2. The intent step (`BEDROCK_MODEL_FAST`), when `AI_STEPS` has `intent`. Limit 20 s. One model call reads the instruction into 1 to 3 changes. Code checks each change, applies it with the re-plan tools, re-runs matching and writes the summary.
 3. The rules: "(clinic name) can only take N more", and "(full patient name) declined" (also "can't come", "cannot come", "will not come"; case and accents do not matter).
 
-When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`.
+When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`. With `?region=santaclara` the examples are `'SHC Silver Creek can only take 4 more'` and `'Thanh Nguyen declined'`, so both name a clinic and a patient of that region.
 
 `AI_STEPS` is a comma list in the Lambda env. The default is `parse,text,replan,check,intent`. The demo Lambda uses `parse,check,intent`.
 

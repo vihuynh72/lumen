@@ -33,7 +33,10 @@ DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at 
 DEADLINES = {"parse": 20, "text": 25, "replan": 45, "check": 25, "intent": 20}
 MODEL_ISSUES = 12
 MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
-NOT_UNDERSTOOD = "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'."
+NOT_UNDERSTOOD = {  # per region: the examples name a clinic and a patient that exist there
+    "eldorado": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.",
+    "santaclara": "Lumen could not read that change. Try 'SHC Silver Creek can only take 4 more' or 'Thanh Nguyen declined'.",
+}
 _pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
 
@@ -282,7 +285,7 @@ def replan_route(body):
         try:
             result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"], seed["patients"]), "fallback"
         except ValueError as exc:
-            raise ApiError(400, NOT_UNDERSTOOD, "replan") from exc
+            raise ApiError(400, NOT_UNDERSTOOD[store.REGION], "replan") from exc
     timing["replan"] = round((time.perf_counter() - t) * 1000)
     changed = sorted({d["patient_id"] for d in result["diff"]})
     now = clock(store.load_event(event_id)).isoformat(timespec="seconds")
