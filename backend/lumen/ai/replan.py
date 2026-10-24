@@ -46,6 +46,8 @@ TOOL_SCHEMAS = [{"toolSpec": {
 class _State:
     patients: frozenset
     clinics: frozenset
+    slots: frozenset
+    mutated: bool = False
     matched: dict | None = None
     diff: list | None = None
 
@@ -55,9 +57,17 @@ def _rows(plan):
     return [{key: row[key] for key in ROW_FIELDS if key in row} for row in plan["patients"]]
 
 
-def _known(plan):
+def _clinic_context(clinics):
+    """Only public identity and capacity facts, never contact details."""
+    return [{**{key: clinic[key] for key in ("id", "name", "kind", "home")},
+             "slots": [{key: slot[key] for key in ("date", "shift", "open_chairs")}
+                       for slot in clinic["slots"]]} for clinic in clinics]
+
+
+def _known(plan, clinics):
     return _State(frozenset(r["patient_id"] for r in plan["patients"]),
-                  frozenset(r["clinic_id"] for r in plan["patients"] if r.get("clinic_id")))
+                  frozenset(c["id"] for c in clinics),
+                  frozenset((c["id"], s["date"], s["shift"]) for c in clinics for s in c["slots"]))
 
 
 def _validate(name, args, state):
@@ -73,9 +83,11 @@ def _validate(name, args, state):
         elif not isinstance(value, str) or not re.fullmatch(schema["pattern"], value):
             raise ValueError(f"Invalid {key}")
     if "patient_id" in args and args["patient_id"] not in state.patients:
-        raise ValueError("Patient ID has not been seen in the plan or tool results")
+        raise ValueError("Patient ID is not in the supplied plan")
     if "clinic_id" in args and args["clinic_id"] not in state.clinics:
-        raise ValueError("Clinic ID has not been seen in the plan or tool results")
+        raise ValueError("Clinic ID is not in the supplied clinics")
+    if name == "set_clinic_capacity" and (args["clinic_id"], args["date"], args["shift"]) not in state.slots:
+        raise ValueError("Slot is not in the supplied clinic")
 
 
 def _facts(diff):
@@ -121,12 +133,10 @@ def _view(name, value, state):
 
 def _updated(state, name, value):
     if name == "rerun_matching":
-        known = _known(value)
-        return replace(state, matched=value, diff=None,
-                       patients=state.patients | known.patients, clinics=state.clinics | known.clinics)
+        return replace(state, matched=value, diff=None)
     if name == "diff_plans":
         return replace(state, diff=value if state.matched is not None else None)
-    return state
+    return replace(state, mutated=True) if name in MUTATORS else state
 
 
 def _execute(use, tools, state):
@@ -167,14 +177,25 @@ def _summary_request(facts, retry=False):
     })}]}
 
 
-def replan(instruction, plan, tools):
-    """Return only tool-owned plan/diff and a checked two-sentence summary."""
+def _result(state, summary, clinics):
+    # Validate counts against ID tokens first, so digits/punctuation in a clinic
+    # name cannot be mistaken for a count or a sentence boundary.
+    names = {clinic["id"]: clinic["name"] for clinic in clinics}
+    summary = re.sub(r"\b[CH]\d{2}\b", lambda match: names.get(match[0], match[0]), summary)
+    return {"plan": state.matched, "diff": state.diff, "summary": summary.strip()}
+
+
+def replan(instruction: str, plan: dict, tools: dict, clinics: list | None = None) -> dict:
+    """Return tool-owned results; the router falls back until it passes clinics."""
+    if clinics is None:
+        raise ValueError("clinic context missing")
     model_id = os.getenv("BEDROCK_MODEL_ID", "").strip()
     if not model_id:
         raise ValueError("BEDROCK_MODEL_ID is required for replan")
-    state = _known(plan)
+    clinics = _clinic_context(clinics)
+    state = _known(plan, clinics)
     messages = [{"role": "user", "content": [{"text": json.dumps({
-        "instruction": instruction, "patients": _rows(plan),
+        "instruction": instruction, "patients": _rows(plan), "clinics": clinics,
     })}]}]
     calls, summary_attempts = 0, 0
     while True:
@@ -193,15 +214,15 @@ def replan(instruction, plan, tools):
             continue
         if result["stop_reason"] != "end_turn":
             raise RuntimeError("Replan model did not finish its turn")
-        if "REPLAN_CONTEXT_UNAVAILABLE" in result["text"]:
-            raise RuntimeError("Replan needs clinic or slot context; use the router fallback")
+        if not state.mutated:
+            raise ValueError("instruction not understood")
         had_facts = state.matched is not None and state.diff is not None
         state = _finish(state, tools)
         facts = _facts(state.diff)
         if had_facts:
             summary_attempts += 1
             if _valid_summary(result["text"], facts):
-                return {"plan": state.matched, "diff": state.diff, "summary": result["text"].strip()}
+                return _result(state, result["text"], clinics)
         if summary_attempts >= 2 or calls >= 6:
-            return {"plan": state.matched, "diff": state.diff, "summary": _template(facts)}
+            return _result(state, _template(facts), clinics)
         messages = [*messages, _summary_request(facts, retry=had_facts)]
