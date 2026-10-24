@@ -2,6 +2,7 @@
 
 import copy
 import re
+import unicodedata
 from datetime import datetime, timedelta
 
 from lumen import store
@@ -12,6 +13,7 @@ from lumen.match import match
 DIFF_FIELDS = ("action", "clinic_id", "slot", "drive_minutes", "drive_source", "pickup_time", "book_today", "flags", "status", "pinned")
 DECISION = ("action", "clinic_id", "slot")
 RANK_FIELDS = ("patient_id", "rank", "urgency", "difficulty", "reasons")
+DECLINE = re.compile(r"^\s*(?P<name>.+?)\s+(?:declined|declines|can'?t come|cannot come|will not come|won'?t come)\W*$", re.IGNORECASE)
 NUMBERS = {"no": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 
 
@@ -157,8 +159,20 @@ def apply_changes(changes, plan, tools, clinics, names):
     return {"plan": {**plan, **result}, "diff": diff, "summary": summary, "understood": understood}
 
 
-def replan_by_rules(instruction, plan, tools, clinics):
-    """Rule-based re-plan for "(clinic name) can only take N more". Used when the model steps are off or fail."""
+def _plain(text):
+    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)).casefold()
+
+
+def replan_by_rules(instruction, plan, tools, clinics, patients=()):
+    """Rule-based re-plan for "(clinic name) can only take N more" and "(full name) declined". Used when the model steps
+    are off or fail."""
+    d = DECLINE.match(instruction)
+    if d:
+        rows = {r["patient_id"] for r in plan["patients"]}
+        hits = [p for p in patients if p["id"] in rows and _plain(p["name"]) == _plain(d["name"].strip())]
+        if len(hits) != 1:
+            raise ValueError(f"no single patient in the plan is named '{d['name'].strip()}'")
+        return apply_changes([{"kind": "decline", "patient_id": hits[0]["id"]}], plan, tools, clinics, {hits[0]["id"]: hits[0]["name"]})
     m = re.match(r"^\s*(?P<name>.+?)\s+can only take (?P<n>\d+|\w+) more(\s+patients?)?\W*$", instruction, re.IGNORECASE)
     n = m and (int(m.group("n")) if m.group("n").isdigit() else NUMBERS.get(m.group("n").lower()))
     if n is None:

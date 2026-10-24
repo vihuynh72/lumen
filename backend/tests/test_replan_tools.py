@@ -159,3 +159,14 @@ def test_apply_changes_decline_and_pin_write_the_sentences_in_code():
                                     f"{names['P005']} goes to DaVita Folsom Dialysis, Thu Oct 29, 6:00 AM."]
     assert result["summary"] == "2 patients move to other chairs or the staff call list. 1 more patient needs a staff call."
     assert not any(n in result["summary"] for n in names.values())  # the summary is stored: no names
+
+
+def test_rules_read_a_full_name_decline_with_or_without_accents():
+    pid = PLAN1["patients"][0]["patient_id"]
+    name = next(p["name"] for p in SEEDS["patients"] if p["id"] == pid)
+    for text in (f"{name} declined", f"{name.upper()} can't come.", f"{name} will not come"):
+        result = replan_by_rules(text, PLAN1, tools(), SEEDS["clinics"], SEEDS["patients"])
+        assert result["understood"] == [f"{name} will not come. Staff call them."]
+        assert next(r for r in result["plan"]["patients"] if r["patient_id"] == pid)["status"] == "declined"
+    with pytest.raises(ValueError):
+        replan_by_rules("Nobody Here declined", PLAN1, tools(), SEEDS["clinics"], SEEDS["patients"])

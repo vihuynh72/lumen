@@ -169,7 +169,7 @@ The router tries three steps in this order. The first step that works makes the 
 
 1. The Bedrock tool loop (`BEDROCK_MODEL_ID`), when `AI_STEPS` has `replan`. Limit 45 s. It gets the instruction with names replaced, as below.
 2. The intent step (`BEDROCK_MODEL_FAST`), when `AI_STEPS` has `intent`. Limit 20 s. One model call reads the instruction into 1 to 3 changes. Code checks each change, applies it with the re-plan tools, re-runs matching and writes the summary.
-3. The rules: only "(clinic name) can only take N more".
+3. The rules: "(clinic name) can only take N more", and "(full patient name) declined" (also "can't come", "cannot come", "will not come"; case and accents do not matter).
 
 When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`.
 
@@ -193,7 +193,7 @@ The intent step:
 | `decline` | "Maria Delgado will not come. Staff call them." |
 | `pin` | "Maria Delgado goes to DaVita Folsom Dialysis, Wed Oct 28, 6:00 AM." |
 
-The rules path returns the `clinic_limit` sentence. The Bedrock tool loop returns `[]`. `summary` has no patient names: the stored plan keeps it.
+The rules path returns the `clinic_limit` or `decline` sentence. The Bedrock tool loop returns `[]`. `summary` has no patient names: the stored plan keeps it.
 
 `plan.ai_sources` has `replan` and `text`, for example `{"replan": "fallback", "text": "bedrock"}`. `replan` is `bedrock` when the tool loop or the intent step made the change, and `fallback` when the rules made it. `text` covers only the rows that the re-plan changed.
 
@@ -246,7 +246,7 @@ Response `200` (fixture: `fixtures/check.response.json`, schema: `check.schema.j
 {
   "issues": [
     {"patient_id": null, "facility_id": "C02", "severity": "block", "code": "over_capacity", "text": "DaVita Folsom Dialysis has one open chair on Thursday morning, but two patients are booked there.", "slot": {"date": "2026-10-29", "shift": 1}, "source": "bedrock"},
-    {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "No HBV test date on file for P003: receiver tests on intake, result within 7 days.", "source": "template"},
+    {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "P003 has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days.", "source": "template"},
     {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "language_unconfirmed", "text": "Confirm that DaVita Folsom Dialysis can speak Chinese with P003.", "source": "template", "soft": true}
   ],
   "counts": {"block": 1, "warning": 5},

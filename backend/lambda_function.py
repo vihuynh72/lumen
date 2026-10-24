@@ -280,7 +280,7 @@ def replan_route(body):
             tools = build_tools(event_id, old, seed)
     if result is None:
         try:
-            result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"]), "fallback"
+            result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"], seed["patients"]), "fallback"
         except ValueError as exc:
             raise ApiError(400, NOT_UNDERSTOOD, "replan") from exc
     timing["replan"] = round((time.perf_counter() - t) * 1000)

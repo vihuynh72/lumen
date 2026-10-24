@@ -431,7 +431,7 @@ def test_packet_sends_approved_rows_and_skips_the_rest():
     assert status == 200 and not list(validator("plan").iter_errors(body["plan"]))
     assert body["sent"] == [transfer, hospital] and body["plan"]["version"] == 3
     assert [s["patient_id"] for s in body["skipped"]] == [early, "P005"]
-    assert body["skipped"][1]["reason"].startswith("blocked: P005 is HBsAg positive")
+    assert body["skipped"][1]["reason"].startswith("blocked: P005 has hepatitis B")
     rows = {r["patient_id"]: r for r in body["plan"]["patients"]}
     clinic = next(c for c in store.load_seed()["clinics"] if c["id"] == rows[transfer]["clinic_id"])
     assert rows[transfer]["packet"] == {"status": "sent", "sent_at": body["plan"]["created_at"], "channel": "simulated fax",
@@ -607,7 +607,9 @@ def test_the_tool_loop_gets_ids_not_names(monkeypatch):
         raise RuntimeError("throttled")
     monkeypatch.setattr(tool_loop, "replan", loop)
     plan_v1()
-    assert replan("Ruben Ochoa declined")[0] == 400  # AI_STEPS default has replan; the intent step has no model here
+    status, body = replan("Ruben Ochoa declined")  # AI_STEPS default has replan; the intent step has no model here
+    assert status == 200 and body["plan"]["ai_sources"]["replan"] == "fallback"  # the rules read the name, without accents too
+    assert body["understood"] == ["Rubén Ochoa will not come. Staff call them."]
     assert seen["instruction"] == "P021 declined"
 
 
@@ -615,7 +617,8 @@ def test_ai_steps_without_intent_skips_the_model(monkeypatch):
     seen = fake_intent(monkeypatch, lambda payload: [{"kind": "decline", "patient_id": "P001"}], steps="parse,check")
     plan_v1()
     assert replan("DaVita Folsom Dialysis can only take four more")[1]["plan"]["ai_sources"]["replan"] == "fallback"
-    assert replan("Maria Delgado declined") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come. Staff call them."]
+    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
     assert seen["calls"] == 0
 
 

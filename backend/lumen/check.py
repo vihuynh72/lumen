@@ -10,12 +10,12 @@ from lumen.match import PARATRANSIT_START, regular_dates
 SENT_AWAY = ("transfer", "hospital")  # rows that go to another facility and get a packet
 LANGUAGES = {"en": "English", "es": "Spanish", "zh": "Chinese"}
 TEXT = {
-    "hbv_no_isolation": "{pid} is HBsAg positive, but {facility} has no isolation station.",
+    "hbv_no_isolation": "{pid} has hepatitis B, but {facility} has no isolation chair.",
     "over_capacity": "{facility} has {chairs} open chairs on {date} shift {shift}, but the plan sends {count} patients.",
     "clinic_closed": "{facility} is closed during the shutoff.",
     "no_visitors": "{facility} does not take visiting patients.",
     "no_late_shift": "{pid} has a late shift, but {facility} has no late shift.",
-    "hbv_test_missing": "No HBV test date on file for {pid}: receiver tests on intake, result within 7 days.",
+    "hbv_test_missing": "{pid} has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days.",
     "early_paratransit_pickup": "{pid} rides paratransit, but the pickup at {pickup} is before paratransit starts at 06:30.",
     "same_day_paratransit": "{pid} rides paratransit, which must be booked the day before, but the new session is today.",
     "long_drive": "{pid} has a {minutes}-minute drive to {facility}, longer than the {cap}-minute limit.",
