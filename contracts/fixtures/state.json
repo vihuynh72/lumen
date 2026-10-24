@@ -25,7 +25,7 @@
         {
           "date": "2026-10-27",
           "shift": 2,
-          "open_chairs": 0
+          "open_chairs": 1
         }
       ],
       "simulated": [
@@ -139,8 +139,8 @@
       "hours": 4,
       "last_session": "2026-10-26T06:00:00-07:00",
       "home": {
-        "lat": 38.6655,
-        "lng": -120.924,
+        "lat": 38.6702,
+        "lng": -120.9318,
         "town": "Shingle Springs"
       },
       "ride": "paratransit",
@@ -163,11 +163,11 @@
         "Sat"
       ],
       "shift": 3,
-      "hours": 3,
+      "hours": 4,
       "last_session": "2026-10-24T15:00:00-07:00",
       "home": {
-        "lat": 38.729,
-        "lng": -120.802,
+        "lat": 38.7236,
+        "lng": -120.8112,
         "town": "Placerville"
       },
       "ride": "self",
@@ -191,8 +191,8 @@
       "hours": 4,
       "last_session": "2026-10-24T06:00:00-07:00",
       "home": {
-        "lat": 38.6857,
-        "lng": -121.082,
+        "lat": 38.6721,
+        "lng": -121.0735,
         "town": "El Dorado Hills"
       },
       "ride": "family",
@@ -218,8 +218,8 @@
       "hours": 3.5,
       "last_session": "2026-10-24T06:00:00-07:00",
       "home": {
-        "lat": 38.8871,
-        "lng": -121.0145,
+        "lat": 38.8932,
+        "lng": -121.0251,
         "town": "Cool"
       },
       "ride": "self",
@@ -243,9 +243,9 @@
       "hours": 4,
       "last_session": "2026-10-26T10:30:00-07:00",
       "home": {
-        "lat": 38.8003,
-        "lng": -120.8894,
-        "town": "Coloma"
+        "lat": 38.8051,
+        "lng": -120.9032,
+        "town": "Lotus"
       },
       "ride": "medical_van",
       "lives_alone": false,
@@ -342,7 +342,58 @@
     "start": "2026-10-27T18:00:00-07:00",
     "end": "2026-10-29T12:00:00-07:00",
     "area_name": "Cameron Park, Shingle Springs and Placerville (El Dorado County)",
-    "source_text": "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis is a Medical Baseline customer alert from PG&E. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n"
+    "source_text": "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n"
+  },
+  "affected": {
+    "closed_clinic_ids": [
+      "C01"
+    ],
+    "sessions": [
+      {
+        "patient_id": "P001",
+        "clinic_id": "C01",
+        "start": "2026-10-28T06:00:00-07:00",
+        "end": "2026-10-28T10:00:00-07:00"
+      },
+      {
+        "patient_id": "P002",
+        "clinic_id": "C01",
+        "start": "2026-10-27T15:00:00-07:00",
+        "end": "2026-10-27T19:00:00-07:00"
+      },
+      {
+        "patient_id": "P003",
+        "clinic_id": "C01",
+        "start": "2026-10-29T06:00:00-07:00",
+        "end": "2026-10-29T10:00:00-07:00"
+      },
+      {
+        "patient_id": "P004",
+        "clinic_id": "C01",
+        "start": "2026-10-29T06:00:00-07:00",
+        "end": "2026-10-29T09:30:00-07:00"
+      },
+      {
+        "patient_id": "P005",
+        "clinic_id": "C01",
+        "start": "2026-10-28T10:30:00-07:00",
+        "end": "2026-10-28T14:30:00-07:00"
+      }
+    ],
+    "home_in_outage": {
+      "P001": true,
+      "P002": true,
+      "P003": false,
+      "P004": false,
+      "P005": false
+    },
+    "mode": "early",
+    "lead_hours": 33.0,
+    "now": "2026-10-26T09:00:00-07:00",
+    "window": {
+      "start": "2026-10-27T18:00:00-07:00",
+      "end": "2026-10-29T12:00:00-07:00"
+    }
   },
   "plan": {
     "event_id": "PSPS-DEMO-01",
@@ -351,17 +402,47 @@
     "mode": "early",
     "lead_hours": 33.0,
     "timing_ms": {
-      "parse": 1840,
       "affected": 3,
       "rank": 2,
       "match": 4,
       "text": 4120,
-      "total": 4310
+      "total": 4160
     },
     "patients": [
       {
-        "patient_id": "P001",
+        "patient_id": "P002",
         "rank": 1,
+        "urgency": 60,
+        "difficulty": 15,
+        "reasons": [
+          "session_in_window",
+          "session_within_36h",
+          "home_in_outage"
+        ],
+        "reason_text": "The Tuesday session is within 36 hours and in the shutoff window, and the home loses power.",
+        "affected_session": "2026-10-27T15:00:00-07:00",
+        "action": "early_session",
+        "clinic_id": "C01",
+        "slot": {
+          "date": "2026-10-27",
+          "shift": 1
+        },
+        "drive_minutes": 25,
+        "drive_source": "estimate",
+        "pickup_time": "2026-10-27T05:15:00-07:00",
+        "ride": "self",
+        "book_today": false,
+        "flags": [],
+        "messages": {
+          "en": "James Whitfield, this is DaVita Cameron Park. A planned power shutoff moves your Tuesday 3:00 PM treatment to Tuesday, Oct 27, 6:00 AM, at your usual clinic. Please leave home by 5:15 AM. Questions? Call 555-0100."
+        },
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      },
+      {
+        "patient_id": "P001",
+        "rank": 2,
         "urgency": 55,
         "difficulty": 65,
         "reasons": [
@@ -374,25 +455,25 @@
           "wheelchair",
           "limited_english"
         ],
-        "reason_text": "Heart failure and a Wednesday session in the shutoff window put this patient first, and paratransit with a wheelchair makes travel hard.",
+        "reason_text": "Heart failure, a Wednesday session in the window, paratransit and a wheelchair make this patient urgent and hard to move.",
         "affected_session": "2026-10-28T06:00:00-07:00",
         "action": "early_session",
         "clinic_id": "C01",
         "slot": {
           "date": "2026-10-27",
-          "shift": 1
+          "shift": 2
         },
-        "drive_minutes": 7,
+        "drive_minutes": 6,
         "drive_source": "estimate",
-        "pickup_time": "2026-10-27T05:33:00-07:00",
+        "pickup_time": "2026-10-27T10:04:00-07:00",
         "ride": "paratransit",
         "book_today": true,
         "flags": [
           "long_gap_after"
         ],
         "messages": {
-          "en": "Maria Delgado, this is DaVita Cameron Park. A planned power shutoff moves your Wednesday treatment to Tuesday, Oct 27, 6:00 AM, at your usual clinic. Paratransit picks you up at 5:33 AM. Questions? Call 555-0100.",
-          "es": "Maria Delgado, le habla DaVita Cameron Park. Por un corte de luz planificado, su diálisis del miércoles pasa al martes 27 de octubre, 6:00 a. m., en su clínica. Paratránsito la recoge a las 5:33 a. m. ¿Preguntas? 555-0100."
+          "en": "Maria Delgado, this is DaVita Cameron Park. A planned power shutoff moves your Wednesday 6:00 AM treatment to Tuesday, Oct 27, 10:30 AM, at your usual clinic. Paratransit picks you up at 10:04 AM. Questions? Call 555-0100.",
+          "es": "Maria Delgado, le habla DaVita Cameron Park. Por un corte de luz planificado, su diálisis del miércoles pasa al martes 27 de octubre, 10:30 a. m., en su clínica. Paratránsito la recoge a las 10:04 a. m. ¿Preguntas? 555-0100."
         },
         "audio": {},
         "status": "draft",
@@ -400,7 +481,7 @@
       },
       {
         "patient_id": "P003",
-        "rank": 2,
+        "rank": 3,
         "urgency": 50,
         "difficulty": 15,
         "reasons": [
@@ -409,7 +490,7 @@
           "no_car",
           "limited_english"
         ],
-        "reason_text": "A recently missed session and a Thursday session in the window raise urgency, and DaVita Folsom is a 10-minute drive.",
+        "reason_text": "A recent missed session and a Thursday session in the window raise urgency, and Folsom is 9 minutes away.",
         "affected_session": "2026-10-29T06:00:00-07:00",
         "action": "transfer",
         "clinic_id": "C02",
@@ -417,15 +498,15 @@
           "date": "2026-10-29",
           "shift": 1
         },
-        "drive_minutes": 10,
+        "drive_minutes": 9,
         "drive_source": "estimate",
-        "pickup_time": "2026-10-29T05:30:00-07:00",
+        "pickup_time": "2026-10-29T05:31:00-07:00",
         "ride": "family",
         "book_today": false,
         "flags": [],
         "messages": {
-          "en": "Chen Wei, this is DaVita Cameron Park. A planned power shutoff moves your Thursday, Oct 29 treatment to DaVita Folsom Dialysis, 2195 Iron Point Rd, Folsom, at 6:00 AM. Please leave home by 5:30 AM. Questions? Call 555-0100.",
-          "zh": "Chen Wei，您好。这里是 DaVita Cameron Park 透析中心。因计划停电，您10月29日（周四）的透析改到 DaVita Folsom Dialysis（2195 Iron Point Rd, Folsom），早上6:00开始。请在早上5:30前出门。如有问题，请拨打 555-0100。"
+          "en": "Chen Wei, this is DaVita Cameron Park. A planned power shutoff moves your Thursday, Oct 29 treatment to DaVita Folsom Dialysis, 2195 Iron Point Rd, Folsom, at 6:00 AM. Please leave home by 5:31 AM. Questions? Call 555-0100.",
+          "zh": "Chen Wei，您好。这里是 DaVita Cameron Park 透析中心。因计划停电，您10月29日（周四）的透析改到 DaVita Folsom Dialysis（2195 Iron Point Rd, Folsom），早上6:00开始。请在早上5:31前出门。如有问题，请拨打 555-0100。"
         },
         "audio": {},
         "status": "draft",
@@ -433,14 +514,14 @@
       },
       {
         "patient_id": "P005",
-        "rank": 3,
+        "rank": 4,
         "urgency": 40,
         "difficulty": 10,
         "reasons": [
           "session_in_window",
           "no_car"
         ],
-        "reason_text": "Hep B status needs an isolation chair, and no open chair fits on Tuesday or Wednesday, so staff will call this patient.",
+        "reason_text": "A Wednesday session falls in the window, and no open chair fits on Tuesday or Wednesday.",
         "affected_session": "2026-10-28T10:30:00-07:00",
         "action": "hospital",
         "clinic_id": "H01",
@@ -460,14 +541,14 @@
       },
       {
         "patient_id": "P004",
-        "rank": 4,
+        "rank": 5,
         "urgency": 40,
         "difficulty": 10,
         "reasons": [
           "session_in_window",
           "lives_alone"
         ],
-        "reason_text": "The Thursday session falls in the shutoff window and this patient lives alone, and DaVita Folsom is about 45 minutes away.",
+        "reason_text": "The Thursday session falls in the window, this patient lives alone, and Folsom is about 45 minutes away.",
         "affected_session": "2026-10-29T06:00:00-07:00",
         "action": "transfer",
         "clinic_id": "C02",
@@ -487,38 +568,12 @@
         "audio": {},
         "status": "draft",
         "pinned": false
-      },
-      {
-        "patient_id": "P002",
-        "rank": 5,
-        "urgency": 0,
-        "difficulty": 15,
-        "reasons": [
-          "home_in_outage"
-        ],
-        "reason_text": "Neither session overlaps the shutoff, but the home is in the outage area, so this patient gets a heads-up only.",
-        "affected_session": null,
-        "action": "notify_only",
-        "clinic_id": null,
-        "slot": null,
-        "drive_minutes": null,
-        "drive_source": null,
-        "pickup_time": null,
-        "ride": "self",
-        "book_today": false,
-        "flags": [],
-        "messages": {
-          "en": "James Whitfield, this is DaVita Cameron Park. A planned power shutoff starts Tuesday, Oct 27 at 6:00 PM in your area. Your Tuesday and Thursday 3:00 PM treatments stay the same. Questions? Call 555-0100."
-        },
-        "audio": {},
-        "status": "draft",
-        "pinned": false
       }
     ],
     "overflow": [
       "P005"
     ],
     "audit": [],
-    "summary": "Four of five patients have a session in the shutoff window: one dialyzes early at Cameron Park, two move to DaVita Folsom on Thursday, and one needs a staff call. One patient keeps the usual time and gets a heads-up."
+    "summary": "All five patients have a session in the shutoff window: two dialyze early at Cameron Park, two move to DaVita Folsom on Thursday, and one needs a staff call. Book one paratransit ride today."
   }
 }

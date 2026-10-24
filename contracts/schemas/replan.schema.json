@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/replan.schema.json",
+  "version": 1,
+  "title": "ReplanResponse",
+  "description": "POST /replan response: the next plan version, a flat diff and a two-sentence summary. plan follows plan.schema.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan",
+    "diff",
+    "summary"
+  ],
+  "properties": {
+    "plan": {
+      "type": "object",
+      "description": "The next plan version (plan.schema.json)."
+    },
+    "diff": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "title": "DiffEntry",
+      "additionalProperties": false,
+      "required": [
+        "patient_id",
+        "field",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "patient_id": {
+          "type": "string",
+          "pattern": "^P\\d{3}$"
+        },
+        "field": {
+          "type": "string",
+          "enum": [
+            "action",
+            "clinic_id",
+            "slot",
+            "drive_minutes",
+            "drive_source",
+            "pickup_time",
+            "book_today",
+            "flags",
+            "status",
+            "pinned"
+          ]
+        },
+        "from": {},
+        "to": {}
+      }
+    }
+  }
+}

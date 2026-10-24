@@ -1,6 +1,7 @@
 """Every contract fixture and seed file validates, and the fixture plans obey the plan rules."""
 
 import json
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -11,40 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SCHEMAS = ROOT / "contracts" / "schemas"
 FIXTURES = ROOT / "contracts" / "fixtures"
 SEED = ROOT / "data" / "seed"
+sys.path.insert(0, str(ROOT / "scripts"))
+from validate_seed import point_in_polygon  # noqa: E402
 
 SHIFT_START = {1: (6, 0), 2: (10, 30), 3: (15, 0), 4: (19, 30)}
-
-DIFF_SCHEMA = {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["patient_id", "field", "from", "to"],
-        "properties": {"patient_id": {"type": "string", "pattern": "^P\\d{3}$"}, "field": {"type": "string"}, "from": {}, "to": {}},
-    },
-}
-
-AFFECTED_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["closed_clinic_ids", "sessions", "home_in_outage", "mode", "lead_hours"],
-    "properties": {
-        "closed_clinic_ids": {"type": "array", "items": {"type": "string"}},
-        "sessions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["patient_id", "clinic_id", "start", "end"],
-                "properties": {"patient_id": {"type": "string"}, "clinic_id": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"}},
-            },
-        },
-        "home_in_outage": {"type": "object", "additionalProperties": {"type": "boolean"}},
-        "mode": {"enum": ["early", "transfer", "critical"]},
-        "lead_hours": {"type": "number"},
-    },
-}
-
 
 def load(path):
     return json.loads(path.read_text())
@@ -67,6 +38,7 @@ PLANS = {
     "plan.v1.json": load(FIXTURES / "plan.v1.json"),
     "plan.v2.json": load(FIXTURES / "plan.v2.json"),
     "replan.response.json plan": load(FIXTURES / "replan.response.json")["plan"],
+    "approve.response.json": load(FIXTURES / "approve.response.json"),
     "state.json plan": STATE["plan"],
 }
 
@@ -87,7 +59,8 @@ def test_seed_files_validate():
 
 
 def test_state_fixture_validates():
-    assert set(STATE) == {"version", "clinics", "patients", "outage_area", "rules", "event", "plan"}
+    assert set(STATE) == {"version", "clinics", "patients", "outage_area", "rules", "event", "affected", "plan"}
+    assert_valid(validator("affected"), STATE["affected"], "state affected")
     for c in STATE["clinics"]:
         assert_valid(validator("clinic"), c, f"state clinic {c['id']}")
     for p in STATE["patients"]:
@@ -108,9 +81,13 @@ def test_event_fixture():
 
 def test_affected_fixture():
     affected = load(FIXTURES / "affected.json")
-    assert_valid(Draft202012Validator(AFFECTED_SCHEMA), affected, "affected.json")
+    assert_valid(validator("affected"), affected, "affected.json")
     assert affected["mode"] == "early" and affected["lead_hours"] == 33.0
-    assert set(affected["home_in_outage"]) == set(PATIENTS)
+    assert affected["now"] == "2026-10-26T09:00:00-07:00"
+    ring = STATE["outage_area"]["features"][0]["geometry"]["coordinates"][0]
+    assert affected["home_in_outage"] == {pid: point_in_polygon(p["home"]["lng"], p["home"]["lat"], ring) for pid, p in PATIENTS.items()}
+    closed = [c["id"] for c in STATE["clinics"] if point_in_polygon(c["lng"], c["lat"], ring) and c["backup_power"] != "full"]
+    assert affected["closed_clinic_ids"] == closed
 
 
 @pytest.mark.parametrize("name", list(PLANS))
@@ -132,6 +109,10 @@ def test_plan_rules(name):
         assert r["ride"] == PATIENTS[pid]["ride"]
         if r["clinic_id"] is not None:
             assert r["clinic_id"] in CLINICS, f"{name} {pid}: unknown clinic {r['clinic_id']}"
+        if r["action"] in ("hospital", "notify_only"):
+            assert r["messages"] == {}, f"{name} {pid}: no automated message without a confirmed chair"
+        if r["reason_text"] is not None:
+            assert len(r["reason_text"].split()) <= 20, f"{name} {pid}: reason_text over 20 words"
         if r["action"] == "hospital":
             assert CLINICS[r["clinic_id"]]["kind"] == "hospital" and r["slot"] is None
             assert pid in plan["overflow"] and "staff_call" in r["flags"]
@@ -156,14 +137,20 @@ def test_plan_rules(name):
 
 def test_replan_response():
     resp = load(FIXTURES / "replan.response.json")
-    assert set(resp) == {"plan", "diff", "summary"}
-    assert_valid(Draft202012Validator(DIFF_SCHEMA), resp["diff"], "replan diff")
+    assert_valid(validator("replan"), resp, "replan.response.json")
     assert resp["plan"] == PLANS["plan.v2.json"]
     v1 = {r["patient_id"]: r for r in PLANS["plan.v1.json"]["patients"]}
     v2 = {r["patient_id"]: r for r in resp["plan"]["patients"]}
     for d in resp["diff"]:
         assert v1[d["patient_id"]][d["field"]] == d["from"]
         assert v2[d["patient_id"]][d["field"]] == d["to"]
+
+
+def test_approve_and_reset_responses():
+    approved = PLANS["approve.response.json"]
+    assert {r["status"] for r in approved["patients"]} == {"approved"}
+    assert approved["audit"][-1]["change"] == "approved all"
+    assert load(FIXTURES / "reset.response.json") == {"ok": True, "deleted": 4}
 
 
 def test_voice_response():
