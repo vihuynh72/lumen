@@ -1,0 +1,9 @@
+{
+  "label": "Demo assumptions, not clinical guidance",
+  "urgency": {"session_in_window": 40, "session_within_36h": 20, "heart_failure": 15, "missed_recently": 10},
+  "difficulty": {"paratransit": 15, "home_in_outage": 15, "no_car": 10, "lives_alone": 10, "wheelchair": 10, "limited_english": 5},
+  "modes": {"early_min_hours": 24, "transfer_min_hours": 6},
+  "drive_cap_minutes": 60,
+  "pickup_buffer_minutes": 20,
+  "gap_limit_days": 2
+}

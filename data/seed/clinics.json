@@ -1,0 +1,69 @@
+[
+  {
+    "id": "C01",
+    "name": "DaVita Cameron Park Dialysis",
+    "address": "3311 Coach Ln Ste C, Cameron Park, CA 95682",
+    "phone": "(530) 677-5114",
+    "lat": 38.658201,
+    "lng": -120.972154,
+    "stations": 23,
+    "late_shift": true,
+    "chain": "DaVita",
+    "home": true,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {"date": "2026-10-27", "shift": 1, "open_chairs": 1},
+      {"date": "2026-10-27", "shift": 2, "open_chairs": 0}
+    ],
+    "simulated": ["backup_power", "isolation_station", "accepts_visiting", "slots"]
+  },
+  {
+    "id": "C02",
+    "name": "DaVita Folsom Dialysis",
+    "address": "2195 Iron Point Rd, Folsom, CA 95630",
+    "phone": "(279) 278-9702",
+    "lat": 38.645225,
+    "lng": -121.133386,
+    "stations": 20,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {"date": "2026-10-27", "shift": 1, "open_chairs": 0},
+      {"date": "2026-10-27", "shift": 2, "open_chairs": 0},
+      {"date": "2026-10-27", "shift": 3, "open_chairs": 0},
+      {"date": "2026-10-28", "shift": 1, "open_chairs": 0},
+      {"date": "2026-10-28", "shift": 2, "open_chairs": 0},
+      {"date": "2026-10-28", "shift": 3, "open_chairs": 0},
+      {"date": "2026-10-29", "shift": 1, "open_chairs": 2},
+      {"date": "2026-10-29", "shift": 2, "open_chairs": 0},
+      {"date": "2026-10-29", "shift": 3, "open_chairs": 0}
+    ],
+    "simulated": ["backup_power", "isolation_station", "accepts_visiting", "slots"]
+  },
+  {
+    "id": "H01",
+    "name": "Mercy Hospital of Folsom",
+    "address": "1650 Creekside Dr, Folsom, CA 95630",
+    "phone": "(916) 983-7400",
+    "lat": 38.670957,
+    "lng": -121.145976,
+    "stations": null,
+    "late_shift": false,
+    "chain": null,
+    "home": false,
+    "kind": "hospital",
+    "backup_power": "full",
+    "isolation_station": true,
+    "accepts_visiting": false,
+    "slots": [],
+    "simulated": ["backup_power", "isolation_station"]
+  }
+]
