@@ -30,11 +30,14 @@
   <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.25" cy="10.75" r="2.75"/><path d="M7.2 8.8L13.5 2.5M11.25 4.75l1.75 1.75M9.5 6.5l1.5 1.5"/></symbol>
   <symbol id="i-home" viewBox="0 0 16 16"><path d="M2.5 7.5L8 3l5.5 4.5M4 6.5V13h8V6.5"/></symbol>
   <symbol id="i-list" viewBox="0 0 16 16"><path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.75 4h.01M2.75 8h.01M2.75 12h.01"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 16 16"><path d="M8 2.2C6.2 4.6 4.2 7.1 4.2 9.6a3.8 3.8 0 0 0 7.6 0C11.8 7.1 9.8 4.6 8 2.2z" fill="currentColor" fill-opacity=".18"/></symbol>
+  <symbol id="i-h" viewBox="0 0 16 16"><path d="M5 3.8v8.4M11 3.8v8.4M5 8h6"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
   <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></symbol>
 </svg>
 
 <header class="top">
-  <div class="logo"><i aria-hidden="true"></i>Lumen</div>
+  <h1 class="logo"><i aria-hidden="true"></i>Lumen</h1>
   <span class="sep" aria-hidden="true"></span>
   <div class="home"><span class="nm" id="homeName">DaVita Cameron Park Dialysis</span><span class="tag n">Home</span></div>
   <span class="sep" aria-hidden="true"></span>
@@ -56,7 +59,7 @@
 <div class="app">
   <aside class="rail" id="rail" aria-labelledby="railH">
     <div class="rail-h">
-      <div><h2 id="railH">AI run</h2><p class="sub" id="railSub">Not started</p></div>
+      <div><h2 id="railH" tabindex="-1">AI run</h2><p class="sub" id="railSub">Not started</p></div>
       <button class="btn railtog" id="railTog" type="button" aria-expanded="false" aria-controls="railBody">Steps<svg class="i"><use href="#i-chev"/></svg></button>
     </div>
     <div class="rail-body" id="railBody">
@@ -65,7 +68,7 @@
         <label for="instr">Re-plan in plain words</label>
         <textarea id="instr" rows="2" placeholder="Tell Lumen what changed" disabled></textarea>
         <div class="cmd-r">
-          <button type="button" class="sugg" id="sugg" disabled>DaVita Folsom Dialysis can only take four more</button>
+          <button type="button" class="sugg" id="sugg" disabled>DaVita Folsom can only take 4 more</button>
           <button type="submit" class="send" id="send" aria-label="Send the re-plan instruction" disabled><svg class="i"><use href="#i-send"/></svg></button>
         </div>
       </form>
@@ -76,21 +79,27 @@
   <main class="map" id="main" aria-label="Map of the home clinic and its power grid">
     <div id="map"></div>
     <div class="banner" id="banner" role="alert" hidden><span id="bannerT"></span><button class="btn q ico sm" id="bannerX" type="button" aria-label="Dismiss the message"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <details class="legend" id="legend" open>
+    <details class="legend" id="legend">
       <summary>Legend<svg class="i"><use href="#i-chev"/></svg></summary>
       <ul>
-        <li><i class="sw ln" style="--c:var(--map-power)"></i>Live feeder (illustrative)</li>
-        <li><i class="sw ln dash" style="--c:var(--map-dead)"></i>De-energized line</li>
+        <li><i class="sw feed"></i>Live feeder (illustrative)</li>
+        <li><i class="sw ln dead"></i>De-energized line (simulated)</li>
         <li><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line (OpenStreetMap)</li>
-        <li><i class="sw sq" style="--c:var(--map-trans)"></i>Substation</li>
-        <li><i class="sw bld" style="--c:var(--ink-2)"></i>Dialysis clinic</li>
-        <li><i class="sw bld" style="--c:var(--map-hospital)"></i>Hospital</li>
+        <li><i class="sw sub"></i>Substation (OpenStreetMap)<i class="sw sub dead"></i>No power</li>
         <li><i class="sw zone"></i>Shutoff area (illustrative)</li>
-        <li><i class="sw dot" style="--c:var(--map-affected)"></i>Patient home (synthetic)</li>
-        <li class="flows"><i class="sw ln" style="--c:var(--map-early)"></i><i class="sw ln" style="--c:var(--map-transfer)"></i><i class="sw ln" style="--c:var(--map-hospital)"></i>Early / Transfer / Staff call</li>
+        <li><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic<i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic<i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</li>
+        <li><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>Loses power<i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Receiving</li>
+        <li><i class="sw bld"></i>Building (dashed outline: approximate)</li>
+        <li><i class="sw dot" style="--c:var(--map-affected)"></i>Patient home (synthetic), before the plan</li>
+        <li><i class="sw dot" style="--c:var(--map-early)"></i>Early session<i class="sw dot" style="--c:var(--map-transfer)"></i>Transfer<i class="sw dot" style="--c:var(--map-staff)"></i>Staff call<i class="sw dot" style="--c:var(--mute)"></i>Notice only</li>
+        <li><i class="sw ln" style="--c:var(--map-transfer)"></i>Transfer route<i class="sw ln dash" style="--c:var(--map-staff)"></i>Staff call route</li>
+        <li><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed by a re-plan</li>
+        <li class="lgnote">The number on a route counts its patients</li>
       </ul>
+      <button class="lgbtn" id="animTog" type="button">Pause animation</button>
     </details>
     <div class="ctl">
+      <button class="btn sec" id="wholeBtn" type="button" hidden><svg class="i"><use href="#i-fit"/></svg>Whole plan</button>
       <button class="btn sec" id="homeBtn" type="button"><svg class="i"><use href="#i-home"/></svg>Home</button>
       <button class="btn sec m" id="d3" type="button" aria-pressed="true" aria-label="3D view">3D</button>
     </div>
@@ -99,13 +108,13 @@
   <aside class="panel" id="panel" aria-label="Home clinic and plan"></aside>
 </div>
 
-<div id="keyPop" class="pop" popover aria-labelledby="keyH">
+<div id="keyPop" class="pop" popover role="dialog" aria-labelledby="keyH">
   <h2 id="keyH">Demo key</h2>
   <p class="err" id="keyMsg" hidden></p>
   <form id="keyForm">
     <label for="keyInput">Key for the live API</label>
     <div class="keyrow">
-      <input id="keyInput" type="password" autocomplete="off" spellcheck="false">
+      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" aria-describedby="keyMsg">
       <button class="btn sec ico" id="keyShow" type="button" aria-pressed="false" aria-label="Show the key"><svg class="i"><use href="#i-eye"/></svg></button>
     </div>
     <button class="btn pri" type="submit">Save</button>
@@ -113,11 +122,19 @@
   <p class="small">Ask the team for the demo key. It never goes in the repo.</p>
 </div>
 
-<div id="resetPop" class="pop" popover aria-labelledby="resetQ">
+<div id="resetPop" class="pop" popover role="dialog" aria-label="Reset the demo" aria-describedby="resetQ">
   <p id="resetQ">Reset the demo? This deletes the event and plan.</p>
   <div class="pop-b">
     <button class="btn danger" id="resetGo" type="button">Reset</button>
-    <button class="btn sec" type="button" popovertarget="resetPop" popovertargetaction="hide">Cancel</button>
+    <button class="btn sec" type="button" popovertarget="resetPop" popovertargetaction="hide" autofocus>Cancel</button>
+  </div>
+</div>
+
+<div id="runPop" class="pop" popover role="dialog" aria-label="Start over" aria-describedby="runQ">
+  <p id="runQ">Start over? This deletes the plan, its approvals and voice notes.</p>
+  <div class="pop-b">
+    <button class="btn danger" id="runGo" type="button">Start over</button>
+    <button class="btn sec" type="button" popovertarget="runPop" popovertargetaction="hide" autofocus>Cancel</button>
   </div>
 </div>
 </body>

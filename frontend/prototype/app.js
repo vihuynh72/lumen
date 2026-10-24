@@ -7,16 +7,18 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const sleep = ms => new Promise(r => setTimeout(r, reduced.matches ? 0 : ms));
+const mem = {};  // blocked storage: keep values for this page only
 const store = {
-  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window: keep the value for this page only */ } },
+  get(k) { try { return localStorage.getItem(k) ?? mem[k] ?? null; } catch { return mem[k] ?? null; } },
+  set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch { /* mem keeps it */ } },
 };
 const icon = id => `<svg class="i"><use href="#i-${id}"/></svg>`;
 
 // data/seed/notice.txt, verbatim
 const NOTICE = "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n";
-const SUGGEST_LIVE = 'DaVita Folsom Dialysis can only take four more';
-const TOUR_SRC = 'Illustrative tour (computed in the page)';
+const SUGGEST_LIVE = 'DaVita Folsom can only take 4 more';
+const TOUR_SVC = 'In this page', TOUR_SRC = 'Illustrative tour';
+const NOTICE_TAG = 'Simulated PG&E notice';
 const PLAN_LINE = 'Lambda is finding affected sessions, ranking patients, assigning chairs and writing messages';
 
 // data/seed/clinics.json, so the map shows the clinics before GET /state answers
@@ -31,11 +33,11 @@ const FALLBACK = [
 ];
 
 const PHASES = [
-  { name: 'Read notice', svc: 'Amazon Bedrock', how: 'Amazon Bedrock reads the PG&E notice and finds the shutoff area and window.' },
+  { name: 'Read notice', svc: 'Bedrock or rules', how: 'Lumen reads the simulated PG&E notice and finds the shutoff area and window. Amazon Bedrock does this when it is available, otherwise rules in AWS Lambda.' },
   { name: 'Find affected', svc: 'AWS Lambda', how: 'AWS Lambda finds the clinics that lose power and the sessions in the window.' },
   { name: 'Rank patients', svc: 'AWS Lambda', how: 'Lambda ranks patients by urgency and by how hard they are to move.' },
   { name: 'Assign chairs', svc: 'AWS Lambda', how: 'Lambda gives each patient an early session, a chair at an open clinic or a staff call.' },
-  { name: 'Write messages', svc: 'Amazon Bedrock', how: "Amazon Bedrock writes a message for each move in the patient's language." },
+  { name: 'Write messages', svc: 'Bedrock or rules', how: "Amazon Bedrock writes a message for each move in the patient's language when it is available. Otherwise Lambda uses an English template." },
   { name: 'Approve', svc: 'Staff', how: 'You review the plan. Nothing goes out until staff approve.' },
   { name: 'Voice notes', svc: 'Amazon Polly', how: "Amazon Polly reads a confirmed patient's message as a voice note." },
 ];
@@ -65,7 +67,7 @@ const S = {
   outage: null, event: null, affected: null, plan: null, stage: 0,
   phases: [], running: false, alertMs: null, runTotal: null,
   diff: null, expanded: null, selected: null, filter: 'all',
-  msgLang: {}, audio: {}, rowErr: {}, busy: {}, approving: false,
+  msgLang: {}, audio: {}, rowErr: {}, busy: {}, approving: false, gen: 0, anim: true,
 };
 const isTour = () => S.region === 'santaclara';
 const hasKey = () => !!store.get('lumenDemoKey');
@@ -87,7 +89,7 @@ function slotText(s) {
   const [h, mi] = SHIFT[s.shift] || [0, 0], o = { timeZone: 'UTC' };
   return `${day.toLocaleDateString('en-US', { ...o, weekday: 'short' })} ${day.toLocaleDateString('en-US', { ...o, month: 'short' })} ${d}, ${h % 12 || 12}:${String(mi).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
-const fms = ms => ms == null ? '' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+const fms = ms => ms == null ? '' : ms < 1 ? '<1 ms' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : '';
 const low = s => s ? s[0].toLowerCase() + s.slice(1) : '';
 const join = a => a.length < 2 ? (a[0] || '') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
@@ -107,13 +109,14 @@ function countdown() {
 const rows = () => S.plan ? [...S.plan.patients].sort((a, b) => a.rank - b.rank) : [];
 function counts(p) { const c = { early_session: 0, transfer: 0, hospital: 0, notify_only: 0 }; for (const r of p.patients) c[r.action]++; return c; }
 const homeFac = () => S.clinics.find(c => c.home);
-const srcLabel = v => isTour() ? TOUR_SRC : v === 'bedrock' ? 'Claude Haiku 4.5' : v === 'fallback' ? 'Rules fallback' : '';
-function textSrc(p) {
-  if (isTour()) return TOUR_SRC;
-  const v = p.ai_sources?.text;
-  if (v) return v === 'bedrock' ? 'Claude Haiku 4.5' : 'Template fallback';
-  return p.patients.every(r => Object.keys(r.messages || {}).every(k => k === 'en')) ? 'Template fallback' : '';
+// The chip names the service that did the work; the source says how (API parse_source / ai_sources).
+function aiSrc(v, rules) {
+  if (isTour()) return { svc: TOUR_SVC, src: TOUR_SRC };
+  if (v === 'bedrock') return { svc: 'Amazon Bedrock', src: 'Claude Haiku 4.5' };
+  if (v === 'fallback') return { svc: 'AWS Lambda', src: `${rules} fallback · Bedrock unavailable` };
+  return { svc: 'AWS Lambda', src: 'Source not reported' };
 }
+const rulesSrc = () => isTour() ? { svc: TOUR_SVC, src: TOUR_SRC } : { svc: 'AWS Lambda', src: 'Rules · one request' };
 
 /* ---------- backends: live API and the in-page tour ---------- */
 class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
@@ -145,7 +148,7 @@ function tourBackend(data) {
   return {
     get tour() { return t; },
     state: async () => ({ patients: t.patients, outage_area: t.outage, event, affected: plan ? t.affected : null, plan }),
-    alert: () => run(() => (event = structuredClone(t.event))),
+    alert: () => run(() => { t = LumenTour.build(data); plan = null; return (event = structuredClone(t.event)); }),  // a new run starts from v1
     plan: () => run(() => (plan = t.plan)),
     approve: b => run(() => (plan = t.approve(b.patient_ids[0] === 'all' ? 'all' : b.patient_ids, b.edits))),
     voice: async () => { throw new ApiError('Voice notes need the live region.', 409); },
@@ -170,17 +173,23 @@ function mapPatients() {
   if (S.stage < 2) return M('setPatients', null);
   const by = Object.fromEntries((S.plan?.patients || []).map(r => [r.patient_id, r]));
   const ids = S.affected ? [...new Set(S.affected.sessions.map(s => s.patient_id))] : Object.keys(by);
-  M('setPatients', ids.filter(id => S.homes[id]).map(id => ({
-    id, lng: S.homes[id][0], lat: S.homes[id][1], label: pname(id),
-    action: S.stage >= 4 ? by[id]?.action ?? null : null, rank: S.stage >= 3 ? by[id]?.rank ?? null : null,
-  })));
+  // `to` is the destination, so a row with no route (an early session) still shows home -> clinic when selected
+  M('setPatients', ids.filter(id => S.homes[id]).map(id => {
+    const r = S.stage >= 4 ? by[id] : null, to = S.fac[r?.clinic_id];
+    return { id, lng: S.homes[id][0], lat: S.homes[id][1], label: pname(id), action: r?.action ?? null,
+      rank: S.stage >= 3 ? by[id]?.rank ?? null : null, to: to ? [to.lng, to.lat] : null };
+  }));
 }
+// One item per moved patient, from the clinic of their affected session to the new facility; map.js merges equal routes.
+// Early sessions stay at their own clinic, so they have no route (their home dot shows the action).
 function mapFlows() {
   if (S.stage < 4 || !S.plan) return M('setFlows', null);
-  M('setFlows', S.plan.patients.filter(r => r.action !== 'notify_only' && S.fac[r.clinic_id] && S.homes[r.patient_id]).map(r => ({
-    id: r.patient_id, from: S.homes[r.patient_id], to: [S.fac[r.clinic_id].lng, S.fac[r.clinic_id].lat],
-    action: r.action, changed: !!S.diff?.[r.patient_id],
-  })));
+  const usual = Object.fromEntries((S.affected?.sessions || []).map(s => [s.patient_id, s.clinic_id])), home = homeFac()?.id;
+  M('setFlows', S.plan.patients.flatMap(r => {
+    const from = S.fac[usual[r.patient_id] || home], to = S.fac[r.clinic_id];
+    if ((r.action !== 'transfer' && r.action !== 'hospital') || !from || !to) return [];
+    return [{ id: r.patient_id, from: [from.lng, from.lat], to: [to.lng, to.lat], action: r.action, changed: !!S.diff?.[r.patient_id] }];
+  }));
 }
 function mapStage(stage) {
   S.stage = stage;
@@ -191,45 +200,73 @@ function mapStage(stage) {
 
 /* ---------- rail ---------- */
 const ST_WORD = { pending: '', queued: 'Queued', running: 'Running', waiting: 'Waiting for you', error: 'Failed' };
-function resetPhases() { S.phases = PHASES.map(p => ({ name: p.name, svc: p.svc, status: 'pending' })); }
-function setPhase(i, o) { Object.assign(S.phases[i], { err: null, retry: null }, o); }
+function resetPhases() {
+  S.phases = PHASES.map(p => ({ name: p.name, svc: isTour() && p.svc !== 'Staff' && p.svc !== 'Amazon Polly' ? TOUR_SVC : p.svc, status: 'pending' }));
+}
+function setPhase(i, o) { if (S.phases[i]) Object.assign(S.phases[i], { err: null, retry: null }, o); }
 function done(i, o) {
   setPhase(i, { status: 'done', ...o });
-  announce(`${S.phases[i].name} done. ${S.phases[i].res || ''}`);
+  if (S.phases[i]) announce(`${S.phases[i].name} done. ${S.phases[i].res || ''}`);
 }
 function fail(i, e, retry) {
   setPhase(i, { status: 'error', err: e.message, retry });
+  announce(`${S.phases[i]?.name || 'A step'} failed. ${e.message}`);
   if (e.status !== 401) banner(e.message);
   renderRail();
 }
 function renderRail() {
   const ol = $('#phases');
-  ol.innerHTML = S.phases.map((p, i) => {
+  keepFocus(() => { ol.innerHTML = S.phases.map((p, i) => {
     const cur = ['running', 'waiting', 'error'].includes(p.status);
     const st = p.status === 'done' ? fms(p.ms) : ST_WORD[p.status];
+    const res = !p.res ? '' : p.det
+      ? `<details class="det res" data-i="${i}"${p.open ? ' open' : ''}><summary data-k="det-${i}"><span>${esc(p.res)}</span>${icon('chev')}</summary><p>${esc(p.det)}</p></details>`
+      : `<p class="res">${esc(p.res)}</p>`;
     return `<li class="ph ${p.status}"${cur ? ' aria-current="step"' : ''}>
       <span class="d" aria-hidden="true">${p.status === 'done' ? icon('ck') : p.status === 'error' ? icon('x') : ''}</span>
       <div>
-        <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st m">${esc(st)}</span></div>
-        <div class="meta"><span class="svc">${esc(p.svc)}</span>${p.src ? `<span>${esc(p.src)}</span>` : ''}</div>
-        ${p.res ? `<p class="res">${esc(p.res)}</p>` : ''}
-        ${p.err ? `<p class="err">${esc(p.err)}</p>${p.retry ? `<button class="btn retry" type="button" data-retry="${i}">Retry</button>` : ''}` : ''}
-        ${p.det ? `<details class="det" data-i="${i}"${p.open ? ' open' : ''}><summary>Details</summary><p>${esc(p.det)}</p></details>` : ''}
+        <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st m">${p.status === 'done' ? '<span class="vh">Done, </span>' : p.status === 'pending' ? '<span class="vh">Not started</span>' : ''}${esc(st)}</span></div>
+        <div class="meta"><span class="svc">${esc(p.svc)}</span>${p.src ? `<span title="${esc(p.src)}">${esc(p.src)}</span>` : ''}</div>
+        ${res}
+        ${p.err ? `<p class="err">${esc(p.err)}</p>${p.retry ? `<button class="btn retry" type="button" data-retry="${i}" data-k="retry-${i}">Retry</button>` : ''}` : ''}
       </div></li>`;
-  }).join('');
-  const err = S.phases.find(p => p.status === 'error');
-  $('#railSub').textContent = S.running ? 'Running…' : err ? `Stopped at ${err.name}`
-    : S.plan ? `Plan v${S.plan.version}${S.runTotal != null ? ` · ${fms(S.runTotal)} total` : ''}`
-    : S.event ? 'Notice read · no plan yet' : 'Not started';
-  const act = ol.querySelector('[aria-current]');
-  if (act) act.scrollIntoView({ block: 'nearest', behavior: reduced.matches ? 'auto' : 'smooth' });
+  }).join(''); }, '#railH');
+  $('#railSub').textContent = railSub();
+  // follow the newest event: a running or failed step, else the newest Re-plan step, else the step waiting for you
+  const act = ol.querySelector('.ph.running, .ph.error') || (S.phases.length > PHASES.length ? ol.lastElementChild : ol.querySelector('[aria-current]'));
+  if (act) railScroll(act);
   // re-plan box
   const ok = S.stage >= 4 && !S.running;
-  for (const el of [$('#instr'), $('#sugg'), $('#send')]) el.disabled = !ok;
-  $('#sugg').textContent = isTour() ? (S.tour?.suggestion || '') : SUGGEST_LIVE;
+  for (const el of [$('#instr'), $('#sugg'), $('#send')]) setDisabled(el, !ok);
+  $('#sugg').textContent = isTour() ? (S.tour?.suggestion || '').replace(/ four more$/, ' 4 more') : SUGGEST_LIVE;
 }
-let liveT;
-function announce(t) { clearTimeout(liveT); $('#live').textContent = ''; liveT = setTimeout(() => { $('#live').textContent = t; }, 60); }
+// Like scrollIntoView 'nearest', then snapped so a whole row (never a cut one) sits at the top of the list.
+function railScroll(el) {
+  const ol = $('#phases'), base = ol.getBoundingClientRect().top - ol.scrollTop, y = e => e.getBoundingClientRect().top - base;
+  const s = ol.scrollTop, h = ol.clientHeight, a = y(el), b = a + el.offsetHeight;
+  if (a >= s && b <= s + h) return;
+  const want = a < s ? a : b - h;
+  ol.scrollTo({ top: Math.min(a, ...[...ol.children].map(y).filter(v => v >= want)), behavior: reduced.matches ? 'auto' : 'smooth' });
+}
+function railSub() {
+  const n = PHASES.length;
+  let k = S.phases.findIndex(p => ['running', 'queued', 'error'].includes(p.status));
+  if (k < 0) k = S.phases.findIndex(p => p.status === 'waiting');
+  if (k >= 0) {
+    const p = S.phases[k];
+    return `${k < n ? `Step ${k + 1} of ${n} · ` : ''}${p.name}${p.status === 'error' ? ' · failed' : p.status === 'waiting' ? ' · waiting for you' : ''}`;
+  }
+  if (S.plan) return `Plan v${S.plan.version}${S.plan.version === 1 && S.runTotal != null ? ` · ${fms(S.runTotal)} total` : ''}`;
+  return S.event ? 'Notice read · no plan yet' : `Not started · ${n} steps`;
+}
+// Disabling the focused control drops focus to <body>; park it on the rail heading instead.
+function setDisabled(el, dis) {
+  if (dis && el === document.activeElement) $('#railH').focus();
+  el.disabled = dis;
+}
+let liveT, liveQ = '';
+// Messages that arrive together are joined, so a burst of steps is read in full.
+function announce(t) { clearTimeout(liveT); liveQ = liveQ ? `${liveQ} ${t}` : t; $('#live').textContent = ''; liveT = setTimeout(() => { $('#live').textContent = liveQ; liveQ = ''; }, 60); }
 function banner(msg) { $('#bannerT').textContent = msg; $('#banner').hidden = false; }
 
 /* ---------- restore from GET /state ---------- */
@@ -251,7 +288,7 @@ function resText() {
   const langs = [...new Set(withMsg.flatMap(r => Object.keys(r.messages)))].map(langName);
   return `${plural(withMsg.length, 'message')}${langs.length ? ` in ${join(langs)}` : ''}`;
 }
-const detNotice = () => `Event ${S.event.event_id} · ${S.event.notice_type || 'notice'} · issued ${dt(S.event.issued_at)}`;
+const detNotice = () => `${NOTICE_TAG} · event ${S.event.event_id} · ${S.event.notice_type || 'notice'} · issued ${dt(S.event.issued_at)}`;
 function detAffected() {
   if (!S.affected) return '';
   const homes = Object.values(S.affected.home_in_outage || {}).filter(Boolean).length;
@@ -260,31 +297,33 @@ function detAffected() {
 const detRank = () => `First three: ${rows().slice(0, 3).map(r => pname(r.patient_id)).join(', ')}.`;
 const detAssign = () => S.plan.summary || `${plural(S.plan.overflow.length, 'patient')} with no chair get a staff call.`;
 function planPhases(p) {
-  const tm = p.version === 1 ? p.timing_ms || {} : {}, rules = isTour() ? TOUR_SRC : 'Rules';  // later versions carry other requests' timings
+  const tm = p.version === 1 ? p.timing_ms || {} : {}, r = rulesSrc();  // later versions carry other requests' timings
+  const one = isTour() ? '' : `Steps 2 to 5 ran in one AWS Lambda request (POST /plan${tm.total != null ? `, ${fms(tm.total)} in all` : ''}). `;
   return [
-    { ms: tm.affected, src: rules, res: resAffected(), det: detAffected() },
-    { ms: tm.rank, src: rules, res: resRank(), det: detRank() },
-    { ms: tm.match, src: rules, res: resAssign(), det: detAssign() },
-    { ms: tm.text, src: textSrc(p), res: resText() },
+    { ms: tm.affected, ...r, res: resAffected(), det: one + detAffected() },
+    { ms: tm.rank, ...r, res: resRank(), det: one + detRank() },
+    { ms: tm.match, ...r, res: resAssign(), det: one + detAssign() },
+    { ms: tm.text, ...aiSrc(p.ai_sources?.text, 'Template'), res: resText() },
   ];
 }
 function voiceWaiting() {
   if (S.phases[6].status === 'done') return;
-  setPhase(6, { status: isTour() ? 'pending' : 'waiting', res: isTour() ? 'Voice notes need the live region.' : 'Confirm a patient, then play a voice note' });
+  setPhase(6, { status: isTour() ? 'pending' : 'waiting', res: isTour() ? 'Voice notes need the live region.' : 'Confirm a patient to make one' });
 }
 function restorePhases() {
   resetPhases();
-  if (S.event) setPhase(0, { status: 'done', src: srcLabel(S.event.parse_source), res: `${win()} · ${S.event.area_name}`, det: detNotice() });
+  if (S.event) setPhase(0, { status: 'done', ...aiSrc(S.event.parse_source, 'Rules'), res: `${win()} · ${S.event.area_name}`, det: detNotice() });
   if (!S.plan) return;
   planPhases(S.plan).forEach((o, k) => setPhase(k + 1, { status: 'done', ...o }));
-  const approved = S.plan.patients.some(r => r.status !== 'draft');
+  const drafts = S.plan.patients.filter(r => r.status === 'draft').length, approved = !drafts;
   if (approved) setPhase(5, { status: 'done', src: 'You', res: 'Approved by you' });
-  else setPhase(5, { status: 'waiting', res: 'Review the plan, then approve it' });
+  else setPhase(5, { status: 'waiting', res: drafts < S.plan.patients.length ? `${plural(drafts, 'row')} still to approve` : 'Review the plan, then approve it' });
   if (S.plan.patients.some(r => Object.keys(r.audio || {}).length)) setPhase(6, { status: 'done', src: 'Polly standard voice', res: 'A voice note exists for this plan' });
   else if (approved) voiceWaiting();
-  for (const a of S.plan.audit || []) {
-    if (/^re-plan/i.test(a.change)) S.phases.push({ name: 'Re-plan', svc: 'Amazon Bedrock', status: 'done', src: srcLabel(S.plan.ai_sources?.replan), res: a.change.replace(/^re-plan:\s*/i, '') });
-  }
+  // ai_sources describes only the request that made the current version, so only the newest re-plan can use it
+  const audit = S.plan.audit || [], re = audit.filter(a => /^re-plan/i.test(a.change)), lastRe = /^re-plan/i.test(audit.at(-1)?.change || '');
+  re.forEach((a, k) => S.phases.push({ name: 'Re-plan', status: 'done', res: a.change.replace(/^re-plan:\s*/i, ''),
+    ...aiSrc(k === re.length - 1 && lastRe ? S.plan.ai_sources?.replan : undefined, 'Rules') }));
 }
 function applyState(st) {
   if (st.clinics) {
@@ -311,11 +350,11 @@ function setPeople(list) {
     S.langs[p.id] = p.language_name || (p.language ? langName(p.language) : '');
   }
 }
-async function loadLive() {
+async function loadLive(g = S.gen) {
   if (isTour()) return;
   if (!hasKey()) return renderAll();
-  try { applyState(await live.state()); }
-  catch (e) { if (e.status !== 401) banner(e.message); renderAll(); }
+  try { const st = await live.state(); if (g === S.gen && !isTour()) applyState(st); }  // drop answers from before a region switch
+  catch (e) { if (g !== S.gen) return; if (e.status !== 401) banner(e.message); renderAll(); }
 }
 
 /* ---------- the run ---------- */
@@ -323,6 +362,11 @@ function setRunning(on) { S.running = on; renderTop(); renderRail(); }
 async function runDemo(from) {
   if (S.running) return;
   if (!isTour() && !hasKey()) return openKey('Add the demo key to run the live demo.');
+  if (from == null && S.plan) {  // a new run deletes the plan: ask first
+    $('#runQ').textContent = `Start over? This deletes plan v${S.plan.version}, its approvals and voice notes.`;
+    if (!$('#runPop').matches(':popover-open')) $('#runPop').showPopover();
+    return;
+  }
   from ??= S.event && !S.plan ? 2 : 1;
   $('#banner').hidden = true;
   setRunning(true);
@@ -335,15 +379,15 @@ async function runDemo(from) {
 }
 async function stepAlert() {
   S.plan = S.affected = S.diff = null; S.expanded = S.selected = null; S.audio = {}; S.rowErr = {};
-  resetPhases(); mapStage(0); M('selectPatient', null);
-  setPhase(0, { status: 'running', res: 'Reading the PG&E notice' });
+  resetPhases(); mapStage(0); M('selectPatient', null); $('#panel').scrollTop = 0;
+  setPhase(0, { status: 'running', res: 'Reading the simulated PG&E notice' });
   renderAll();
   const t0 = performance.now();
   try { S.event = await S.B.alert(); }
   catch (e) { fail(0, e, () => runDemo(1)); throw e; }
-  S.alertMs = Math.round(performance.now() - t0);
+  S.alertMs = isTour() ? null : Math.round(performance.now() - t0);  // the tour's wait is pacing, not work
   if (!S.outage) try { S.outage = (await S.B.state()).outage_area; } catch { /* the map shows no area; the plan still works */ }
-  done(0, { ms: S.alertMs, src: srcLabel(S.event.parse_source), res: `${win()} · ${S.event.area_name}`, det: detNotice() });
+  done(0, { ms: S.alertMs, ...aiSrc(S.event.parse_source, 'Rules'), res: `${win()} · ${S.event.area_name}`, det: detNotice() });
   mapStage(1); M('focus', 'outage');
   renderAll();
   await sleep(700);
@@ -360,17 +404,18 @@ async function stepPlan() {
   S.runTotal = (S.alertMs || 0) + (plan.timing_ms?.total || 0);
   const res = planPhases(plan);
   done(1, res[0]); mapStage(2); M('focus', 'home'); renderAll();
-  await sleep(900);
+  await sleep(2600);  // hold the home grid in 3D so the dead feeder and the closed clinic read
   done(2, res[1]); mapStage(3); renderRail();
   await sleep(900);
   done(3, res[2]); mapStage(4); M('focus', 'flows'); renderAll();
   await sleep(900);
   done(4, res[3]);
   setPhase(5, { status: 'waiting', res: 'Review the plan, then approve it' });
+  announce('Approve is waiting for you. Review the plan, then approve it.');
   renderRail();
 }
 async function approveAll() {
-  if (S.approving || !S.plan) return;
+  if (S.approving || S.running || !S.plan) return;
   S.approving = true;
   setPhase(5, { status: 'running', res: 'Approving every row' });
   renderRail(); renderPanel();
@@ -383,6 +428,7 @@ async function approveAll() {
   renderRail(); renderPanel();
 }
 async function edit(id, status) {
+  if (S.running || S.busy[id]) return;
   S.busy[id] = true; S.rowErr[id] = null; renderList();
   try {
     S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: [], edits: [{ patient_id: id, status }] });
@@ -392,6 +438,7 @@ async function edit(id, status) {
   renderPanel(); renderRail();
 }
 async function voice(id) {
+  if (S.running || S.busy[id]) return;
   const lang = $(`[data-k="vl-${id}"]`)?.value || 'en';
   S.busy[id] = true; S.rowErr[id] = null; renderList();
   const first = S.phases[6].status !== 'done';
@@ -402,7 +449,7 @@ async function voice(id) {
     const ms = Math.round(performance.now() - t0);
     S.audio[id] = url; S.busy[id] = false; renderList();
     const a = $(`audio[data-id="${id}"]`);
-    if (!a) return;
+    if (!a) { if (first) { setPhase(6, { status: 'waiting', res: 'Press play on the voice note' }); renderRail(); } return; }
     a.addEventListener('playing', () => {
       if (S.phases[6].status === 'done') return;
       done(6, { ms, src: 'Polly standard voice', res: `Voice note in ${langName(lang)} for ${pname(id)}` }); renderRail();
@@ -417,22 +464,30 @@ async function voice(id) {
 }
 async function replan(instruction) {
   instruction = instruction.trim();
-  if (!instruction || !S.plan || S.running) return;
-  const i = S.phases.push({ name: `Re-plan · v${S.plan.version + 1}`, svc: 'Amazon Bedrock', status: 'running', res: instruction }) - 1;
-  setRunning(true);
+  if (!instruction || !S.plan || S.running || S.approving || Object.values(S.busy).some(Boolean)) return;
+  const ph = { name: `Re-plan · v${S.plan.version + 1}`, svc: isTour() ? TOUR_SVC : 'Bedrock or rules', status: 'running', res: instruction };
+  const at = () => S.phases.indexOf(ph);  // hold the step, not its index: a Retry can remove an earlier one
+  S.phases.push(ph);
+  setRunning(true); renderPanel();
   try {
     const before = positions();
     const r = await S.B.replan({ event_id: S.event.event_id, instruction });
     S.plan = r.plan;
     S.diff = r.diff.reduce((m, d) => ((m[d.patient_id] ||= []).push(d), m), {});
     const n = Object.keys(S.diff).length;
-    done(i, { name: `Re-plan · v${r.plan.version}`, ms: r.plan.timing_ms?.total, src: srcLabel(r.plan.ai_sources?.replan),
+    done(at(), { name: `Re-plan · v${r.plan.version}`, ms: r.plan.timing_ms?.total, ...aiSrc(r.plan.ai_sources?.replan, 'Rules'),
       res: r.summary || r.plan.summary, det: `${plural(n, 'patient')} changed. Instruction: “${instruction}”` });
+    if (r.plan.patients.some(x => x.status === 'draft')) {
+      setPhase(5, { status: 'waiting', ms: null, src: '', res: `${plural(n, 'row')} changed · approve them` });
+      if (S.phases[6].status !== 'done') setPhase(6, { status: 'pending', res: '' });  // one step waits at a time
+    }
     $('#instr').value = '';
-    S.running = false;
+    S.running = false; S.expanded = S.selected = null; M('selectPatient', null);
     renderPanel(); flip(before);
-    facStatus(); mapPatients(); mapFlows();
-  } catch (e) { fail(i, e, () => { S.phases.splice(i, 1); replan(instruction); }); }
+    facStatus(); mapPatients(); mapFlows(); M('focus', 'flows');
+    $('#pts > .pt.chg')?.scrollIntoView({ block: 'nearest', behavior: reduced.matches ? 'auto' : 'smooth' });
+    announce(`${plural(n, 'patient')} changed in plan v${r.plan.version}.`);
+  } catch (e) { fail(at(), e, () => { if (S.running) return; S.phases.splice(at(), 1); replan(instruction); }); }
   setRunning(false);
 }
 function ack() { S.diff = null; if (S.filter === 'changed') S.filter = 'all'; renderPanel(); mapFlows(); }
@@ -451,13 +506,15 @@ function clearRun() {
   Object.assign(S, { event: null, affected: null, plan: null, diff: null, expanded: null, selected: null, filter: 'all',
     alertMs: null, runTotal: null, audio: {}, rowErr: {}, busy: {}, msgLang: {} });
   resetPhases(); mapStage(0);
-  $('#banner').hidden = true;
+  $('#banner').hidden = true; $('#panel').scrollTop = 0;
 }
 async function setRegion(region) {
+  const g = ++S.gen;
   S.region = region;
   clearRun();
   try { S.data[region] ||= await (await fetch(`data/${region}.json`)).json(); }
   catch { banner('The map data did not load. Reload the page.'); }
+  if (g !== S.gen) return;  // the user switched again while this loaded
   if (isTour()) {
     if (!window.LumenTour) { banner('The tour did not load. Reload the page.'); return renderAll(); }
     S.B = tourBackend(S.data[region]);
@@ -470,7 +527,7 @@ async function setRegion(region) {
   M('setRegion', S.data[region], S.clinics);
   mapStage(0); M('focus', 'home');
   renderAll();
-  if (!isTour()) await loadLive();
+  if (!isTour()) await loadLive(g);
 }
 
 /* ---------- top bar ---------- */
@@ -480,23 +537,34 @@ function renderTop() {
   $('#tourTag').hidden = !isTour();
   $('#chip').classList.toggle('on', !!S.event);
   $('#chipId').textContent = S.event ? `${S.event.event_id} · ` : '';
-  $('#chipT').textContent = S.event ? `starts in ${countdown()}` : 'No shutoff notice';
-  for (const id of ['run', 'reset', 'region']) $('#' + id).disabled = S.running;
+  $('#chipT').textContent = S.event ? `Starts in ${countdown()} · ${NOTICE_TAG}` : 'No shutoff notice';
+  for (const id of ['run', 'reset', 'region']) setDisabled($('#' + id), S.running);
+  $('#wholeBtn').hidden = S.stage < 4 || !S.plan;
 }
 
 /* ---------- right panel ---------- */
-function keepFocus(fn) {
-  const k = document.activeElement?.dataset?.k;
+// Re-rendering replaces the focused control: focus its new copy, else its row, else the fallback.
+function keepFocus(fn, fallback = '#filter') {
+  const a = document.activeElement, k = a?.dataset?.k, row = a?.closest?.('.pt')?.dataset.id;
   fn();
-  if (k) $(`[data-k="${k}"]`)?.focus({ preventScroll: true });
+  if (!k || a.isConnected) return;
+  const el = $(`[data-k="${k}"]`);
+  (el && !el.disabled ? el : (row && $(`[data-k="row-${row}"]`)) || $(fallback))?.focus({ preventScroll: true });
+}
+// Re-rendering the list would stop a playing voice note: move the same <audio> into the new markup.
+function keepAudio(fn) {
+  const old = $('#pts audio');
+  fn();
+  const n = old && $(`#pts audio[data-id="${old.dataset.id}"]`);
+  if (n && n.getAttribute('src') === old.getAttribute('src')) n.replaceWith(old);
 }
 function renderAll() { renderTop(); renderRail(); renderPanel(); }
 function renderPanel() {
-  keepFocus(() => {
+  keepFocus(() => keepAudio(() => {
     const el = $('#panel');
     if (S.stage >= 4 && S.plan) { el.innerHTML = planHTML(); return; }
     el.innerHTML = keyCard() + (S.event ? eventHTML() : '') + homeHTML() + (S.event ? '' : howHTML());
-  });
+  }));
 }
 function keyCard() {
   if (isTour() || hasKey()) return '';
@@ -507,30 +575,33 @@ function homeHTML() {
   const h = homeFac(); if (!h) return '';
   const raw = S.raw[h.id], bp = raw?.backup_power || 'none', sim = !raw || (raw.simulated || []).includes('backup_power');
   const n = S.affected ? new Set(S.affected.sessions.filter(s => s.clinic_id === h.id).map(s => s.patient_id)).size : null;
-  return `<section class="sec"><h3>Home clinic</h3>
+  const pw = S.affected ? (S.affected.closed_clinic_ids.includes(h.id) ? `<span class="pw off">Loses power ${esc(win())}</span>` : '<span class="pw ok">Stays powered</span>')
+    : S.event ? '<span class="pw wait">Not checked yet</span>' : '<span class="pw ok">Powered</span>';
+  return `<section class="sec"><h2>Home clinic</h2>
     <p class="hname">${esc(h.name)}</p>${h.address ? `<p class="addr">${esc(h.address)}</p>` : ''}
     <dl class="facts">
       <dt>Stations</dt><dd class="m">${h.stations ?? 'Not listed'}</dd>
       <dt>Backup power</dt><dd>${esc(bp)}${sim ? ' (simulated)' : ''}</dd>
-      <dt>Power</dt><dd>${S.event ? `<span class="pw off">Loses power ${esc(win())}</span>` : '<span class="pw ok">Powered</span>'}</dd>
+      <dt>Power</dt><dd>${pw}</dd>
       ${n != null ? `<dt>Patients with sessions in the window</dt><dd class="m">${n}</dd>` : ''}
     </dl></section>`;
 }
 function howHTML() {
-  return `<section class="sec how"><h3>How the run works</h3><ol>
+  const note = isTour() ? 'The tour computes every step in this page. It makes no AWS call.' : 'Steps 2 to 5 run in one AWS Lambda request; the rail replays them with their real times.';
+  return `<section class="sec how"><h2>How the run works</h2><ol>
     ${PHASES.map((p, i) => `<li><span class="n m">${i + 1}</span><div><b>${esc(p.name)}</b><span class="svc2">${esc(p.svc)}</span><p>${esc(p.how)}</p></div></li>`).join('')}
-    </ol><p class="small">Press Run demo to start. Every step shows its service, its source and its time. Demo assumptions, not clinical guidance.</p></section>`;
+    </ol><p class="small">${note} Press Run demo to start. Every step shows the service that did the work, its source and its time. Demo assumptions, not clinical guidance.</p></section>`;
 }
 function eventHTML() {
-  const e = S.event;
-  return `<section class="sec"><h3>Shutoff notice</h3>
+  const e = S.event, by = aiSrc(e.parse_source, 'Rules');
+  return `<section class="sec"><h2>Shutoff notice<span class="tag n">${NOTICE_TAG}</span></h2>
     <dl class="facts">
       <dt>Event</dt><dd class="m">${esc(e.event_id)}</dd>
       <dt>Area</dt><dd>${esc(e.area_name)}</dd>
       <dt>Window</dt><dd>${esc(win())}</dd>
       <dt>Starts in</dt><dd class="m">${esc(countdown())}</dd>
       <dt>Issued</dt><dd>${esc(dt(e.issued_at))}</dd>
-      ${srcLabel(e.parse_source) ? `<dt>Parsed by</dt><dd>${esc(srcLabel(e.parse_source))}</dd>` : ''}
+      <dt>Parsed by</dt><dd>${esc(`${by.svc} · ${by.src}`)}</dd>
     </dl>
     ${e.source_text ? `<details class="notice"><summary>Notice text</summary><pre>${esc(e.source_text)}</pre></details>` : ''}
   </section>`;
@@ -540,8 +611,8 @@ function planHTML() {
   const nd = S.diff ? Object.keys(S.diff).length : 0, waiting = S.phases[5]?.status === 'waiting';
   const opts = [['all', 'All patients'], ['early', 'Early session'], ['transfer', 'Transfer'], ['staff', 'Staff call']].concat(nd ? [['changed', 'Changed']] : []);
   const cell = (label, color, n) => `<div style="--c:var(${color})"><span>${label}</span><b>${n}</b></div>`;
-  return `<div class="plan-h"><h3>Plan v${p.version} · ${draft ? 'draft' : 'approved'}</h3><span class="mute">${plural(p.patients.length, 'patient')}</span></div>
-    <div class="cnt">${cell('Early session', '--green', c.early_session)}${cell('Transfer', '--blue', c.transfer)}${cell('Staff call', '--red', c.hospital)}</div>
+  return `<div class="plan-h"><h2>Plan v${p.version} · ${draft ? 'draft' : 'approved'}</h2><span class="mute">${plural(p.patients.length, 'patient')}</span></div>
+    <div class="cnt">${cell('Early session', '--green', c.early_session)}${cell('Transfer', '--blue', c.transfer)}${cell('Staff call', '--map-staff', c.hospital)}</div>
     ${p.summary ? `<p class="sum">${esc(p.summary)}</p>` : ''}
     <div class="acts">
       ${draft || S.approving ? `<button class="btn pri${waiting ? ' pulse' : ''}" type="button" data-act="approve" data-k="approve"${S.approving || S.running ? ' disabled' : ''}>${S.approving ? 'Approving…' : 'Approve all'}</button>`
@@ -549,14 +620,14 @@ function planHTML() {
       <label class="selw"><span class="vh">Show</span><select data-k="filter" id="filter">${opts.map(([v, l]) => `<option value="${v}"${S.filter === v ? ' selected' : ''}>${l}</option>`).join('')}</select>${icon('chev')}</label>
     </div>
     ${draft ? '<p class="note">Nothing goes out until staff approve.</p>' : ''}
-    ${nd ? `<div class="chgbar" role="status"><span>${plural(nd, 'patient')} changed in plan v${p.version}</span><button class="btn sec sm" type="button" data-act="ack" data-k="ack">Acknowledge changes</button></div>` : ''}
+    ${nd ? `<div class="chgbar"><span>${nd} changed in v${p.version}</span><button class="btn sec sm" type="button" data-act="ack" data-k="ack">Acknowledge changes</button></div>` : ''}
     <ul class="pts" id="pts" aria-label="Patients in rank order">${listHTML()}</ul>`;
 }
 function listHTML() {
   const list = rows().filter(FILTERS[S.filter] || FILTERS.all);
   return list.length ? list.map(rowHTML).join('') : '<li class="empty">No patients match this filter.</li>';
 }
-function renderList() { const ul = $('#pts'); if (ul) keepFocus(() => { ul.innerHTML = listHTML(); }); }
+function renderList() { const ul = $('#pts'); if (ul) keepFocus(() => keepAudio(() => { ul.innerHTML = listHTML(); })); }
 function changeWords(entries) {
   const f = Object.fromEntries(entries.map(e => [e.field, e])), out = [];
   const toStaff = f.action?.to === 'hospital';
@@ -612,13 +683,14 @@ function detailHTML(r) {
   </div>`;
 }
 function actionsHTML(r, langs, cur) {
-  const id = r.patient_id, dis = S.busy[id] ? ' disabled' : '', ok = r.status === 'confirmed';
+  const id = r.patient_id, dis = S.busy[id] || S.running ? ' disabled' : '', ok = r.status === 'confirmed';
   let voiceUI = '';
   if (ok && isTour()) voiceUI = '<p class="small">Voice notes need the live region.</p>';
   else if (ok && langs.length) voiceUI = `<label class="selw sm"><span class="vh">Voice note language</span><select data-k="vl-${id}">${langs.map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${esc(langName(l))}</option>`).join('')}</select>${icon('chev')}</label>
     <button class="btn sec sm" type="button" data-act="voice" data-id="${id}" data-k="voice-${id}"${dis}><svg class="i fill"><use href="#i-play"/></svg>${S.busy[id] ? 'Making voice note…' : 'Play voice note'}</button>`;
   return `<div class="racts">
-    ${ok ? '' : `<button class="btn sec sm" type="button" data-act="confirm" data-id="${id}" data-k="cf-${id}"${dis}>${icon('ck')}Mark confirmed</button>`}
+    ${ok ? '' : r.status === 'draft' ? `<button class="btn sec sm" type="button" disabled>${icon('ck')}Confirm after approval</button>`
+      : `<button class="btn sec sm" type="button" data-act="confirm" data-id="${id}" data-k="cf-${id}"${dis}>${icon('ck')}Mark confirmed</button>`}
     ${r.status === 'declined' ? '' : `<button class="btn q sm" type="button" data-act="decline" data-id="${id}" data-k="dc-${id}"${dis}>Decline</button>`}
     ${voiceUI}
   </div>${S.audio[id] ? `<audio controls preload="auto" src="${esc(S.audio[id])}" data-id="${id}"></audio>` : ''}`;
@@ -666,6 +738,26 @@ function openPanel(on) {
   if (!matchMedia('(max-width: 1180px)').matches && on) return;
   $('#panel').classList.toggle('open', on);
   $('#planTog').setAttribute('aria-expanded', on);
+  requestAnimationFrame(padMap);
+}
+// Map fits avoid what floats over the map: the legend (bottom left), the controls (right), an open drawer or bottom sheet.
+let padKey = '';
+function padMap() {
+  const m = $('#main').getBoundingClientRect(), p = { top: 0, right: 0, bottom: 0, left: 0 };
+  const over = el => { const r = el.getBoundingClientRect(); return r.width && r.left < m.right && r.right > m.left && r.top < m.bottom && r.bottom > m.top ? r : null; };
+  const lg = over($('#legend')), ctl = over($('.ctl')), pn = $('#panel').classList.contains('open') && over($('#panel'));
+  if (lg) {  // the legend pads the side that costs the map less area
+    const w = Math.round(lg.right - m.left) + 8, h = Math.round(m.bottom - lg.top) + 8;
+    if (w / m.width < h / m.height) p.left = w; else p.bottom = h;
+  }
+  if (ctl) p.right = Math.round(m.right - ctl.left) + 8;
+  if (pn) {  // a drawer or sheet that would leave under 160 px of map is left out, so fits still have room
+    const sheet = pn.width >= m.width - 1, side = sheet ? 'bottom' : 'right';
+    const v = Math.round(sheet ? m.bottom - pn.top : m.right - pn.left) + 8;
+    if ((sheet ? m.height : m.width) - v >= 160) p[side] = Math.max(p[side], v);
+  }
+  const k = JSON.stringify(p);
+  if (k !== padKey) { padKey = k; M('setPadding', p); }
 }
 function sync3D() { const on = !!M('is3D'); $('#d3').setAttribute('aria-pressed', on); }
 
@@ -673,6 +765,7 @@ function sync3D() { const on = !!M('is3D'); $('#d3').setAttribute('aria-pressed'
 function bind() {
   $('#run').addEventListener('click', () => runDemo());
   $('#resetGo').addEventListener('click', doReset);
+  $('#runGo').addEventListener('click', () => { $('#runPop').hidePopover(); runDemo(1); });
   $('#region').addEventListener('change', e => setRegion(e.target.value));
   $('#themeTog').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
   $('#keyTog').addEventListener('click', () => openKey());
@@ -690,6 +783,14 @@ function bind() {
   });
   $('#bannerX').addEventListener('click', () => { $('#banner').hidden = true; });
   $('#homeBtn').addEventListener('click', () => M('focus', 'home'));
+  $('#wholeBtn').addEventListener('click', () => { S.selected = null; M('selectPatient', null); M('focus', 'flows', { all: true }); renderList(); });
+  $('#animTog').addEventListener('click', e => {
+    S.anim = !S.anim; M('setAnimation', S.anim);
+    e.currentTarget.textContent = S.anim ? 'Pause animation' : 'Play animation';
+  });
+  $('#panel').addEventListener('transitionend', e => { if (e.target === e.currentTarget) padMap(); });
+  const ro = new ResizeObserver(() => padMap());  // the legend and the controls change size too (toggle, Whole plan)
+  for (const el of [$('#main'), $('#legend'), $('.ctl')]) ro.observe(el);
   $('#d3').addEventListener('click', () => { M('set3D', !M('is3D')); sync3D(); });
   $('#planTog').addEventListener('click', () => openPanel(!$('#panel').classList.contains('open')));
   $('#railTog').addEventListener('click', e => {
@@ -730,14 +831,16 @@ function onSelect(sel) {
 async function boot() {
   bind();
   resetPhases();
-  if (matchMedia('(max-width: 760px)').matches) $('#legend').open = false;  // keep the small map clear
+  $('#legend').open = $('#main').clientWidth >= 900;  // open only when the map has room for it
+  const motion = () => { $('#animTog').hidden = reduced.matches; };  // reduced motion already stops the animation
+  motion(); reduced.addEventListener('change', motion);
   S.B = live; indexFac();
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
   setTheme(theme);
   renderAll();
   const dataP = fetch('data/eldorado.json').then(r => r.json()).catch(() => null);
   // init creates the map at once and resolves on its first load; the setters below queue until then
-  const mapP = window.LumenMap ? Promise.resolve().then(() => LumenMap.init($('#map'), { theme, mapKey: CFG.mapKey || '', onSelect })) : Promise.reject(new Error('map.js missing'));
+  const mapP = window.LumenMap ? Promise.resolve().then(() => LumenMap.init($('#map'), { theme, mapKey: CFG.mapKey || '', onSelect, on3D: sync3D })) : Promise.reject(new Error('map.js missing'));
   mapP.catch(e => { console.warn('LumenMap.init', e); banner('The map did not load. The plan still works.'); });
   S.data.eldorado = await dataP;
   M('set3D', true);  // first view: tilted 50 degrees over the home clinic

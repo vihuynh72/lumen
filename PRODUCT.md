@@ -34,17 +34,17 @@ AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks,
 * The map must show the home facility, its power grid, and how the shutoff affects it, first.
 * The demo runs on the deployed Amplify URL with a demo key, recorded at 1920 x 1080, and also on a laptop for judges.
 * Region: El Dorado County (Cameron Park, Folsom, Rancho Cordova) is the live API story. A scripted Santa Clara County tour is kept as a second region.
-* Map tiles: Amazon Location Service, with a free tile fallback until the API key exists.
+* Map tiles: Amazon Location Service (Monochrome style, us-east-2) with a referrer-restricted API key. The page falls back to OpenFreeMap tiles if that style fails to load.
 
 ## Capabilities and Constraints
 
 * API routes: `GET /state`, `POST /alert`, `/plan`, `/approve`, `/voice`, `/replan`, `/reset`. Header `X-Demo-Key` on every request.
-* Plan actions: `early_session`, `transfer`, `hospital` (staff call), `notify_only`. Row statuses: `draft`, `approved`, `confirmed`, `declined`.
-* Bedrock model: Claude Haiku 4.5 in us-east-2. The quota is pending, so the rule-based fallbacks do the work today. The UI must show the true source of each step.
+* Plan actions: `early_session`, `transfer`, `hospital` (staff call), `notify_only`. Row statuses: `draft`, `approved`, `confirmed`, `declined`, `no_answer`.
+* Bedrock model: Claude Haiku 4.5 in us-east-2. Message writing calls Bedrock and falls back to an English template. Notice parsing and re-plan always use their rule-based fallbacks today, because the backend has no `lumen.ai.parse` or `lumen.ai.replan` module yet. The API reports the source of each AI step (`parse_source`, `ai_sources`), and the UI must show it.
 * Polly standard voices: English, Spanish, Chinese.
 * All patients are synthetic. Patient names never go to Bedrock.
-* The PG&E notice, substations and circuits are illustrative and must be labeled as such.
-* Undecided: real distribution circuit data is not public. Transmission lines and substations may come from OpenStreetMap.
+* The PG&E notice is simulated, and the feeders (distribution circuits) and their de-energized state are illustrative; both must be labeled as such. Real distribution circuit data is not public.
+* Transmission lines and substations come from OpenStreetMap.
 
 ## Brand Commitments
 
@@ -58,7 +58,7 @@ AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks,
 * `data/seed/patients.json`: 40 synthetic patients with home coordinates.
 * `data/seed/outage_area.geojson`: the illustrative shutoff area.
 * `data/seed/notice.txt`: the fictional PSPS notice `PSPS-DEMO-01`.
-* Santa Clara tour data (in the prototype): 31 CMS centers, 642 stations, 2,568 synthetic patients.
+* Santa Clara tour data (in the prototype): 31 CMS centers, 642 stations, 420 synthetic patients.
 * Absent, never to fabricate: real PG&E circuits, real patients, outcome metrics, customer quotes, adoption numbers.
 
 ## Product Principles

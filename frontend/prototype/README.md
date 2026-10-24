@@ -4,17 +4,17 @@ The working screen of Lumen for the manager of DaVita Cameron Park Dialysis. It 
 
 ## What the screen does
 
-* **Top bar.** The home clinic, the region select, the event countdown, the theme toggle, the demo key, Reset and Run demo.
-* **Left rail ("AI run").** Seven steps, each with its AWS service, its true source (model, rules fallback, rules or template fallback) and its server time:
-  1. Read notice (`POST /alert`, Amazon Bedrock)
-  2. Find affected, 3. Rank patients, 4. Assign chairs, 5. Write messages (one `POST /plan` call; the rail replays the steps with the real `timing_ms`)
+* **Top bar.** The home clinic, the region select, the event countdown (labeled "Simulated PG&E notice"), the theme toggle, the demo key, Reset and Run demo. When a plan exists, Run demo first asks "Start over?", because a new run deletes the plan, its approvals and its voice notes.
+* **Left rail ("AI run").** Seven steps and a "Step N of 7" line. Each step shows the service that did the work, its source and its time. The chip follows the API's `parse_source` and `ai_sources`: "Amazon Bedrock · Claude Haiku 4.5" when Bedrock did the step, "AWS Lambda · Rules fallback (or Template fallback) · Bedrock unavailable" when the rules did it, "AWS Lambda · Source not reported" when the API does not say. Times under 1 ms print "<1 ms".
+  1. Read notice (`POST /alert`; Bedrock when available, otherwise rules). The time is the browser round trip.
+  2. Find affected, 3. Rank patients, 4. Assign chairs, 5. Write messages. All four come from one `POST /plan` request; the rail replays them with the real server `timing_ms`, and holds the home grid in 3D for about 2.6 s after Find affected.
   6. Approve (staff; the run waits for you)
-  7. Voice notes (`POST /voice`, Amazon Polly)
+  7. Voice notes (`POST /voice`, Amazon Polly; the time is the browser round trip)
 
-  The re-plan box at the bottom sends a plain-language instruction (`POST /replan`) and adds a "Re-plan · vN" row. A failed step turns red, shows the API `error` and has a Retry button.
-* **Map (center).** The shutoff area, live and de-energized feeders, transmission lines, the closed clinic, the affected patients and their new destinations. Each step moves the camera to what it changed. There are Home and 2D/3D controls and a legend.
-* **Right panel.** Before a plan, it shows the home clinic and how the run works. After the notice, it shows the event. With a plan, it shows counts, the summary, Approve all, a filter, and the patient rows in rank order. Open a row to see its reasons, drive time, messages per language, Mark confirmed, Decline and Play voice note. After a re-plan, changed rows stay amber with a "Changed" note until you press Acknowledge changes.
-* **Regions.** El Dorado County runs live against the API. Santa Clara County is an illustrative tour that runs in the page (`tour.js`) and makes no API calls.
+  A done step keeps one result line; press it to open its details. The re-plan box at the bottom sends a plain-language instruction (`POST /replan`) and adds a "Re-plan · vN" step. The rail scrolls to the newest step, the map shows the plan routes with the changed ones in amber, and the panel scrolls to the first changed row. If the re-plan returns draft rows, Approve waits for you again. A failed step turns red, shows the API `error` and has a Retry button.
+* **Map (center).** The shutoff area, live and de-energized feeders, transmission lines, the closed clinic, the affected patients and one route per destination (the number on a route counts its patients; staff calls are dashed; early sessions stay at their own clinic and have no route). Red means power off only. Each step moves the camera to what it changed. Controls: Whole plan (after the plan), Home and 3D. The legend matches the map, opens by default when the map is at least 900 px wide, and has a Pause animation button for the moving feeder current. Map fits leave room for the legend, the controls and an open drawer or sheet.
+* **Right panel.** Before a plan, it shows the home clinic (its power state comes from Find affected) and how the run works. After the notice, it shows the event. With a plan, it shows counts, the summary, Approve all, a filter, and the patient rows in rank order. Open a row to see its reasons, drive time, messages per language, Mark confirmed (after approval only), Decline and Play voice note (after the row is confirmed). After a re-plan, changed rows stay amber with a "Changed" note until you press Acknowledge changes or reload.
+* **Regions.** El Dorado County runs live against the API. Santa Clara County is an illustrative tour that runs in the page (`tour.js`) and makes no API calls; its steps carry the chip "In this page" and the source "Illustrative tour".
 * A page reload restores the live state from `GET /state`.
 
 Below 1180 px wide, the plan panel is a drawer (Plan button). Below 760 px, the rail is a top sheet and the plan a bottom sheet.
@@ -41,4 +41,4 @@ The demo key is not in the repo. Open the key button in the top bar, paste the k
 
 ## Data and labels
 
-The PG&E notice (`PSPS-DEMO-01`), the feeders and the Santa Clara shutoff area are illustrative. Transmission lines and substations come from OpenStreetMap. All patients are synthetic. The page labels each of these where it appears. Rules are demo assumptions, not clinical guidance.
+The PG&E notice (`PSPS-DEMO-01`) is simulated, and the page says so wherever it shows it. The feeders, their de-energized state and the Santa Clara shutoff area are illustrative. Transmission lines and substations come from OpenStreetMap. All patients are synthetic. The page labels each of these where it appears. Rules are demo assumptions, not clinical guidance.
