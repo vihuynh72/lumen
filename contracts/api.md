@@ -16,7 +16,7 @@ One Lambda function URL. The handler routes on method and path. The JSON schemas
 * Shifts: `1` = 06:00-10:00, `2` = 10:30-14:30, `3` = 15:00-19:00, `4` = late 19:30-23:30 (only at clinics with `late_shift: true`). Local time, America/Los_Angeles.
 * IDs: dialysis clinics `C01`, `C02`, ...; hospitals `H01`, ...; patients `P001`, ...; the demo event `PSPS-DEMO-01`.
 * A session runs from the shift start for the patient's `hours`. It is affected when it is at a closed clinic, starts before the window end and ends after the window start.
-* Names: plan rows have no name field. The frontend joins names from `GET /state` by `patient_id`. Stored plan files keep the `{name}` placeholder in `messages`. The router fills names only in HTTP responses, so the fixtures show names. AI modules get stored plans and never see names.
+* Names: plan rows have no name field. The frontend joins names from `GET /state` by `patient_id`. Stored plan files keep the `{name}` placeholder in `messages`. The router fills names only in HTTP responses, so the fixtures show names. AI modules get stored plans. No model ever sees names: the re-plan intent step replaces names in the instruction with patient IDs before its model call.
 * Schemas: `clinic`, `patient`, `event`, `rules`, `affected` (find_affected output), `plan`, `replan` (POST /replan response), `speak` (POST /speak response), `check` (POST /check response).
 
 ## Errors
@@ -32,8 +32,8 @@ Every error has this shape:
 | 400 | Bad JSON or a missing field. `step` names the route, for example `"alert"`. |
 | 401 | Missing or wrong `X-Demo-Key`. `step` is `"auth"`. |
 | 404 | Unknown route, event or patient. |
-| 409 | The request does not fit the plan state, for example a voice note for a row with no confirmed move. |
-| 500 | A pipeline step failed. `step` is that step: `parse`, `affected`, `rank`, `match`, `drive`, `text`, `replan`, `voice`, `speak`, `check`, `store`. |
+| 409 | The request does not fit the plan state, for example a voice note for a row with no approved move. |
+| 500 | A pipeline step failed. `step` is that step: `parse`, `affected`, `rank`, `match`, `drive`, `text`, `replan`, `voice`, `speak`, `check`, `notify`, `store`. |
 
 The frontend shows `error` and never a stack trace.
 
@@ -84,7 +84,7 @@ Response `200`: the event (fixture: `fixtures/event.json`, schema: `event.schema
 }
 ```
 
-`parse_source` (optional, event schema v2) says how the notice was parsed: `bedrock`, or `fallback` when the Bedrock parse failed and the router parsed the PG&E notice layout with rules. The router sets it; the model never does. Show a "Parsed by fallback rules" tag when it is `fallback`.
+`parse_source` (optional, event schema v2) says how the notice was parsed: `bedrock`, or `fallback` when the Bedrock parse failed and the router parsed the PG&E notice layout with rules. The router sets it; the model never does. The frontend never shows it: no source labels on screen.
 
 ## POST /plan
 
@@ -136,11 +136,11 @@ Row rules:
 * `flags`: `long_gap_after` (the next usual session date minus the new slot date, in calendar days, is more than `gap_limit_days`), `staff_call` (a person must call this patient).
 * `timing_ms`: `total` is the wall time of the request that made this version, at least the sum of its steps. Parse is timed in `POST /alert`.
 
-`ai_sources` (optional, plan schema v2) says who did each AI step of the request that made this version: `bedrock`, or `fallback` when the Bedrock step failed or ran past its time limit and the router used its rule-based path. Only the steps that ran have a key. `POST /plan` sets `text`, for example `{"text": "fallback"}`. Rank uses rules only, so it has no key. `POST /approve` runs no AI step, so it sets `{}`. The router sets it. The model never does. Show a fallback tag on each step that has `fallback`.
+`ai_sources` (optional, plan schema v2) says who did each AI step of the request that made this version: `bedrock`, or `fallback` when the Bedrock step failed or ran past its time limit and the router used its rule-based path. Only the steps that ran have a key. `POST /plan` sets `text`, for example `{"text": "fallback"}`. Rank uses rules only, so it has no key. `POST /approve` runs no AI step, so it sets `{}`. The router sets it. The model never does. The frontend never shows it.
 
 ## POST /replan
 
-Applies one instruction from Rosa and returns the next plan version, the diff and a two-sentence summary.
+Applies one instruction from Rosa and returns the next plan version, the diff, a two-sentence summary and the changes that Lumen read from the instruction.
 
 Request:
 
@@ -158,13 +158,44 @@ Response `200` (fixture: `fixtures/replan.response.json`):
     {"patient_id": "P004", "field": "clinic_id", "from": "C02", "to": "H01"},
     {"patient_id": "P004", "field": "slot", "from": {"date": "2026-10-29", "shift": 1}, "to": null}
   ],
-  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call."
+  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call.",
+  "understood": ["DaVita Folsom Dialysis takes at most 1 more patient."]
 }
 ```
 
 Schema: `replan.schema.json` (the `plan` inside follows `plan.schema.json`). `diff` is a flat list, one entry per changed field per patient. The diff covers these fields: `action`, `clinic_id`, `slot`, `drive_minutes`, `drive_source`, `pickup_time`, `book_today`, `flags`, `status`, `pinned`. Text fields are not in the diff.
 
-`plan.ai_sources` has `replan` and `text`, for example `{"replan": "fallback", "text": "bedrock"}`. `replan` is `fallback` when the Bedrock re-plan failed or ran past its time limit and the router applied the instruction with rules. `text` covers only the rows that the re-plan changed.
+The router tries three steps in this order. The first step that works makes the change:
+
+1. The Bedrock tool loop (`BEDROCK_MODEL_ID`), when `AI_STEPS` has `replan`. Limit 45 s. It gets the instruction with names replaced, as below.
+2. The intent step (`BEDROCK_MODEL_FAST`), when `AI_STEPS` has `intent`. Limit 20 s. One model call reads the instruction into 1 to 3 changes. Code checks each change, applies it with the re-plan tools, re-runs matching and writes the summary.
+3. The rules: "(clinic name) can only take N more", and "(full patient name) declined" (also "can't come", "cannot come", "will not come"; case and accents do not matter).
+
+When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`.
+
+`AI_STEPS` is a comma list in the Lambda env. The default is `parse,text,replan,check,intent`. The demo Lambda uses `parse,check,intent`.
+
+The intent step:
+
+* Before the call, code replaces each patient name in the instruction with the patient ID: the full name, and a first or last name that exactly one patient has. Case and accents do not matter ("Rios" is Guadalupe Ríos), and the model gets the instruction without accents. Two words of a clinic name stay, so "Cameron Park" is not Linda Park. The model never sees names or addresses.
+* The model gets the instruction, the dialysis clinics (`id`, `name`, `home`, `slots` with `date`, `shift`, `open_chairs`, after earlier cuts) and the plan rows (`patient_id`, `action`, `clinic_id`, `slot`, `status`).
+* The model calls the tool `change` with `{"changes": [...]}`. Each change is one of:
+  * `{"kind": "clinic_limit", "clinic_id": "C02", "more": 4}`: the clinic takes at most `more` visiting patients, with the same algorithm as the rules.
+  * `{"kind": "decline", "patient_id": "P012"}`: the patient will not come (`decline_patient`).
+  * `{"kind": "pin", "patient_id": "P012", "clinic_id": "C02", "date": "2026-10-28", "shift": 1}`: the patient goes to that slot (`pin_patient`).
+* Code rejects the whole reply, and the router tries the rules, when the list is empty or has more than 3 changes, a kind is unknown, a change misses one of its keys (keys of other kinds are dropped), an ID is not in the plan or not a dialysis clinic, `more` is below 0, or a tool rejects the change (for example a pin to a slot the clinic does not have).
+
+`understood` is one plain sentence per applied change. Code writes it from the change, with patient names. It is in the response only, never in the stored plan:
+
+| Change | Sentence |
+| -- | -- |
+| `clinic_limit` | "DaVita Folsom Dialysis takes at most 4 more patients." |
+| `decline` | "Maria Delgado will not come. Staff call them." |
+| `pin` | "Maria Delgado goes to DaVita Folsom Dialysis, Wed Oct 28, 6:00 AM." |
+
+The rules path returns the `clinic_limit` or `decline` sentence. The Bedrock tool loop returns `[]`. `summary` has no patient names: the stored plan keeps it.
+
+`plan.ai_sources` has `replan` and `text`, for example `{"replan": "fallback", "text": "bedrock"}`. `replan` is `bedrock` when the tool loop or the intent step made the change, and `fallback` when the rules made it. `text` covers only the rows that the re-plan changed.
 
 "(clinic) can only take N more" means: at most N visiting patients at that clinic across all slots of the event. Chairs go in rank order. The orchestrator calls `set_clinic_capacity` once per slot to get this result.
 
@@ -173,6 +204,8 @@ The 5-patient fixture uses "can only take one more", so the cut changes a row. T
 `plan.capacity_overrides` (optional, plan schema v3) saves each chair cut that a re-plan applied: `[{"clinic_id": "C02", "date": "2026-10-29", "shift": 1, "open_chairs": 1}]`. Every later version keeps the cuts. A second re-plan starts from the seed chair counts with these cuts applied. A later cut of the same slot replaces the earlier cut. A plan with no cut has no `capacity_overrides`.
 
 A re-plan that changes the `action`, `clinic_id` or `slot` of a row with a sent packet sets `packet.status` to `stale`. `sent_at` stays. The row goes back to `draft`. Show a "Stale" tag and tell staff to inform the old facility.
+
+The same re-plan sets `note.status` to `stale` on a row with a `sent` or `queued` voice note. The row can get a new note after approval (see POST /notify).
 
 ## POST /approve
 
@@ -213,7 +246,7 @@ Response `200` (fixture: `fixtures/check.response.json`, schema: `check.schema.j
 {
   "issues": [
     {"patient_id": null, "facility_id": "C02", "severity": "block", "code": "over_capacity", "text": "DaVita Folsom Dialysis has one open chair on Thursday morning, but two patients are booked there.", "slot": {"date": "2026-10-29", "shift": 1}, "source": "bedrock"},
-    {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "No HBV test date on file for P003: receiver tests on intake, result within 7 days.", "source": "template"},
+    {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "P003 has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days.", "source": "template"},
     {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "language_unconfirmed", "text": "Confirm that DaVita Folsom Dialysis can speak Chinese with P003.", "source": "template", "soft": true}
   ],
   "counts": {"block": 1, "warning": 5},
@@ -260,7 +293,7 @@ What Bedrock does:
 | `wheelchair_long_drive` | The patient uses a wheelchair and the drive is more than 30 minutes. |
 | `language_unconfirmed` | The patient's language is not `en` and the row is a transfer or hospital row. |
 
-Show an AI tag on each sentence with `source: "bedrock"` and on each soft warning.
+The frontend never shows `source` or `explained_by`.
 
 ## POST /packet
 
@@ -306,6 +339,58 @@ Audit entry example:
 
 Show "Simulated sends. No data leaves Lumen." near every send button.
 
+## POST /notify
+
+Records a SIMULATED voice note for each listed row. Nothing leaves Lumen and no audio is made (POST /voice makes audio on demand). Each patient gets one note, in their own language.
+
+Request:
+
+```json
+{"event_id": "PSPS-DEMO-01", "patient_ids": ["P001", "P007"], "call_instead": ["P012"], "dry_run": true}
+```
+
+* `patient_ids`: `["all"]` (every row) or a list of one or more patient IDs. An empty list, a value that is not a list, or `"all"` with IDs returns `400`. An unknown ID returns `404`.
+* `call_instead` (optional, default `[]`): IDs that the plan check says to call instead. The frontend sends the patient IDs of the latest `/check` issues with the codes `lives_alone_night_pickup` or `heart_failure_long_gap`. An ID that is not in the plan returns `400`.
+* `dry_run` (optional, default `false`): `true` returns what would happen, saves nothing and makes no new version. A value that is not `true` or `false` returns `400`.
+
+Response `200` (fixture: `fixtures/notify.response.json`, the `plan` follows `plan.schema.json`):
+
+```json
+{"plan": {"event_id": "PSPS-DEMO-01", "version": 3, "...": "..."}, "sent": ["P002", "P001", "P003"], "queued": [],
+ "skipped": [{"patient_id": "P005", "reason": "staff_call"}, {"patient_id": "P004", "reason": "call_instead"}], "dry_run": false}
+```
+
+Each listed row gets exactly one outcome. Code decides, in this order. The first match wins:
+
+| `reason` | When |
+| -- | -- |
+| `declined` | `status` is `declined`. |
+| `staff_call` | `action` is `hospital`, or `flags` has `staff_call`. |
+| `no_message` | `action` is not `early_session` or `transfer`, or the row has no message. |
+| `not_approved` | `status` is `draft`. |
+| `blocked` | A `/check` block stops the row (as on POST /packet). |
+| `call_instead` | The ID is in `call_instead`. |
+| `already_sent` | `note.status` is `sent` or `queued`. One note per patient per change. |
+
+Every other row is sent and gets `note` (optional, plan schema v4):
+
+```json
+{"status": "sent", "sent_at": "2026-10-26T09:12:00-07:00", "send_at": null, "lang": "es", "channel": "simulated voice note", "version": 2}
+```
+
+* `lang` is the patient's language, or `en` when the row has no message in that language.
+* `version` is the plan version the note was sent from. `sent_at` is the demo clock.
+* Quiet hours: when the demo clock is before 08:00 or at 20:00 or later (America/Los_Angeles), the note is queued instead: `status` `queued`, `sent_at` `null`, `send_at` the next 08:00 local time. Its ID is in `queued`, not `sent`.
+* `note.status` `stale`: a later re-plan moved the row (see POST /replan). A stale row can be sent again.
+
+When it is not a dry run and at least one note is sent or queued, the route saves a new version with one audit entry:
+
+```json
+{"ts": "2026-10-26T09:12:00-07:00", "actor": "Rosa", "change": "voice notes sent to 3 patients (simulated)"}
+```
+
+A queued send logs `"voice notes queued for 08:00 for 3 patients (simulated)"`. Otherwise `plan` is the latest version. Two requests on the same version return `409`, as on POST /approve.
+
 ## POST /voice
 
 Makes (or reuses) the voice note for one patient and language. Returns a presigned MP3 URL valid for 1 hour.
@@ -322,7 +407,7 @@ Response `200` (fixture: `fixtures/voice.response.json`):
 {"url": "https://example.com/audio.mp3"}
 ```
 
-Voice notes exist only for confirmed moves: an `early_session` or `transfer` row with `status: "confirmed"`. Any other row returns `409 {"error": "no confirmed move for P005", "step": "voice"}`. The MP3 is saved as `audio/(event_id)/(patient_id).(lang).mp3`, and the plan row's `audio` gets that key.
+Voice notes exist for approved moves: an `early_session` or `transfer` row with `status` `approved` or `confirmed`. Any other row returns `409 {"error": "no approved move for P005", "step": "voice"}`. The MP3 is saved as `audio/(event_id)/(patient_id).(lang).mp3`, and the plan row's `audio` gets that key.
 
 ## POST /speak
 
@@ -388,10 +473,11 @@ Response `200` (fixture: `fixtures/reset.response.json`):
 | `affected.json` | `find_affected` output for seed v0, with `now` and `window` (team rules, Rule 3) |
 | `plan.v1.json` | Plan v1: two early_session, two transfers, one hospital |
 | `plan.v2.json` | Plan v2 after "DaVita Folsom Dialysis can only take one more" |
-| `replan.response.json` | `POST /replan` response for that instruction |
+| `replan.response.json` | `POST /replan` response for that instruction, with `understood` |
 | `approve.response.json` | `POST /approve` with `["all"]` on plan v1 |
 | `check.response.json` | `POST /check` on the approved plan with a cut of C02 2026-10-29 shift 1 to 1 chair. The 2 `bedrock` sentences are examples, not a recorded model reply. |
 | `packet.response.json` | `POST /packet` for P003, P004, P005 and P001 on the approved plan |
+| `notify.response.json` | `POST /notify` with `["all"]` and `call_instead: ["P004"]` on the approved plan, at 09:12 |
 | `voice.response.json` | `POST /voice` response |
 | `speak.response.json` | `POST /speak` response for `es` |
 | `reset.response.json` | `POST /reset` response |

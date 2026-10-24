@@ -32,6 +32,8 @@ def bedrock_blocked(*args):
 def env(monkeypatch):
     monkeypatch.setenv("BUCKET", "test-bucket")
     monkeypatch.setenv("DEMO_KEY", "k3y")
+    for name in ("BEDROCK_MODEL_ID", "BEDROCK_MODEL_FAST", "AI_STEPS"):  # tests never reach a live model
+        monkeypatch.delenv(name, raising=False)
     s3 = FakeS3()
     for file in store.SEED_FILES.values():
         s3.put_object(Bucket="b", Key=f"seed/{file}", Body=(SEED / file).read_bytes())
@@ -156,9 +158,10 @@ def test_replan_falls_back_to_rules(monkeypatch):
     status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take one more"})
     assert status == 200, body
     assert body["plan"]["version"] == 2 and body["diff"] and body["summary"]
+    assert body["understood"] == ["DaVita Folsom Dialysis takes at most 1 more patient."]
     assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
     assert body["plan"]["audit"][-1]["change"].startswith("re-plan: DaVita Folsom")
-    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"})[0] == 400
+    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"}) == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
 
 
 def test_approve_then_voice(monkeypatch):
@@ -167,14 +170,19 @@ def test_approve_then_voice(monkeypatch):
     assert status == 200 and plan["version"] == 2 and {r["status"] for r in plan["patients"]} == {"approved"}
     move = next(r for r in plan["patients"] if r["action"] == "transfer")
     pid = move["patient_id"]
-    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})[0] == 409  # approved, not confirmed
-    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": [], "edits": [{"patient_id": pid, "status": "confirmed"}]})
+    hospital = next(r["patient_id"] for r in plan["patients"] if r["action"] == "hospital")
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": hospital, "lang": "en"}) == (
+        409, {"error": f"no approved move for {hospital}", "step": "voice"})
     monkeypatch.setattr(router.voice, "make_voice", lambda e, p, lang, text: f"audio/{e}/{p}.{lang}.mp3")
     monkeypatch.setattr(router.voice, "presign", lambda key: f"https://example.com/{key}")
     status, body = call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})
     assert status == 200 and body["url"].endswith(f"{pid}.en.mp3")
     row = next(r for r in store.latest_plan("PSPS-DEMO-01")["patients"] if r["patient_id"] == pid)
     assert row["audio"] == {"en": f"audio/PSPS-DEMO-01/{pid}.en.mp3"}
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": [], "edits": [{"patient_id": pid, "status": "confirmed"}]})
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})[0] == 200
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": [], "edits": [{"patient_id": pid, "status": "declined"}]})
+    assert call("POST", "/voice", {"event_id": "PSPS-DEMO-01", "patient_id": pid, "lang": "en"})[0] == 409
     assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": "all"})[0] == 400
 
 
@@ -221,7 +229,7 @@ def test_ai_sources_say_bedrock_when_it_works(monkeypatch):
     monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
         write_plan_text=lambda plan, clinics, languages, only_ids: {**plan, "summary": "Bedrock wrote this. It has two sentences."}))
     monkeypatch.setattr(router, "replan_with_bedrock",
-                        lambda instruction, plan, tools, clinics: router.replan_by_rules(instruction, plan, tools, clinics))
+                        lambda instruction, plan, tools, seed: router.replan_by_rules(instruction, plan, tools, seed["clinics"]))
     plan = plan_v1()
     assert plan["ai_sources"] == {"text": "bedrock"} and not list(validator("plan").iter_errors(plan))
     body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
@@ -290,9 +298,10 @@ def test_plan_timing_total_covers_every_reported_step():
 
 def test_slow_bedrock_steps_fall_back_before_the_lambda_timeout(monkeypatch):
     import time as _time
-    monkeypatch.setattr(router, "DEADLINES", {"parse": 0.05, "text": 0.05, "replan": 0.05})
+    monkeypatch.setattr(router, "DEADLINES", {"parse": 0.05, "text": 0.05, "replan": 0.05, "intent": 0.05})
     monkeypatch.setattr(router, "parse_with_bedrock", lambda text: _time.sleep(1))
     monkeypatch.setattr(router, "replan_with_bedrock", lambda *a: _time.sleep(1))
+    monkeypatch.setattr(router, "intent_with_bedrock", lambda *a: _time.sleep(1))
     start = _time.perf_counter()
     assert call("POST", "/alert", {"notice_text": NOTICE})[1]["parse_source"] == "fallback"
     assert call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})[0] == 200
@@ -422,7 +431,7 @@ def test_packet_sends_approved_rows_and_skips_the_rest():
     assert status == 200 and not list(validator("plan").iter_errors(body["plan"]))
     assert body["sent"] == [transfer, hospital] and body["plan"]["version"] == 3
     assert [s["patient_id"] for s in body["skipped"]] == [early, "P005"]
-    assert body["skipped"][1]["reason"].startswith("blocked: P005 is HBsAg positive")
+    assert body["skipped"][1]["reason"].startswith("blocked: P005 has hepatitis B")
     rows = {r["patient_id"]: r for r in body["plan"]["patients"]}
     clinic = next(c for c in store.load_seed()["clinics"] if c["id"] == rows[transfer]["clinic_id"])
     assert rows[transfer]["packet"] == {"status": "sent", "sent_at": body["plan"]["created_at"], "channel": "simulated fax",
@@ -455,3 +464,167 @@ def test_replan_marks_moved_sent_packets_stale_and_keeps_capacity_cuts(monkeypat
     assert store.latest_plan("PSPS-DEMO-01")["capacity_overrides"] == body["plan"]["capacity_overrides"]
     fake_model(monkeypatch, bedrock_blocked)
     assert call("POST", "/check", {"event_id": "PSPS-DEMO-01"})[1]["counts"]["block"] == 0  # the second re-plan kept the C02 cut
+
+
+NOTIFY = {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]}
+
+
+def test_notify_dry_run_writes_nothing_then_sends_one_note_per_patient():
+    draft = next(r["patient_id"] for r in plan_v1()["patients"] if r["action"] == "transfer")
+    assert call("POST", "/notify", {**NOTIFY, "patient_ids": [draft]})[1]["skipped"] == [{"patient_id": draft, "reason": "not_approved"}]
+    ids = approved_plan()
+    block_p005()
+    langs = {p["id"]: p["language"] for p in store.load_seed()["patients"]}
+    call_instead = next(p for p in ids["transfer"] if p != "P005")
+    body = {**NOTIFY, "call_instead": [call_instead]}
+    status, dry = call("POST", "/notify", {**body, "dry_run": True})
+    assert status == 200 and dry["dry_run"] is True and dry["plan"]["version"] == 2 and store.latest_plan("PSPS-DEMO-01")["version"] == 2
+    assert not any("note" in r for r in store.latest_plan("PSPS-DEMO-01")["patients"])
+    reasons = {s["patient_id"]: s["reason"] for s in dry["skipped"]}
+    assert reasons["P005"] == "blocked" and reasons[call_instead] == "call_instead"
+    assert all(reasons[p] == "staff_call" for p in ids["hospital"])
+    assert set(dry["sent"]) | set(reasons) == {r["patient_id"] for r in store.latest_plan("PSPS-DEMO-01")["patients"]}  # one outcome each
+    assert dry["sent"] and set(dry["sent"]) <= set(ids["transfer"] + ids["early_session"]) - {"P005", call_instead} and dry["queued"] == []
+    status, sent = call("POST", "/notify", body)
+    assert status == 200 and (sent["sent"], sent["skipped"], sent["dry_run"]) == (dry["sent"], dry["skipped"], False)
+    assert not list(validator("plan").iter_errors(sent["plan"])) and sent["plan"]["version"] == 3
+    assert sent["plan"]["audit"][-1]["change"] == f"voice notes sent to {len(sent['sent'])} patients (simulated)"
+    rows = {r["patient_id"]: r for r in sent["plan"]["patients"]}
+    assert all(rows[p]["note"] == {"status": "sent", "sent_at": sent["plan"]["created_at"], "send_at": None, "lang": langs[p],
+                                   "channel": "simulated voice note", "version": 2} for p in sent["sent"])
+    assert "note" not in rows["P005"] and "note" not in rows[call_instead]
+    again = call("POST", "/notify", NOTIFY)[1]
+    assert again["plan"]["version"] == 4 and {s["reason"] for s in again["skipped"] if s["patient_id"] in sent["sent"]} == {"already_sent"}
+    assert again["sent"] == [call_instead]  # nothing says to call instead any more: only that row was left
+
+
+def test_notify_queues_in_quiet_hours(monkeypatch):
+    approved_plan()
+    monkeypatch.setattr(router, "clock", lambda event: router.datetime.fromisoformat("2026-10-26T21:15:00-07:00"))
+    body = call("POST", "/notify", NOTIFY)[1]
+    assert body["sent"] == [] and body["queued"]
+    note = next(r["note"] for r in body["plan"]["patients"] if r["patient_id"] == body["queued"][0])
+    assert (note["status"], note["sent_at"], note["send_at"]) == ("queued", None, "2026-10-27T08:00:00-07:00")
+    assert body["plan"]["audit"][-1]["change"] == f"voice notes queued for 08:00 for {len(body['queued'])} patients (simulated)"
+
+
+def test_notify_errors():
+    plan_v1()
+    for bad in ({"patient_ids": []}, {"patient_ids": "all"}, {"patient_ids": ["all"], "call_instead": ["P999"]},
+                {"patient_ids": ["all"], "dry_run": "yes"}, {"patient_ids": ["all", "P001"]}):
+        assert call("POST", "/notify", {"event_id": "PSPS-DEMO-01", **bad})[0] == 400, bad
+    assert call("POST", "/notify", {"event_id": "PSPS-DEMO-01", "patient_ids": ["P999"]}) == (404, {"error": "unknown patient P999", "step": "notify"})
+    assert call("POST", "/notify", {"event_id": "NOPE", "patient_ids": ["all"]})[0] == 404
+
+
+def test_replan_turns_moved_notes_stale_and_they_can_go_again(monkeypatch):
+    approved_plan()
+    sent = call("POST", "/notify", NOTIFY)[1]["sent"]
+    body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
+    assert not list(validator("plan").iter_errors(body["plan"]))
+    moved = {d["patient_id"] for d in body["diff"] if d["field"] in ("action", "clinic_id", "slot")} & set(sent)
+    notes = {r["patient_id"]: r.get("note") for r in body["plan"]["patients"]}
+    assert moved and all(notes[p]["status"] == "stale" for p in moved)
+    assert all(notes[p]["status"] == "sent" for p in set(sent) - moved)
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]})
+    again = call("POST", "/notify", NOTIFY)[1]
+    assert set(again["sent"]) >= moved - set(body["plan"]["overflow"])
+
+
+def fake_intent(monkeypatch, reply, steps="parse,check,intent"):
+    """Stub bedrock.converse for the change tool (AI_STEPS as the Lambda sets it); reply(payload) gives the changes or raises."""
+    from lumen.ai import bedrock
+    monkeypatch.setenv("BEDROCK_MODEL_FAST", "test-fast")
+    monkeypatch.setenv("AI_STEPS", steps)
+    seen = {"calls": 0}
+
+    def converse(model_id, system, messages, tools=None, tool_choice=None):
+        seen.update(calls=seen["calls"] + 1, tool_choice=tool_choice, raw=messages[0]["content"][0]["text"])
+        return {"tool_uses": [{"id": "t", "name": "change", "input": {"changes": reply(json.loads(seen["raw"]))}}]}
+    monkeypatch.setattr(bedrock, "converse", converse)
+    return seen
+
+
+def replan(instruction):
+    return call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": instruction})
+
+
+def test_intent_reads_a_decline_without_seeing_names(monkeypatch):
+    seen = fake_intent(monkeypatch, lambda payload: [{"kind": "decline", "patient_id": payload["instruction"].split()[0]}])
+    plan_v1()
+    status, body = replan("Maria Delgado declined")
+    assert status == 200, body
+    assert seen["tool_choice"] == "change" and json.loads(seen["raw"])["instruction"] == "P001 declined"
+    assert "Maria" not in seen["raw"] and "Delgado" not in seen["raw"]
+    assert body["understood"] == ["Maria Delgado will not come. Staff call them."] and body["plan"]["ai_sources"]["replan"] == "bedrock"
+    row = next(r for r in body["plan"]["patients"] if r["patient_id"] == "P001")
+    assert row["status"] == "declined" and "P001" in body["plan"]["overflow"]
+    assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
+    assert "Maria" not in json.dumps(store.latest_plan("PSPS-DEMO-01")["summary"])
+
+
+def test_intent_clinic_limit_matches_the_rules(monkeypatch):
+    plan_v1()
+    rules = replan("DaVita Folsom Dialysis can only take four more")[1]
+    call("POST", "/reset")
+    plan_v1()
+    fake_intent(monkeypatch, lambda payload: [{"kind": "clinic_limit", "clinic_id": "C02", "more": 4}])
+    body = replan("Folsom is almost full: four more at most")[1]
+    assert body["plan"]["ai_sources"]["replan"] == "bedrock" and rules["plan"]["ai_sources"]["replan"] == "fallback"
+    assert body["diff"] == rules["diff"] and body["summary"] == rules["summary"].replace("four", "4")
+    assert body["understood"] == rules["understood"] == ["DaVita Folsom Dialysis takes at most 4 more patients."]
+
+
+def test_intent_pin(monkeypatch):
+    plan = plan_v1()
+    pid = next(r["patient_id"] for r in plan["patients"] if r["action"] == "transfer" and r["clinic_id"] != "C02")
+    name = next(p["name"] for p in store.load_seed()["patients"] if p["id"] == pid)
+    fake_intent(monkeypatch, lambda payload: [{"kind": "pin", "patient_id": pid, "clinic_id": "C02", "date": "2026-10-28", "shift": 2}])
+    status, body = replan(f"Send {name} to Folsom on Wednesday morning")
+    assert status == 200, body
+    row = next(r for r in body["plan"]["patients"] if r["patient_id"] == pid)
+    assert row["pinned"] and (row["clinic_id"], row["slot"]) == ("C02", {"date": "2026-10-28", "shift": 2})
+    assert body["understood"] == [f"{name} goes to DaVita Folsom Dialysis, Wed Oct 28, 10:30 AM."]
+
+
+@pytest.mark.parametrize("changes", [[], [{"kind": "clinic_limit", "clinic_id": "C99", "more": 4}],
+                                     [{"kind": "pin", "patient_id": "P001", "clinic_id": "C02", "date": "2026-11-30", "shift": 1}]])
+def test_intent_falls_back_to_the_rules(monkeypatch, changes):
+    seen = fake_intent(monkeypatch, lambda payload: changes)
+    plan_v1()
+    status, body = replan("DaVita Folsom Dialysis can only take four more")
+    assert status == 200 and seen["calls"] == 1 and body["plan"]["ai_sources"]["replan"] == "fallback"
+    assert body["understood"] == ["DaVita Folsom Dialysis takes at most 4 more patients."]
+    assert not any(r["pinned"] for r in body["plan"]["patients"])  # the failed pin left no trace
+
+
+def test_the_tool_loop_gets_ids_not_names(monkeypatch):
+    import lumen.ai.replan as tool_loop
+    seen = {}
+
+    def loop(instruction, plan, tools, clinics):
+        seen["instruction"] = instruction
+        raise RuntimeError("throttled")
+    monkeypatch.setattr(tool_loop, "replan", loop)
+    plan_v1()
+    status, body = replan("Ruben Ochoa declined")  # AI_STEPS default has replan; the intent step has no model here
+    assert status == 200 and body["plan"]["ai_sources"]["replan"] == "fallback"  # the rules read the name, without accents too
+    assert body["understood"] == ["Rubén Ochoa will not come. Staff call them."]
+    assert seen["instruction"] == "P021 declined"
+
+
+def test_ai_steps_without_intent_skips_the_model(monkeypatch):
+    seen = fake_intent(monkeypatch, lambda payload: [{"kind": "decline", "patient_id": "P001"}], steps="parse,check")
+    plan_v1()
+    assert replan("DaVita Folsom Dialysis can only take four more")[1]["plan"]["ai_sources"]["replan"] == "fallback"
+    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come. Staff call them."]
+    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert seen["calls"] == 0
+
+
+def test_replan_400_when_every_step_fails(monkeypatch):
+    seen = fake_intent(monkeypatch, bedrock_blocked, steps="parse,text,replan,check,intent")
+    plan_v1()
+    seen["calls"] = 0  # the text step also asked the model
+    assert replan("please sort it out") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert seen["calls"] == 1  # the tool loop failed without BEDROCK_MODEL_ID; the intent step ran once

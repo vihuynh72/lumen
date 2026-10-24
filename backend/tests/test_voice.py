@@ -111,8 +111,10 @@ def row(**kw):
 @pytest.mark.parametrize("r, lang, reason", [
     (row(), "en", None),
     (row(action="early_session"), "en", None),
-    (row(status="approved"), "en", "no confirmed move for P004"),
-    (row(action="hospital", messages={}), "en", "no confirmed move for P004"),
+    (row(status="approved"), "en", None),
+    (row(status="draft"), "en", "no approved move for P004"),
+    (row(status="declined"), "en", "no approved move for P004"),
+    (row(action="hospital", messages={}), "en", "no approved move for P004"),
     (row(), "es", "no es message for P004"),
 ])
 def test_eligible(r, lang, reason):

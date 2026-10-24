@@ -19,7 +19,7 @@ from lumen.geo import drive_minutes
 from lumen.match import match
 from lumen.notice import parse_fallback
 from lumen.rank_fallback import rank_by_rules
-from lumen.replan_tools import DECISION, build_tools, replan_by_rules
+from lumen.replan_tools import DECISION, apply_changes, build_tools, replan_by_rules
 
 try:
     from lumen._version import VERSION  # written by scripts/deploy_lambda.sh
@@ -30,9 +30,10 @@ logging.getLogger().setLevel(logging.INFO)  # the Lambda runtime defaults to WAR
 
 DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at + 30 min (master plan section 5)
 # Seconds a Bedrock step may take before the router uses its rule-based fallback (Lambda timeout is 120 s).
-DEADLINES = {"parse": 20, "text": 25, "replan": 45, "check": 25}
+DEADLINES = {"parse": 20, "text": 25, "replan": 45, "check": 25, "intent": 20}
 MODEL_ISSUES = 12
 MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
+NOT_UNDERSTOOD = "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'."
 _pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
 
@@ -75,7 +76,7 @@ def with_deadline(step, fn, *args):
 # AI-lane functions are imported when called, so the router runs before they land.
 def ai_step(step):
     """AI_STEPS in the Lambda env (comma list, default all) turns a slow or failing model step off without a deploy."""
-    if step not in {s.strip() for s in os.environ.get("AI_STEPS", "parse,text,replan,check").split(",")}:
+    if step not in {s.strip() for s in os.environ.get("AI_STEPS", "parse,text,replan,check,intent").split(",")}:
         raise RuntimeError(f"AI_STEPS turns {step} off")
 
 
@@ -95,10 +96,20 @@ def rank(affected, patients, rules, drive):
         return rank_by_rules(affected, patients, rules, drive)
 
 
-def replan_with_bedrock(instruction, plan, tools, clinics):
+def replan_with_bedrock(instruction, plan, tools, seed):
     ai_step("replan")
+    from lumen.ai.intent import hide_names
     from lumen.ai.replan import replan
-    return replan(instruction, plan, tools, clinics)  # seed clinics: names and slots for the model, no patient data
+    # seed clinics: names and slots for the model; patient names become IDs, as in the intent step
+    return replan(hide_names(instruction, seed["patients"], seed["clinics"]), plan, tools, seed["clinics"])
+
+
+def intent_with_bedrock(instruction, plan, tools, seed):
+    """The model reads the instruction into checked changes (no names); code applies them and writes every sentence."""
+    ai_step("intent")
+    from lumen.ai.intent import read_changes
+    changes = read_changes(instruction, plan, seed["clinics"], seed["patients"], os.getenv("BEDROCK_MODEL_FAST", "").strip())
+    return apply_changes(changes, plan, tools, seed["clinics"], {p["id"]: p["name"] for p in seed["patients"]})
 
 
 def model_written_rows(out, plan, clinics, langs, only_ids):
@@ -238,7 +249,7 @@ def plan(body):
     }
     new = timed(timing, "text", write_text, new, seed, sources)
     new["timing_ms"], new["ai_sources"] = timing, sources  # the text step returns a deep copy made before total and its source were set
-    timing["total"] = round((time.perf_counter() - start) * 1000)
+    timing["total"] = max(round((time.perf_counter() - start) * 1000), sum(timing.values()))  # each step rounds on its own
     timed({}, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))  # logged, not in timing_ms: total is final
     return with_names(new, patients)
 
@@ -256,16 +267,22 @@ def replan_route(body):
     seed["clinics"] = check.apply_overrides(seed["clinics"], old.get("capacity_overrides"))  # earlier cuts still hold
     tools = timed(timing, "tools", build_tools, event_id, old, seed)
     t = time.perf_counter()
-    try:
-        result, sources["replan"] = with_deadline("replan", replan_with_bedrock, instruction, old, tools, seed["clinics"]), "bedrock"
-        log(step="replan", source="bedrock")
-    except Exception as exc:
-        log(step="replan", fallback=True, reason=repr(exc)[:300])
-        tools = build_tools(event_id, old, seed)  # fresh tools: a failed Bedrock loop may have changed the working copy
+    result = None
+    # The Bedrock tool loop, then the intent step, then the rules. Each step after a failure gets fresh tools,
+    # because a failed step may have changed the working copy.
+    for step, fn in (("replan", replan_with_bedrock), ("intent", intent_with_bedrock)):
         try:
-            result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"]), "fallback"
-        except ValueError as exc2:
-            raise ApiError(400, str(exc2), "replan") from exc2
+            result, sources["replan"] = with_deadline(step, fn, instruction, old, tools, seed), "bedrock"
+            log(step=step, source="bedrock")
+            break
+        except Exception as exc:
+            log(step=step, fallback=True, reason=repr(exc)[:300])
+            tools = build_tools(event_id, old, seed)
+    if result is None:
+        try:
+            result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"], seed["patients"]), "fallback"
+        except ValueError as exc:
+            raise ApiError(400, NOT_UNDERSTOOD, "replan") from exc
     timing["replan"] = round((time.perf_counter() - t) * 1000)
     changed = sorted({d["patient_id"] for d in result["diff"]})
     now = clock(store.load_event(event_id)).isoformat(timespec="seconds")
@@ -278,15 +295,17 @@ def replan_route(body):
     if cuts:
         new["capacity_overrides"] = list(cuts.values())
     old_rows = {r["patient_id"]: r for r in old["patients"]}
-    for r in new["patients"]:  # re-matched rows lose their packet; a sent packet for a moved row goes stale
+    for r in new["patients"]:  # re-matched rows lose their packet and note; a sent (or queued) one for a moved row goes stale
         before = old_rows.get(r["patient_id"], {})
-        if "packet" in before:
-            moved = before["packet"]["status"] == "sent" and any(r[k] != before[k] for k in DECISION)
-            r["packet"] = {**before["packet"], "status": "stale"} if moved else before["packet"]
-    timing["total"] = round((time.perf_counter() - start) * 1000)
+        for k, live in (("packet", ("sent",)), ("note", ("sent", "queued"))):
+            if k in before:
+                moved = before[k]["status"] in live and any(r[f] != before[f] for f in DECISION)
+                r[k] = {**before[k], "status": "stale"} if moved else before[k]
+    timing["total"] = max(round((time.perf_counter() - start) * 1000), sum(timing.values()))  # each step rounds on its own
     new["timing_ms"], new["ai_sources"] = timing, sources  # replaces the ai_sources copied from the old version
     save_new_version(new, "replan")
-    return {"plan": with_names(new, seed["patients"]), "diff": result["diff"], "summary": result["summary"]}
+    return {"plan": with_names(new, seed["patients"]), "diff": result["diff"], "summary": result["summary"],
+            "understood": result.get("understood", [])}
 
 
 def approve_route(body):
@@ -346,6 +365,27 @@ def packet_route(body):
     return {"plan": with_names(new or old, seed["patients"]), "sent": sent, "skipped": skipped}
 
 
+def notify_route(body):
+    """Simulated voice notes in bulk: code picks who gets one (approve.send_notes). Nothing leaves Lumen; no audio is made."""
+    event_id, old = latest(body, "notify")
+    dry_run = body.get("dry_run", False)
+    if not isinstance(dry_run, bool):
+        raise ApiError(400, "dry_run must be true or false", "notify")
+    seed = store.load_seed()
+    blocks = [i for i in check.check_plan(old, seed, old.get("capacity_overrides")) if i["severity"] == "block"]
+    try:
+        new, sent, queued, skipped = approve.send_notes(old, body.get("patient_ids"), body.get("call_instead", []), blocks,
+                                                        {p["id"]: p["language"] for p in seed["patients"]}, clock(store.load_event(event_id)))
+    except approve.UnknownPatient as exc:
+        raise ApiError(404, str(exc), "notify") from exc
+    except ValueError as exc:
+        raise ApiError(400, str(exc), "notify") from exc
+    if new and not dry_run:
+        save_new_version(new, "notify")
+    return {"plan": with_names(new if new and not dry_run else old, seed["patients"]), "sent": sent, "queued": queued,
+            "skipped": skipped, "dry_run": dry_run}
+
+
 def voice_route(body):
     event_id, plan = latest(body, "voice")
     patient_id, lang = body.get("patient_id"), body.get("lang")
@@ -395,7 +435,7 @@ def reset(_body):
 
 ROUTES = {("GET", "/state"): state, ("POST", "/alert"): alert, ("POST", "/plan"): plan, ("POST", "/replan"): replan_route,
           ("POST", "/approve"): approve_route, ("POST", "/voice"): voice_route, ("POST", "/speak"): speak_route,
-          ("POST", "/check"): check_route, ("POST", "/packet"): packet_route, ("POST", "/reset"): reset}
+          ("POST", "/check"): check_route, ("POST", "/packet"): packet_route, ("POST", "/notify"): notify_route, ("POST", "/reset"): reset}
 
 
 def lambda_handler(event, context):

@@ -244,7 +244,7 @@ def test_contract_and_exact_strict_schemas(monkeypatch, setup):
     replan, seen = install(monkeypatch, [turn(PIN), turn(text="Done."), turn(text=GOOD)])
     result = replan("Adjust C02 and pin P003", plan, tools, clinics)
     schema = json.loads((ROOT / "contracts/schemas/replan.schema.json").read_text())
-    Draft202012Validator(schema).validate(result)
+    Draft202012Validator(schema).validate({**result, "understood": []})  # the router adds understood ([] on this path)
     assert set(result["plan"]) == {"patients", "overflow"}
     assert result["plan"] == matched and result["diff"] == diff
     expected = {"set_clinic_capacity": {"clinic_id", "date", "shift", "chairs"},

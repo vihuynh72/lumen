@@ -31,7 +31,7 @@ def test_hbsag_positive_needs_an_isolation_station():
     issues = check(row("P005", "transfer", "C04", "2026-10-28", 2), row("P026", "transfer", "C02", "2026-10-28", 2),
                    row("P039", "hospital", "H01"))
     assert codes(issues, "block") == [("P005", "hbv_no_isolation")]  # C02 and H01 have isolation stations
-    assert issues[0]["text"] == "P005 is HBsAg positive, but DaVita Orangevale Dialysis Center has no isolation station."
+    assert issues[0]["text"] == "P005 has hepatitis B, but DaVita Orangevale Dialysis Center has no isolation chair."
 
 
 def test_more_patients_than_open_chairs_blocks_the_slot():
@@ -71,7 +71,7 @@ def test_no_hbv_test_date_warns_on_every_row_sent_away():
                    row("P009", "early_session", "C01", "2026-10-27", 1))
     assert [i["patient_id"] for i in issues if i["code"] == "hbv_test_missing"] == ["P007", "P006"]
     assert all(i["severity"] == "warning" for i in issues)
-    assert "Receiver tests on intake, result within 7 days" in issues[0]["text"].replace("receiver", "Receiver")
+    assert issues[0]["text"] == "P007 has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days."
 
 
 def test_paratransit_same_day_and_early_pickup():

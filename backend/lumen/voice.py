@@ -1,4 +1,4 @@
-"""Voice notes: Polly MP3s for confirmed moves, cached in S3 (master plan section 11)."""
+"""Voice notes: Polly MP3s for approved and confirmed moves, cached in S3 (master plan section 11)."""
 
 import hashlib
 
@@ -20,8 +20,8 @@ def polly():
 
 def eligible(row, lang):
     """None when the row may get a voice note in lang, else the reason it may not."""
-    if row["action"] not in MOVES or row["status"] != "confirmed":
-        return f"no confirmed move for {row['patient_id']}"
+    if row["action"] not in MOVES or row["status"] not in ("approved", "confirmed"):
+        return f"no approved move for {row['patient_id']}"
     if lang not in row["messages"]:
         return f"no {lang} message for {row['patient_id']}"
     return None

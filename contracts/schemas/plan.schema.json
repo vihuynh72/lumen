@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lumen.demo/schemas/plan.schema.json",
-  "version": 3,
+  "version": 4,
   "title": "Plan",
   "description": "One plan version, saved as plans/(event_id)/plan.v(N).json. POST /plan returns v1. POST /replan and POST /approve return the next version.",
   "type": "object",
@@ -450,6 +450,65 @@
               "type": "integer",
               "minimum": 1,
               "description": "The plan version the packet was built from."
+            }
+          }
+        },
+        "note": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "sent_at",
+            "send_at",
+            "lang",
+            "channel",
+            "version"
+          ],
+          "description": "The voice note record. SIMULATED: nothing leaves Lumen and no audio is made. POST /notify sets it on early_session and transfer rows. One note per patient per change. Optional (schema v4): a row with no note does not have it.",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "queued",
+                "stale"
+              ],
+              "description": "sent: POST /notify recorded a simulated send. queued: the send waits until send_at (quiet hours 20:00 to 08:00 local). stale: a later re-plan changed the row's action, clinic_id or slot, so the row can get a new note."
+            },
+            "sent_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/timestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Demo clock time of the send. null while queued."
+            },
+            "send_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/timestamp"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The next 08:00 local time when the note is queued. null when sent."
+            },
+            "lang": {
+              "$ref": "#/$defs/language",
+              "description": "The patient's language, or en when the row has no message in it."
+            },
+            "channel": {
+              "type": "string",
+              "const": "simulated voice note"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The plan version the note was sent from."
             }
           }
         }
