@@ -46,7 +46,7 @@ PLANS = {
 def test_schema_is_valid(path):
     schema = load(path)
     Draft202012Validator.check_schema(schema)
-    assert schema.get("version") == 1
+    assert schema.get("version", 0) >= 1
 
 
 def test_seed_files_validate():

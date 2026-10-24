@@ -83,6 +83,8 @@ Response `200`: the event (fixture: `fixtures/event.json`, schema: `event.schema
 }
 ```
 
+`parse_source` (optional, event schema v2) says how the notice was parsed: `bedrock`, or `fallback` when the Bedrock parse failed and the router parsed the PG&E notice layout with rules. The router sets it; the model never does. Show a "Parsed by fallback rules" tag when it is `fallback`.
+
 ## POST /plan
 
 Builds plan v1 for an event and saves it as `plans/(event_id)/plan.v1.json`.

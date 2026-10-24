@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lumen.demo/schemas/event.schema.json",
-  "version": 1,
+  "version": 2,
   "title": "Event",
   "description": "A parsed shutoff notice. POST /alert returns it and saves it as plans/(event_id)/event.json. It is also the input schema of the Bedrock tool record_event.",
   "type": "object",
@@ -51,6 +51,14 @@
       "type": "string",
       "minLength": 1,
       "description": "The full notice text as received."
+    },
+    "parse_source": {
+      "type": "string",
+      "enum": [
+        "bedrock",
+        "fallback"
+      ],
+      "description": "Optional. Set by the router, never by the model: bedrock, or fallback when the Bedrock parse failed and rule-based parsing of the notice layout was used. The UI shows a tag on fallback."
     }
   },
   "$defs": {
