@@ -15,10 +15,23 @@
     "isolation_station": true,
     "accepts_visiting": true,
     "slots": [
-      {"date": "2026-10-27", "shift": 1, "open_chairs": 1},
-      {"date": "2026-10-27", "shift": 2, "open_chairs": 0}
+      {
+        "date": "2026-10-27",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 2,
+        "open_chairs": 1
+      }
     ],
-    "simulated": ["backup_power", "isolation_station", "accepts_visiting", "slots"]
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
   },
   {
     "id": "C02",
@@ -36,17 +49,58 @@
     "isolation_station": true,
     "accepts_visiting": true,
     "slots": [
-      {"date": "2026-10-27", "shift": 1, "open_chairs": 0},
-      {"date": "2026-10-27", "shift": 2, "open_chairs": 0},
-      {"date": "2026-10-27", "shift": 3, "open_chairs": 0},
-      {"date": "2026-10-28", "shift": 1, "open_chairs": 0},
-      {"date": "2026-10-28", "shift": 2, "open_chairs": 0},
-      {"date": "2026-10-28", "shift": 3, "open_chairs": 0},
-      {"date": "2026-10-29", "shift": 1, "open_chairs": 2},
-      {"date": "2026-10-29", "shift": 2, "open_chairs": 0},
-      {"date": "2026-10-29", "shift": 3, "open_chairs": 0}
+      {
+        "date": "2026-10-27",
+        "shift": 1,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 2,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 3,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 0
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 3,
+        "open_chairs": 0
+      }
     ],
-    "simulated": ["backup_power", "isolation_station", "accepts_visiting", "slots"]
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
   },
   {
     "id": "H01",
@@ -64,6 +118,9 @@
     "isolation_station": true,
     "accepts_visiting": false,
     "slots": [],
-    "simulated": ["backup_power", "isolation_station"]
+    "simulated": [
+      "backup_power",
+      "isolation_station"
+    ]
   }
 ]

@@ -2,7 +2,7 @@ PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING
 Event ID: PSPS-DEMO-01
 Issued: Monday, October 26, 2026, 8:30 AM PDT
 
-This is a Medical Baseline customer alert from PG&E. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.
+This alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.
 
 Area: Cameron Park, Shingle Springs and Placerville (El Dorado County)
 

@@ -1,0 +1,236 @@
+{
+  "plan": {
+    "event_id": "PSPS-DEMO-01",
+    "version": 2,
+    "created_at": "2026-10-26T09:06:40-07:00",
+    "mode": "early",
+    "lead_hours": 33.0,
+    "timing_ms": {
+      "replan": 6210,
+      "match": 4,
+      "text": 2150,
+      "total": 8410
+    },
+    "patients": [
+      {
+        "patient_id": "P002",
+        "rank": 1,
+        "urgency": 60,
+        "difficulty": 15,
+        "reasons": [
+          "session_in_window",
+          "session_within_36h",
+          "home_in_outage"
+        ],
+        "reason_text": "The Tuesday session is within 36 hours and in the shutoff window, and the home loses power.",
+        "affected_session": "2026-10-27T15:00:00-07:00",
+        "action": "early_session",
+        "clinic_id": "C01",
+        "slot": {
+          "date": "2026-10-27",
+          "shift": 1
+        },
+        "drive_minutes": 25,
+        "drive_source": "estimate",
+        "pickup_time": "2026-10-27T05:15:00-07:00",
+        "ride": "self",
+        "book_today": false,
+        "flags": [],
+        "messages": {
+          "en": "James Whitfield, this is DaVita Cameron Park. A planned power shutoff moves your Tuesday 3:00 PM treatment to Tuesday, Oct 27, 6:00 AM, at your usual clinic. Please leave home by 5:15 AM. Questions? Call 555-0100."
+        },
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      },
+      {
+        "patient_id": "P001",
+        "rank": 2,
+        "urgency": 55,
+        "difficulty": 65,
+        "reasons": [
+          "session_in_window",
+          "heart_failure",
+          "paratransit",
+          "home_in_outage",
+          "no_car",
+          "lives_alone",
+          "wheelchair",
+          "limited_english"
+        ],
+        "reason_text": "Heart failure, a Wednesday session in the window, paratransit and a wheelchair make this patient urgent and hard to move.",
+        "affected_session": "2026-10-28T06:00:00-07:00",
+        "action": "early_session",
+        "clinic_id": "C01",
+        "slot": {
+          "date": "2026-10-27",
+          "shift": 2
+        },
+        "drive_minutes": 6,
+        "drive_source": "estimate",
+        "pickup_time": "2026-10-27T10:04:00-07:00",
+        "ride": "paratransit",
+        "book_today": true,
+        "flags": [
+          "long_gap_after"
+        ],
+        "messages": {
+          "en": "Maria Delgado, this is DaVita Cameron Park. A planned power shutoff moves your Wednesday 6:00 AM treatment to Tuesday, Oct 27, 10:30 AM, at your usual clinic. Paratransit picks you up at 10:04 AM. Questions? Call 555-0100.",
+          "es": "Maria Delgado, le habla DaVita Cameron Park. Por un corte de luz planificado, su diálisis del miércoles pasa al martes 27 de octubre, 10:30 a. m., en su clínica. Paratránsito la recoge a las 10:04 a. m. ¿Preguntas? 555-0100."
+        },
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      },
+      {
+        "patient_id": "P003",
+        "rank": 3,
+        "urgency": 50,
+        "difficulty": 15,
+        "reasons": [
+          "session_in_window",
+          "missed_recently",
+          "no_car",
+          "limited_english"
+        ],
+        "reason_text": "A recent missed session and a Thursday session in the window raise urgency, and Folsom is 9 minutes away.",
+        "affected_session": "2026-10-29T06:00:00-07:00",
+        "action": "transfer",
+        "clinic_id": "C02",
+        "slot": {
+          "date": "2026-10-29",
+          "shift": 1
+        },
+        "drive_minutes": 9,
+        "drive_source": "estimate",
+        "pickup_time": "2026-10-29T05:31:00-07:00",
+        "ride": "family",
+        "book_today": false,
+        "flags": [],
+        "messages": {
+          "en": "Chen Wei, this is DaVita Cameron Park. A planned power shutoff moves your Thursday, Oct 29 treatment to DaVita Folsom Dialysis, 2195 Iron Point Rd, Folsom, at 6:00 AM. Please leave home by 5:31 AM. Questions? Call 555-0100.",
+          "zh": "Chen Wei，您好。这里是 DaVita Cameron Park 透析中心。因计划停电，您10月29日（周四）的透析改到 DaVita Folsom Dialysis（2195 Iron Point Rd, Folsom），早上6:00开始。请在早上5:31前出门。如有问题，请拨打 555-0100。"
+        },
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      },
+      {
+        "patient_id": "P005",
+        "rank": 4,
+        "urgency": 40,
+        "difficulty": 10,
+        "reasons": [
+          "session_in_window",
+          "no_car"
+        ],
+        "reason_text": "A Wednesday session falls in the window, and no open chair fits on Tuesday or Wednesday.",
+        "affected_session": "2026-10-28T10:30:00-07:00",
+        "action": "hospital",
+        "clinic_id": "H01",
+        "slot": null,
+        "drive_minutes": null,
+        "drive_source": null,
+        "pickup_time": null,
+        "ride": "medical_van",
+        "book_today": false,
+        "flags": [
+          "staff_call"
+        ],
+        "messages": {},
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      },
+      {
+        "patient_id": "P004",
+        "rank": 5,
+        "urgency": 40,
+        "difficulty": 10,
+        "reasons": [
+          "session_in_window",
+          "lives_alone"
+        ],
+        "reason_text": "Folsom can take only one more visiting patient, and no other chair fits on Wednesday or Thursday.",
+        "affected_session": "2026-10-29T06:00:00-07:00",
+        "action": "hospital",
+        "clinic_id": "H01",
+        "slot": null,
+        "drive_minutes": null,
+        "drive_source": null,
+        "pickup_time": null,
+        "ride": "self",
+        "book_today": false,
+        "flags": [
+          "staff_call"
+        ],
+        "messages": {},
+        "audio": {},
+        "status": "draft",
+        "pinned": false
+      }
+    ],
+    "overflow": [
+      "P005",
+      "P004"
+    ],
+    "audit": [
+      {
+        "ts": "2026-10-26T09:06:40-07:00",
+        "actor": "Rosa",
+        "change": "re-plan: DaVita Folsom Dialysis can only take one more"
+      }
+    ],
+    "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call."
+  },
+  "diff": [
+    {
+      "patient_id": "P004",
+      "field": "action",
+      "from": "transfer",
+      "to": "hospital"
+    },
+    {
+      "patient_id": "P004",
+      "field": "clinic_id",
+      "from": "C02",
+      "to": "H01"
+    },
+    {
+      "patient_id": "P004",
+      "field": "slot",
+      "from": {
+        "date": "2026-10-29",
+        "shift": 1
+      },
+      "to": null
+    },
+    {
+      "patient_id": "P004",
+      "field": "drive_minutes",
+      "from": 45,
+      "to": null
+    },
+    {
+      "patient_id": "P004",
+      "field": "drive_source",
+      "from": "estimate",
+      "to": null
+    },
+    {
+      "patient_id": "P004",
+      "field": "pickup_time",
+      "from": "2026-10-29T04:55:00-07:00",
+      "to": null
+    },
+    {
+      "patient_id": "P004",
+      "field": "flags",
+      "from": [],
+      "to": [
+        "staff_call"
+      ]
+    }
+  ],
+  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call."
+}

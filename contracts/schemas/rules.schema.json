@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lumen.demo/schemas/rules.schema.json",
+  "version": 1,
+  "title": "Rules",
+  "description": "Ranking and matching rules (data/seed/rules.json). Demo assumptions, not clinical guidance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["label", "urgency", "difficulty", "modes", "drive_cap_minutes", "pickup_buffer_minutes", "gap_limit_days"],
+  "properties": {
+    "label": {"type": "string", "minLength": 1},
+    "urgency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_in_window", "session_within_36h", "heart_failure", "missed_recently"],
+      "description": "Points added to urgency when the rule applies.",
+      "properties": {
+        "session_in_window": {"type": "integer"},
+        "session_within_36h": {"type": "integer"},
+        "heart_failure": {"type": "integer"},
+        "missed_recently": {"type": "integer"}
+      }
+    },
+    "difficulty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paratransit", "home_in_outage", "no_car", "lives_alone", "wheelchair", "limited_english"],
+      "description": "Points added to difficulty when the rule applies. no_car: ride is not self. limited_english: language is not en.",
+      "properties": {
+        "paratransit": {"type": "integer"},
+        "home_in_outage": {"type": "integer"},
+        "no_car": {"type": "integer"},
+        "lives_alone": {"type": "integer"},
+        "wheelchair": {"type": "integer"},
+        "limited_english": {"type": "integer"}
+      }
+    },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["early_min_hours", "transfer_min_hours"],
+      "description": "Lead time of early_min_hours or more: early. transfer_min_hours to early_min_hours: transfer. Less: critical.",
+      "properties": {
+        "early_min_hours": {"type": "number"},
+        "transfer_min_hours": {"type": "number"}
+      }
+    },
+    "drive_cap_minutes": {"type": "integer", "minimum": 0},
+    "pickup_buffer_minutes": {"type": "integer", "minimum": 0},
+    "gap_limit_days": {"type": "integer", "minimum": 0}
+  }
+}

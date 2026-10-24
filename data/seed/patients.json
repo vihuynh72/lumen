@@ -2,28 +2,46 @@
   {
     "id": "P001",
     "name": "Maria Delgado",
-    "days": ["Mon", "Wed", "Fri"],
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
     "shift": 1,
     "hours": 4,
     "last_session": "2026-10-26T06:00:00-07:00",
-    "home": {"lat": 38.6655, "lng": -120.924, "town": "Shingle Springs"},
+    "home": {
+      "lat": 38.6702,
+      "lng": -120.9318,
+      "town": "Shingle Springs"
+    },
     "ride": "paratransit",
     "lives_alone": true,
     "language": "es",
     "mobility": "wheelchair",
     "hep_b_positive": false,
-    "flags": ["heart_failure"],
+    "flags": [
+      "heart_failure"
+    ],
     "callback": "555-0101",
     "second_contact": true
   },
   {
     "id": "P002",
     "name": "James Whitfield",
-    "days": ["Tue", "Thu", "Sat"],
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
     "shift": 3,
-    "hours": 3,
+    "hours": 4,
     "last_session": "2026-10-24T15:00:00-07:00",
-    "home": {"lat": 38.729, "lng": -120.802, "town": "Placerville"},
+    "home": {
+      "lat": 38.7236,
+      "lng": -120.8112,
+      "town": "Placerville"
+    },
     "ride": "self",
     "lives_alone": false,
     "language": "en",
@@ -36,28 +54,46 @@
   {
     "id": "P003",
     "name": "Chen Wei",
-    "days": ["Tue", "Thu", "Sat"],
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
     "shift": 1,
     "hours": 4,
     "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {"lat": 38.6857, "lng": -121.082, "town": "El Dorado Hills"},
+    "home": {
+      "lat": 38.6721,
+      "lng": -121.0735,
+      "town": "El Dorado Hills"
+    },
     "ride": "family",
     "lives_alone": false,
     "language": "zh",
     "mobility": "walker",
     "hep_b_positive": false,
-    "flags": ["missed_recently"],
+    "flags": [
+      "missed_recently"
+    ],
     "callback": "555-0103",
     "second_contact": true
   },
   {
     "id": "P004",
     "name": "Linda Park",
-    "days": ["Tue", "Thu", "Sat"],
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
     "shift": 1,
     "hours": 3.5,
     "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {"lat": 38.8871, "lng": -121.0145, "town": "Cool"},
+    "home": {
+      "lat": 38.8932,
+      "lng": -121.0251,
+      "town": "Cool"
+    },
     "ride": "self",
     "lives_alone": true,
     "language": "en",
@@ -70,11 +106,19 @@
   {
     "id": "P005",
     "name": "Robert Haines",
-    "days": ["Mon", "Wed", "Fri"],
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
     "shift": 2,
     "hours": 4,
     "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {"lat": 38.8003, "lng": -120.8894, "town": "Coloma"},
+    "home": {
+      "lat": 38.8051,
+      "lng": -120.9032,
+      "town": "Lotus"
+    },
     "ride": "medical_van",
     "lives_alone": false,
     "language": "en",
