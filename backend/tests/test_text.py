@@ -347,7 +347,7 @@ def test_lookalike_id_errors_only_missing_row(monkeypatch, inputs, caplog):
     assert f"patient_id={missing} error=missing_row" in caplog.text
 
 
-@pytest.mark.parametrize("bad", ["{{name}}", "{name}your", "your{name}", "{name}_"])
+@pytest.mark.parametrize("bad", ["{{name}}", "{name}your", "your{name}", "{name}_", "a\u0301{name}", "{name}\u0301your"])
 def test_placeholder_must_be_standalone(monkeypatch, inputs, bad):
     def change(payload, result):
         row = result["tool_uses"][0]["input"]["patients"][0]
@@ -684,3 +684,51 @@ def test_non_provider_error_is_not_hidden(monkeypatch, inputs):
     with pytest.raises(ValueError) as caught:
         write(*inputs)
     assert caught.value is error
+
+
+def test_sdk_retries_share_the_total_attempt_budget(monkeypatch, inputs, caplog):
+    module = importlib.import_module("lumen.ai.text")
+    inputs = expanded_inputs(inputs, 80)
+    attempts, lock = [], Lock()
+
+    class Client:
+        def converse(self, **request):
+            with lock:
+                attempts.append(request)
+                number = len(attempts)
+            if number % 2:
+                raise ClientError({"Error": {"Code": "ThrottlingException", "Message": "private"}}, "Converse")
+            return {"stopReason": "max_tokens", "usage": {"inputTokens": 1, "outputTokens": 1},
+                    "output": {"message": {"role": "assistant", "content": []}}}
+
+    monkeypatch.setattr(module.bedrock, "_get_client", lambda: Client())
+    monkeypatch.setattr(module.bedrock, "sleep", lambda _: None)
+    result = module.write_plan_text(*inputs)
+    assert len(attempts) == 30
+    assert "error=call_limit" in caplog.text
+    assert len(result["patients"]) == 80
+
+
+@pytest.mark.parametrize("expires_during_setup", [False, True])
+def test_sdk_boundary_rechecks_deadline(monkeypatch, inputs, caplog, expires_during_setup):
+    module = importlib.import_module("lumen.ai.text")
+    clock, attempts = [0.0], []
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(module.bedrock, "sleep", lambda _: None)
+
+    class Client:
+        def converse(self, **request):
+            attempts.append(request)
+            clock[0] = 20.0
+            raise ClientError({"Error": {"Code": "ThrottlingException", "Message": "private"}}, "Converse")
+
+    def client():
+        if expires_during_setup:
+            clock[0] = 20.0
+        return Client()
+
+    monkeypatch.setattr(module.bedrock, "_get_client", client)
+    result = module.write_plan_text(*inputs)
+    assert len(attempts) == (0 if expires_during_setup else 1)
+    assert "error=deadline" in caplog.text
+    assert all(row["reason_text"] for row in result["patients"])
