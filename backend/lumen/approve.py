@@ -66,4 +66,5 @@ def apply(plan, patient_ids, edits, now):
 
     new.update(version=plan["version"] + 1, created_at=ts)
     new["timing_ms"] = {"total": round((time.perf_counter() - start) * 1000)}
+    new["ai_sources"] = {}  # no AI step runs here; do not keep the old version's sources
     return new

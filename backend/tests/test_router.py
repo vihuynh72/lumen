@@ -1,6 +1,7 @@
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -23,7 +24,7 @@ def stand_in_rank(affected, patients, rules, drive):
     return [{"patient_id": pid, "rank": i, "urgency": 0, "difficulty": 0, "reasons": []} for i, pid in enumerate(ids, 1)]
 
 
-def bedrock_blocked(text):
+def bedrock_blocked(*args):
     raise RuntimeError("AccessDeniedException: Model use case details have not been submitted")
 
 
@@ -204,6 +205,28 @@ def test_field_errors_are_4xx():
     event = {"requestContext": {"http": {"method": "POST"}}, "rawPath": "/approve", "headers": {"x-demo-key": "k3y"},
              "body": "//79", "isBase64Encoded": True}
     assert router.lambda_handler(event, None)["statusCode"] == 400
+
+
+def test_ai_sources_say_fallback_when_bedrock_fails(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(write_plan_text=bedrock_blocked))
+    monkeypatch.setattr(router, "replan_with_bedrock", bedrock_blocked)
+    assert plan_v1()["ai_sources"] == {"text": "fallback"}  # rank is rules only, so it has no key
+    body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
+    assert body["plan"]["ai_sources"] == {"replan": "fallback", "text": "fallback"}
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]})[1]["ai_sources"] == {}
+
+
+def test_ai_sources_say_bedrock_when_it_works(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=lambda plan, clinics, languages, only_ids: {**plan, "summary": "Bedrock wrote this. It has two sentences."}))
+    monkeypatch.setattr(router, "replan_with_bedrock",
+                        lambda instruction, plan, tools: router.replan_by_rules(instruction, plan, tools, store.load_seed()["clinics"]))
+    plan = plan_v1()
+    assert plan["ai_sources"] == {"text": "bedrock"} and not list(validator("plan").iter_errors(plan))
+    body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
+    assert body["plan"]["ai_sources"] == {"replan": "bedrock", "text": "bedrock"}
+    assert not list(validator("plan").iter_errors(body["plan"]))
+    assert store.latest_plan("PSPS-DEMO-01")["ai_sources"] == {"replan": "bedrock", "text": "bedrock"}
 
 
 def test_plan_timing_total_covers_every_reported_step():

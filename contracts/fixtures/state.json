@@ -408,6 +408,9 @@
       "text": 4120,
       "total": 4160
     },
+    "ai_sources": {
+      "text": "bedrock"
+    },
     "patients": [
       {
         "patient_id": "P002",

@@ -7,6 +7,7 @@
   "timing_ms": {
     "total": 140
   },
+  "ai_sources": {},
   "patients": [
     {
       "patient_id": "P002",

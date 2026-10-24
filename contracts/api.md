@@ -135,6 +135,8 @@ Row rules:
 * `flags`: `long_gap_after` (the next usual session date minus the new slot date, in calendar days, is more than `gap_limit_days`), `staff_call` (a person must call this patient).
 * `timing_ms`: `total` is the wall time of the request that made this version, at least the sum of its steps. Parse is timed in `POST /alert`.
 
+`ai_sources` (optional, plan schema v2) says who did each AI step of the request that made this version: `bedrock`, or `fallback` when the Bedrock step failed or ran past its time limit and the router used its rule-based path. Only the steps that ran have a key. `POST /plan` sets `text`, for example `{"text": "fallback"}`. Rank uses rules only, so it has no key. `POST /approve` runs no AI step, so it sets `{}`. The router sets it. The model never does. Show a fallback tag on each step that has `fallback`.
+
 ## POST /replan
 
 Applies one instruction from Rosa and returns the next plan version, the diff and a two-sentence summary.
@@ -149,7 +151,7 @@ Response `200` (fixture: `fixtures/replan.response.json`):
 
 ```json
 {
-  "plan": {"event_id": "PSPS-DEMO-01", "version": 2, "...": "..."},
+  "plan": {"event_id": "PSPS-DEMO-01", "version": 2, "ai_sources": {"replan": "bedrock", "text": "bedrock"}, "...": "..."},
   "diff": [
     {"patient_id": "P004", "field": "action", "from": "transfer", "to": "hospital"},
     {"patient_id": "P004", "field": "clinic_id", "from": "C02", "to": "H01"},
@@ -160,6 +162,8 @@ Response `200` (fixture: `fixtures/replan.response.json`):
 ```
 
 Schema: `replan.schema.json` (the `plan` inside follows `plan.schema.json`). `diff` is a flat list, one entry per changed field per patient. The diff covers these fields: `action`, `clinic_id`, `slot`, `drive_minutes`, `drive_source`, `pickup_time`, `book_today`, `flags`, `status`, `pinned`. Text fields are not in the diff.
+
+`plan.ai_sources` has `replan` and `text`, for example `{"replan": "fallback", "text": "bedrock"}`. `replan` is `fallback` when the Bedrock re-plan failed or ran past its time limit and the router applied the instruction with rules. `text` covers only the rows that the re-plan changed.
 
 "(clinic) can only take N more" means: at most N visiting patients at that clinic across all slots of the event. Chairs go in rank order. The orchestrator calls `set_clinic_capacity` once per slot to get this result.
 
