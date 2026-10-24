@@ -20,7 +20,11 @@ def _get_client():
         "bedrock-runtime",
         region_name=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
         # The adapter owns retries, including when AWS_MAX_ATTEMPTS is set.
-        config=Config(retries={"mode": "standard", "total_max_attempts": 1}),
+        config=Config(
+            retries={"mode": "standard", "total_max_attempts": 1},
+            connect_timeout=5,
+            read_timeout=20,
+        ),
     )
 
 
