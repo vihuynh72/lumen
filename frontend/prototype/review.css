@@ -45,7 +45,7 @@
 .rv-l2{overflow:hidden;color:var(--mute);font-size:13px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
 .rv-chg{color:var(--amber-ink);font-weight:700}
 .rv-when,.rv-lv{color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
-.rv-lv{white-space:nowrap}
+.rv-lv{position:relative;white-space:nowrap}  /* holds .rv-k, so the hidden word never stretches the dialog into a scroller */
 .rv-k{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}  /* the column header says it on wide screens */
 .rv-pk{color:var(--mute);font-size:13px}
 .rv-why{grid-column:1/-1;margin:2px 0 0;font-size:13px;line-height:18px}

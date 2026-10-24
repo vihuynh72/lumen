@@ -205,7 +205,7 @@ body.resizing #map{pointer-events:none}
 .sw.ln{width:20px;height:0;border-top:2px solid var(--c)}
 .sw.dash{border-top-style:dashed}
 .sw.thick{border-top-width:3px}
-.sw.wide{border-top-width:4px;border-radius:2px}
+.sw.wide{border-top-width:4px}
 .sw.dead{border-top:2.5px solid var(--map-dead)}
 .sw.feed{width:20px;height:3px;border-radius:2px;background:repeating-linear-gradient(90deg,var(--map-power) 0 6px,transparent 6px 10px),color-mix(in srgb,var(--map-power) 32%,transparent)}
 .sw.sub{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:50%;background:var(--map-halo);box-shadow:0 0 0 1px var(--line)}
@@ -490,10 +490,10 @@ button.wrow:hover>.i,.cvp:hover>.i{color:var(--ink);transform:rotate(-90deg) tra
 
 /* Print the list: the done board on paper, black on white */
 @media print{
-  :root,:root[data-theme="dark"]{--paper:#FFFFFF;--paper-2:#FFFFFF;--ink:#000000;--ink-2:#222222;--mute:#444444;--line:#BBBBBB;--line-2:#888888;--green:#000000;--green-ink:#000000;--amber:#000000;--amber-bg:#FFFFFF;color-scheme:light}
+  :root,:root[data-theme="dark"]{--paper:#FFFFFF;--paper-2:#FFFFFF;--ink:#000000;--ink-2:#222222;--mute:#444444;--line:#BBBBBB;--line-2:#888888;--green:#000000;--green-ink:#000000;--amber:#000000;--amber-2:#000000;--on-amber:#FFFFFF;--amber-bg:#FFFFFF;color-scheme:light}
   @page{margin:16mm}
   body{display:block;height:auto;overflow:visible;background:var(--paper)}
-  .top,.rail,.map,.rsz,.pop,dialog,.banner,.doneb .acts,.doneb .note,.vh{display:none!important}
+  .top,.rail,.map,.rsz,.pop,dialog,.banner,.btn,.doneb .acts,.doneb .note,.vh{display:none!important}  /* buttons do nothing on paper */
   .app{display:block}
   .panel{position:static;width:auto;height:auto;overflow:visible;border:0;box-shadow:none;transform:none;visibility:visible}
   .doneb{max-width:680px;padding:0}

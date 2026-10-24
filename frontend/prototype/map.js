@@ -499,7 +499,9 @@
       mine.forEach(settle); G.ring = ringAt(); drawGraph(); updateMarkers();
       return Promise.resolve();
     }
-    const wait = seen ? 0 : 2250; // the slow zoom out before the search; the user asked for it 25% faster than 3 s
+    // the slow zoom out before the search (the user asked for it 25% faster than 3 s); a later dark clinic's search, once the
+    // first one has been seen, moves the camera in half the time, so three dark clinics stay under about 10 s
+    const later = G.nodes.some((n) => n.src !== o.sourceId), wait = seen ? 0 : later ? 1100 : 2250;
     if (!seen) focus({ facilities: [o.sourceId, ...mine.map((n) => n.id)] }, { duration: wait, easing: inOut });
     return new Promise((resolve) => {
       G.done = resolve;
@@ -707,7 +709,7 @@
 .maplibregl-ctrl-attrib a{color:inherit}
 .maplibregl-ctrl-scale{border-color:var(--ink-2)}
 :root[data-theme=dark] .maplibregl-ctrl-icon,:root[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1) hue-rotate(180deg)}
-@media (pointer:coarse){.lm-fac::before{content:"";position:absolute;left:calc(var(--pin) / 2 - 22px);top:calc(var(--pin) / 2 - 22px);width:44px;height:44px}.lm-iso button{min-height:44px}}
+@media (pointer:coarse){.lm-fac::before{content:"";position:absolute;left:calc(var(--pin) / 2 - 22px);top:calc(var(--pin) / 2 - 22px);width:44px;height:44px}.lm-iso button{min-height:44px}.maplibregl-ctrl-group button{width:44px;height:44px}}
 @media (prefers-reduced-motion:reduce){.lm-fac,.lm-fac.lm-off,.lm-pin,.lm-stem,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
     document.head.appendChild(css);
   }
@@ -1206,7 +1208,12 @@
       const roads = S.trace.filter((r) => r.line && (!ch.length || chk.has(r.k))).flatMap((r) => r.line); // roads can bulge past their ends
       return pts.length || roads.length ? fit([...pts, ...roads, ...(ch.length ? [facPt(home)] : whole())], 'over') : region();
     }
-    if (Array.isArray(target.facilities)) return fit(target.facilities.map((id) => facPt(facById(id))), 'over', 14); // R9 search
+    // R9 search; { routes: true }: the whole plan as the run ends, its road routes too (they can bulge past their clinics),
+    // with room for the labels under the pins and the map's own attribution
+    if (Array.isArray(target.facilities)) {
+      const lines = target.routes ? S.trace.filter((r) => isLine(r.line)).flatMap((r) => r.line) : [];
+      return fit([...target.facilities.map((id) => facPt(facById(id))), ...lines], 'over', 14, target.routes ? 80 : FIT_PAD);
+    }
     if (target.toId != null) { // R8 one route: its road, both clinics and its patients' homes; room for the chip
       const I = isoSet(), on = (r) => r.item.toId === target.toId && (target.fromId == null || r.item.fromId === target.fromId);
       const homes = (S.patients || []).filter((p) => I && I.pats.has(p.id) && Number.isFinite(p.lng)).map((p) => [p.lng, p.lat]);
@@ -1284,6 +1291,7 @@
       if ((S.scene && S.scene.power) !== prev) { applyPower(); renderFp(); updateMarkers(); syncAnim(); }
       applyFlowPaint();
     },
+    // 'home' | 'region' | 'outage' | 'flows' | { facilities: [id], routes? } | { fromId, toId } | { facility } | { patient }
     focus,
     set3D,
     is3D: () => S.is3D,

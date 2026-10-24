@@ -1,5 +1,5 @@
 /* Lumen "Approve and tell everyone" list (CONTRACT-v5 section 5; the patient card is CONTRACT-v3 R5 plus CONTRACT-v6 section 4,
-   "What {first name} gets"): window.LumenReview.
+   "What {name} gets"): window.LumenReview.
    app.js builds the row view models and does every write; this file shows them and calls back.
    Switches stay local until the one press. */
 (() => {
@@ -217,7 +217,7 @@ function receipt(r) {
   if (n?.status === 'stale') return ['', 'The plan changed. Not sent again yet.'];
   return ['', canNote(r) && voiceOn(r) ? 'Not sent yet' : blocked(r) ? 'Not sent. Fix the problem first.' : 'Not sent. Staff phone instead.'];
 }
-// R5: one clear card and its actions, then "What {first name} gets" (CONTRACT-v6 section 4): the text message as one bubble
+// R5: one clear card and its actions, then "What {name} gets" (CONTRACT-v6 section 4): the text message as one bubble
 // in the patient's language, its sent time and reply, and the voice note.
 function detHTML(r) {
   if (!r) return '';
@@ -243,7 +243,7 @@ function detHTML(r) {
       ${r.changed && r.changeText ? `<p class="rv-chgn">Changed: ${esc(low(r.changeText))}</p>` : ''}
     </div>
     <div class="rv-do"><div class="racts">${first}${decline}</div></div>
-    <section class="rv-gets" aria-labelledby="rvGetsH"><h4 id="rvGetsH">What ${esc(firstName(r))} gets</h4>
+    <section class="rv-gets" aria-labelledby="rvGetsH"><h4 id="rvGetsH">What ${esc(r.name)} gets</h4>
       ${ls.length > 1 ? `<div class="langs" role="group" aria-label="Message language">${ls.map(l => `<button type="button" data-act="lang" data-lang="${esc(l)}" data-k="lg-${esc(l)}" aria-pressed="${l === cur}">${esc(langLabel(l, r))}</button>`).join('')}</div>` : ''}
       ${ls.length ? `<p class="rv-bub${rc && r.note?.status !== 'sent' ? ' rv-unsent' : ''}" lang="${esc(cur)}">${esc(r.messages[cur])}</p>
         ${rc ? `<p class="rv-rc rv-rc-${rc[0] || 'not'}">${rc[0] === 'told' || rc[0] === 'yes' ? ck : ''}${esc(rc[1])}</p>` : ''}`
@@ -347,7 +347,7 @@ function onChange(e) {
 
 window.LumenReview = {
   // opts: {rows, opener, onApproveAndTell({voiceOff, clinicsOff, hold}) -> Promise, onApprove(ids|'all'), onDecline(id), onConfirm(id),
-  //   onVoice(id, lang), onSelect(id)}. Without onApproveAndTell the press only approves. title, isTour, onSend, onNext: accepted, not used.
+  //   onVoice(id, lang), onSelect(id)}. Without onApproveAndTell the press only approves. title, onSend, onNext: accepted, not used.
   // Rows: as CONTRACT-v4 2.3, plus optional clinicId (the clinicsOff value; the clinic name stands in without it), callInstead
   //   and sheetSent (the clinic already has this patient's sheet).
   open(opts) {
