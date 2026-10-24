@@ -1,6 +1,8 @@
 """Offline checks against botocore's actual Converse service model."""
 
 import importlib
+import io
+import json
 import logging
 import traceback
 from copy import deepcopy
@@ -262,3 +264,155 @@ def test_lazy_client_uses_environment_and_disables_sdk_retries(monkeypatch, regi
         assert factory.call_args.kwargs["config"].read_timeout == 20
     finally:
         bedrock._get_client.cache_clear()
+
+
+IMPORTED = "arn:aws:bedrock:us-east-2:343602350823:imported-model/abc123"
+
+
+class FakeRuntime:
+    """Records invoke_model/converse calls; replies are dicts or ClientErrors, in order."""
+
+    def __init__(self, *replies):
+        self.replies, self.calls = list(replies), []
+
+    def _next(self, operation, request):
+        self.calls.append((operation, request))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    def invoke_model(self, **request):
+        return {"body": io.BytesIO(json.dumps(self._next("invoke_model", request)).encode())}
+
+    def converse(self, **request):
+        return self._next("converse", request)
+
+    def body(self, index=-1):
+        return json.loads(self.calls[index][1]["body"])
+
+
+def chat(content, finish="stop", usage=True):
+    reply = {"choices": [{"index": 0, "message": {"role": "assistant", "content": content},
+                          "finish_reason": finish}]}
+    return {**reply, "usage": {"prompt_tokens": 50, "completion_tokens": 9}} if usage else reply
+
+
+def runtime(monkeypatch, *replies, fmt="messages"):
+    fake = FakeRuntime(*replies)
+    monkeypatch.setattr(bedrock, "_get_client", lambda: fake)
+    monkeypatch.setattr(bedrock, "IMPORTED_FORMAT", fmt)
+    return fake
+
+
+def test_imported_forced_tool(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger=bedrock.__name__)
+    fake = runtime(monkeypatch, chat('{"id": "P001"}'))
+    result = bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, "lookup")
+    tool_use = {"toolUseId": "imp-1", "name": "lookup", "input": {"id": "P001"}}
+    assert result == {
+        "stop_reason": "tool_use", "text": "",
+        "tool_uses": [{"id": "imp-1", "name": "lookup", "input": {"id": "P001"}}],
+        "usage": {"input_tokens": 50, "output_tokens": 9},
+        "message": {"role": "assistant", "content": [{"toolUse": tool_use}]},
+    }
+    operation, request = fake.calls[0]
+    assert operation == "invoke_model" and request["modelId"] == IMPORTED
+    body = fake.body()
+    assert (body["max_tokens"], body["temperature"]) == (4096, 0)
+    system, user = body["messages"]
+    assert system["role"] == "system" and system["content"].startswith(SYSTEM)
+    assert "Answer by calling the tool lookup" in system["content"]
+    assert json.dumps(TOOLS[0]["toolSpec"]["inputSchema"]["json"]) in system["content"]
+    assert user == {"role": "user", "content": "private prompt"}
+    assert "input_tokens=50 output_tokens=9" in caplog.text and "private" not in caplog.text
+
+
+@pytest.mark.parametrize("reply", [
+    {"choices": [{"text": '```json\n{"id": "P001"}\n```'}]},
+    {"generation": 'Sure:\n```\n{"id": "P001"}\n```', "stop_reason": "stop"},
+    {"outputs": [{"text": '{"id": "P001"} trailing'}]},
+])
+def test_imported_prompt_format_and_fences(monkeypatch, reply):
+    fake = runtime(monkeypatch, reply, fmt="prompt")
+    result = bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, "lookup")
+    assert result["tool_uses"] == [{"id": "imp-1", "name": "lookup", "input": {"id": "P001"}}]
+    assert all(isinstance(n, int) and n > 0 for n in result["usage"].values())
+    body = fake.body()
+    assert body["max_gen_len"] == 4096 and body["temperature"] == 0
+    assert body["prompt"].startswith(f"<|im_start|>system\n{SYSTEM}")
+    assert body["prompt"].endswith(
+        "<|im_end|>\n<|im_start|>user\nprivate prompt<|im_end|>\n<|im_start|>assistant\n")
+
+
+def test_imported_agent_loop_tool_call(monkeypatch):
+    fake = runtime(monkeypatch, chat('{"tool": "lookup", "input": {"id": "P002"}}'))
+    result = bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, None)
+    assert result["stop_reason"] == "tool_use"
+    assert result["tool_uses"] == [{"id": "imp-1", "name": "lookup", "input": {"id": "P002"}}]
+    system = fake.body()["messages"][0]["content"]
+    assert "- lookup: private tool description Input schema:" in system
+    assert '{"tool": "<name>", "input": {...}}' in system and '{"final": "<text>"}' in system
+
+
+@pytest.mark.parametrize("content, text", [('{"final": "Done."}', "Done."), ("All set.", "All set.")])
+def test_imported_final_text(monkeypatch, content, text):
+    runtime(monkeypatch, chat(content))
+    assert bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, None) == {
+        "stop_reason": "end_turn", "text": text, "tool_uses": [],
+        "usage": {"input_tokens": 50, "output_tokens": 9},
+        "message": {"role": "assistant", "content": [{"text": text}]},
+    }
+
+
+def test_imported_without_tools_returns_raw_text(monkeypatch):
+    fake = runtime(monkeypatch, chat("Hello {name}", usage=False))
+    result = bedrock.converse(IMPORTED, SYSTEM, MESSAGES)
+    assert (result["stop_reason"], result["text"]) == ("end_turn", "Hello {name}")
+    assert result["usage"] == {"input_tokens": len(fake.calls[0][1]["body"]) // 4, "output_tokens": 3}
+    assert fake.body()["messages"][0] == {"role": "system", "content": SYSTEM}
+
+
+@pytest.mark.parametrize("tool_choice, content", [
+    ("lookup", "I cannot help."), ("lookup", '{"id": '), ("lookup", "[1, 2]"),
+    (None, '{"tool": "lookup", "input": '), (None, '{"other": 1}'),
+])
+def test_imported_invalid_json_raises(monkeypatch, tool_choice, content):
+    runtime(monkeypatch, chat(content))
+    with pytest.raises(ValueError):
+        bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, tool_choice)
+
+
+def test_imported_truncated_reply_is_max_tokens(monkeypatch):
+    runtime(monkeypatch, chat('{"id": "P0', finish="length"))
+    result = bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS, "lookup")
+    assert (result["stop_reason"], result["tool_uses"]) == ("max_tokens", [])
+
+
+def test_imported_history_tool_blocks_become_text(monkeypatch):
+    fake = runtime(monkeypatch, chat('{"tool": "lookup", "input": {"id": "P001"}}'), chat('{"final": "ok"}'))
+    first = bedrock.converse(IMPORTED, SYSTEM, MESSAGES, TOOLS)
+    history = [*MESSAGES, first["message"], {"role": "user", "content": [{"toolResult": {
+        "toolUseId": "imp-1", "content": [{"json": {"found": True}}], "status": "success"}}]}]
+    assert bedrock.converse(IMPORTED, SYSTEM, history, TOOLS)["text"] == "ok"
+    assert fake.body()["messages"][1:] == [
+        {"role": "user", "content": "private prompt"},
+        {"role": "assistant", "content": '{"tool": "lookup", "input": {"id": "P001"}}'},
+        {"role": "user", "content": 'Result of lookup (imp-1): [{"json": {"found": true}}]'},
+    ]
+    fake.replies.append(chat('{"tool": "lookup", "input": {}}'))
+    assert bedrock.converse(IMPORTED, SYSTEM, history, TOOLS)["tool_uses"][0]["id"] == "imp-2"
+
+
+def test_imported_cold_start_retries_after_three_seconds(monkeypatch, sleep):
+    not_ready = ClientError({"Error": {"Code": "ModelNotReadyException", "Message": "warming"}}, "InvokeModel")
+    fake = runtime(monkeypatch, not_ready, chat("hi"))
+    assert bedrock.converse(IMPORTED, SYSTEM, MESSAGES)["text"] == "hi"
+    sleep.assert_called_once_with(3)
+    assert [operation for operation, _ in fake.calls] == ["invoke_model", "invoke_model"]
+
+
+def test_foundation_model_still_uses_converse(monkeypatch):
+    fake = runtime(monkeypatch, response())
+    assert bedrock.converse(MODEL, SYSTEM, MESSAGES)["text"] == "Hello there!"
+    assert fake.calls == [("converse", REQUEST)]
