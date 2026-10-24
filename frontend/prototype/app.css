@@ -145,7 +145,7 @@ body.resizing #map{pointer-events:none}
 .ph.pending .nm{color:var(--rail-ink-2)}
 .ph.running .st,.ph.waiting .st{color:var(--rail-amber)}
 .ph.error .st{color:var(--rail-err)}
-.res{margin-top:2px;font-size:13px;line-height:18px;color:var(--rail-ink-2)}
+.res{margin-top:2px;font-size:13px;line-height:18px;color:var(--rail-ink-2);white-space:pre-line}  /* a re-plan: "Read as: …", then its summary */
 .ph.running .res,.ph.waiting .res{color:var(--rail-ink)}
 .ph .err{margin-top:6px;color:var(--rail-err)}
 .ph .retry{margin-top:8px;height:28px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:12px}
@@ -157,7 +157,8 @@ body.resizing #map{pointer-events:none}
 .cmd textarea:disabled{cursor:not-allowed}
 .cmd:focus-within{border-color:var(--rail-ink);box-shadow:0 0 0 1px var(--rail-ink)}
 .cmd-r{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
-.sugg{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 8px;border:1px solid var(--rail-line);border-radius:8px;background:none;color:var(--rail-ink-2);font-size:12px;line-height:16px;text-align:left;cursor:pointer}
+.suggs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.sugg{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 8px;border:1px solid var(--rail-line);border-radius:8px;background:none;color:var(--rail-ink-2);font-size:12px;line-height:16px;text-align:left;cursor:pointer}
 .sugg:hover:not(:disabled){border-color:var(--rail-mute);color:var(--rail-ink)}
 .send{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;border-radius:8px;background:var(--rail-line);color:var(--rail-ink);cursor:pointer}
 .send:hover:not(:disabled){background:var(--rail-amber);color:var(--on-amber)}
@@ -269,6 +270,14 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .okline .i{width:20px;height:20px;stroke-width:2.25}
 .okc{color:var(--ink)}
 .okn{margin:8px 0 4px;color:var(--ink-2);font-size:13px;line-height:18px}
+/* Check the plan: blocks to fix, then one line per kind of warning */
+.check{margin:16px 20px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
+.check h3{font-size:14px;line-height:20px;font-weight:700}
+.check h3 span{color:var(--ink-2);font-weight:600}
+.check ul{display:grid;gap:6px;margin-top:8px;padding:0;list-style:none;max-width:65ch;color:var(--ink-2);font-size:13px;line-height:18px}
+.check .fix{color:var(--red-ink)}
+.check .call{color:var(--amber-ink)}
+.check .more{color:var(--mute)}
 /* R3: chairs per receiving clinic */
 .chairs{margin:20px 20px 0}
 .chairs h3,.lh h3{font-size:14px;line-height:20px;font-weight:700}
@@ -386,7 +395,10 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .legend{max-width:calc(100% - 72px)}
   section.sec{padding:16px}
   .plan-h{padding:16px 16px 12px}
-  .cnt,.acts,.note,.chgbar,.chairs,.okbox,.lh{margin-left:16px;margin-right:16px}
+  .cnt,.acts,.note,.chgbar,.chairs,.okbox,.lh,.check{margin-left:16px;margin-right:16px}
+  .sugg{min-height:44px}
+  .send{width:44px;height:44px}
+  .ph .retry{height:44px}
   .rowb{padding:12px 16px}
   .pdet{padding:0 16px 16px 50px}
 }

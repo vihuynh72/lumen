@@ -75,7 +75,7 @@
         <label for="instr">Re-plan in plain words</label>
         <textarea id="instr" rows="2" placeholder="Tell Lumen what changed" disabled></textarea>
         <div class="cmd-r">
-          <button type="button" class="sugg" id="sugg" disabled>DaVita Folsom can only take 4 more</button>
+          <div class="suggs" id="suggs" role="group" aria-label="Examples"><button type="button" class="sugg" disabled>DaVita Folsom can only take 4 more</button><button type="button" class="sugg" disabled>Maria Delgado declined</button></div>
           <button type="submit" class="send" id="send" aria-label="Send the re-plan instruction" disabled><svg class="i"><use href="#i-send"/></svg></button>
         </div>
       </form>

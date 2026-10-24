@@ -1,4 +1,4 @@
-/* Review and approve list (CONTRACT-v3 R2, R5). app.css tokens only; reuses .btn, .tag, .langs, .msgt, .racts, .small, .err, .m, .vh, .i, .s-*. */
+/* Review and approve list (CONTRACT-v3 R2, R5; CONTRACT-v4 2.3). app.css tokens only; reuses .btn, .tag, .langs, .msgt, .racts, .small, .err, .m, .vh, .i. */
 .rv{position:fixed;inset:24px;width:auto;height:auto;max-width:none;max-height:none;margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);overflow:hidden}
 .rv[open]{display:flex;flex-direction:column;animation:rv-in .2s ease-out}
 .rv::backdrop{background:color-mix(in srgb,var(--rail) 86%,transparent)}
@@ -24,11 +24,9 @@
 .rv-chips{display:flex;flex-wrap:wrap;gap:4px}
 .rv-chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
 .rv-chip:hover{border-color:var(--line-2);color:var(--ink)}
-.rv-chip.dot::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
 .rv-chip .m{color:var(--mute);font-size:12px}
 .rv-chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .rv-chip[aria-pressed="true"] .m{color:inherit}
-.rv-chip[aria-pressed="true"].dot::before{box-shadow:0 0 0 1.5px var(--paper)}
 .rv-q{position:relative;display:flex;align-items:center;flex:0 1 240px;min-width:160px}
 .rv-q .i{position:absolute;left:10px;color:var(--mute);pointer-events:none}
 .rv-q input{width:100%;height:36px;padding:0 10px 0 32px;border:1px solid var(--mute);border-radius:8px;background:var(--paper);color:var(--ink)}
@@ -41,40 +39,84 @@
 
 /* table: grid rows so content-visibility can skip the ones off screen */
 .rv-body{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 400px;flex:1 1 0;min-height:0}
-.rv-tw{min-height:0;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable}
-.rv-t{--rv-cols:44px minmax(150px,1.2fr) minmax(88px,.6fr) minmax(128px,.8fr) minmax(150px,1fr) minmax(200px,1fr) minmax(200px,1.2fr) minmax(96px,.5fr) minmax(160px,.8fr);display:block;min-width:1216px;border-spacing:0;font-size:14px;line-height:20px}
+.rv-list{display:flex;flex-direction:column;min-width:0;min-height:0}
+.rv-tw{flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable}
+.rv-t{--rv-cols:52px minmax(180px,1fr) minmax(260px,1.6fr) minmax(132px,.55fr) minmax(148px,.55fr);display:block;min-width:772px;border-spacing:0;font-size:14px;line-height:20px}
 .rv-t thead,.rv-t tbody{display:block}
 .rv-t thead{position:sticky;top:0;z-index:3}
-.rv-t tr{display:grid;grid-template-columns:var(--rv-cols);align-items:center;height:56px;border-bottom:1px solid var(--line);background:var(--paper)}
-.rv-t thead tr{height:44px;background:var(--paper-2)}
-.rv-t tbody tr{content-visibility:auto;contain-intrinsic-size:auto 56px;cursor:pointer;transition:background-color .15s ease-out}
-.rv-t th,.rv-t td{min-width:0;padding:0 10px;text-align:left}
-.rv-t td{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--ink-2)}
+.rv-t tr{display:grid;grid-template-columns:var(--rv-cols);align-items:center;min-height:64px;border-bottom:1px solid var(--line);background:var(--paper)}
+.rv-t thead tr{min-height:44px;background:var(--paper-2)}
+.rv-t tbody tr{content-visibility:auto;contain-intrinsic-size:auto 64px;cursor:pointer;transition:background-color .15s ease-out}
+.rv-t th,.rv-t td{min-width:0;padding:0 12px;text-align:left}
+.rv-t td{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding-block:10px;color:var(--ink-2)}
+.rv-t td>*{max-width:100%}
 .rv-t .rv-c0,.rv-t .rv-c1{position:sticky;z-index:1;align-self:stretch;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;background:inherit}
 .rv-t .rv-c0{left:0;align-items:center;padding:0}
-.rv-t .rv-c1{left:44px}
+.rv-t .rv-c1{left:52px}
 .rv-t tbody tr:hover{background:var(--paper-2)}
+.rv-t tr.rv-onr{background:color-mix(in srgb,var(--blue-bg) 60%,var(--paper))}
 .rv-t tr.rv-selr{background:var(--paper-3)}
 .rv-t tr.rv-chgr{background:var(--amber-bg)}
 .rv-t tr.rv-chgr.rv-selr{background:color-mix(in srgb,var(--amber) 30%,var(--paper))}  /* sticky cells would cut an inset ring */
-.rv-t td.m,.rv-t td .m{font-size:13px}
+/* a 44 px box around each select box, so it is easy to hit and does not open the row */
+.rv-ck{display:grid;place-items:center;width:44px;height:44px;border-radius:8px;cursor:pointer}
+.rv-ck:hover{background:var(--paper-3)}
 .rv-sort{display:inline-flex;align-items:center;gap:4px;height:28px;margin:0 -4px;padding:0 4px;border:0;border-radius:4px;background:none;color:var(--ink-2);font-size:13px;font-weight:700;text-align:left;white-space:nowrap;cursor:pointer}
 .rv-sort:hover{background:var(--paper-3);color:var(--ink)}
 .rv-sort .i{width:14px;height:14px;opacity:0;transition:transform .15s ease-out}
 [aria-sort] .rv-sort{color:var(--ink)}
 [aria-sort] .rv-sort .i{opacity:1}
 [aria-sort="ascending"] .rv-sort .i{transform:rotate(180deg)}
-.rv-nm{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;padding:0;border:0;background:none;color:var(--ink);font-weight:700;text-align:left;cursor:pointer}
+.rv-nm{position:relative;overflow:hidden;max-width:100%;padding:0;border:0;background:none;color:var(--ink);font-weight:700;text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
 .rv-nm:hover{text-decoration:underline;text-underline-offset:3px}
-.rv-chg{color:var(--amber-ink);font-size:12px;line-height:16px;font-weight:700}
+/* second lines: one line each, the full text is in the title and the details */
+.rv-l2{overflow:hidden;color:var(--mute);font-size:13px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+.rv-l2 .m{font-size:12px}
+.rv-chg{color:var(--amber-ink);font-weight:700}
+.rv-act{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;background:color-mix(in srgb,var(--c) 12%,var(--paper));color:var(--ink);font-size:13px;font-weight:700;white-space:nowrap}
+.rv-act::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.rv-flag{overflow:hidden;font-size:13px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+.rv-f-b{color:var(--red-ink)}
+.rv-f-w{color:var(--amber-ink)}
+.rv-time{color:var(--ink);font-size:14px;font-weight:600;white-space:nowrap}
 .rv-dot{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:var(--c);vertical-align:1px}
-.rv-far{display:block;color:var(--red-ink);font-size:12px;line-height:16px;font-weight:700}
+.rv-far{color:var(--red-ink)}
 .rv-empty{display:grid;justify-items:start;gap:12px;padding:24px 20px;color:var(--mute)}
+
+/* status pill: the text says the stage, the color only repeats it */
+.rv-pill{display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:12px;line-height:16px;font-weight:700;white-space:nowrap;vertical-align:1px}
+.rv-p-draft{border-color:var(--line-2);color:var(--ink-2)}
+.rv-p-approved{border-color:var(--line-2);background:var(--paper-3);color:var(--ink)}
+.rv-p-sent{background:var(--green-bg);color:var(--green-ink)}
+.rv-p-queued{background:var(--blue-bg);color:var(--blue-ink)}
+.rv-p-stale,.rv-p-no_answer{border-color:color-mix(in srgb,var(--amber) 55%,transparent);background:var(--amber-bg);color:var(--amber-ink)}
+.rv-p-confirmed{background:var(--green);color:var(--paper)}
+.rv-p-declined{background:var(--red-bg);color:var(--red-ink)}
+.rv-p-call{border-color:var(--ink-2);color:var(--ink)}
+
+/* sticky foot of the list: bulk bar, send panel, last result */
+.rv-foot{flex:none;border-top:1px solid var(--line);background:var(--paper);box-shadow:0 -8px 24px -18px color-mix(in srgb,var(--ink) 60%,transparent)}
+.rv-foot:empty{display:none}
+.rv-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 20px}
+.rv-n{margin-right:auto;color:var(--ink);font-weight:700}
+.rv-n .m{font-size:15px}
+.rv-ferr{padding:8px 20px 0}
+.rv-okm{display:flex;align-items:center;gap:8px;padding:12px 20px;color:var(--green-ink);font-weight:700}
+.rv-send{display:grid;gap:8px;max-height:min(60svh,520px);padding:16px 20px;overflow:auto;overscroll-behavior:contain;color:var(--ink-2);animation:rv-up .2s ease-out}
+@keyframes rv-up{from{opacity:0;transform:translateY(8px)}}
+.rv-send h3{color:var(--ink);font-size:17px;line-height:24px;font-weight:700}
+.rv-skh{margin-top:4px;color:var(--ink);font-weight:600}
+.rv-skip{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px 24px;margin:0;padding:0;list-style:none}
+.rv-skip li{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px}
+.rv-skl{color:var(--ink)}
+.rv-skc{min-width:24px;padding:0 6px;border-radius:6px;background:var(--paper-3);color:var(--ink);font-size:12px;line-height:20px;font-weight:600;text-align:center}
+.rv-skn{flex-basis:100%;color:var(--mute);font-size:13px;line-height:18px}
+.rv-send-b{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:4px}
 
 /* detail pane: one clear card (R5) */
 .rv-det{display:flex;flex-direction:column;gap:16px;min-height:0;padding:20px;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable;border-left:1px solid var(--line);background:var(--paper)}
 .rv-det h3{font-size:20px;line-height:28px;font-weight:700}
-.rv-sub{margin-top:2px;color:var(--ink-2)}
+.rv-sub{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:2px;color:var(--ink-2)}
 .rv-card{display:grid;gap:6px;color:var(--ink-2)}
 .rv-big{margin-bottom:2px;color:var(--ink);font-size:17px;line-height:24px;font-weight:700}
 .rv-chgn{color:var(--amber-ink);font-weight:600}
@@ -104,17 +146,32 @@
   .rv{inset:0;border:0;border-radius:0}
   .rv-h{padding:12px 16px 0}
   .rv-done,.rv-bar{padding:12px 16px}
-  .rv-q{flex:1 1 100%}
-  /* phones: no sideways scroll; each row stacks name over what happens, the rest is in the details sheet */
-  .rv-t{--rv-cols:44px minmax(0,1fr) auto;min-width:0}
-  .rv-t tbody tr{height:auto;min-height:56px;padding:8px 0;contain-intrinsic-size:auto 72px}
-  .rv-t :is(th,td):is(:nth-child(3),:nth-child(5),:nth-child(6),:nth-child(7),:nth-child(8)),.rv-t th:nth-child(4){display:none}
-  .rv-t td:nth-child(1){grid-row:1/3}
-  .rv-t td:nth-child(4){grid-area:2/2}
-  .rv-t td:nth-child(9){grid-area:1/3/3}
-  .rv-acts{width:100%;margin-left:0}
-  .rv-acts>*{flex:1}
+  /* the filters scroll sideways inside their own strip; the page never does */
+  .rv-chips{flex-wrap:nowrap;width:calc(100% + 32px);margin:0 -16px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
+  .rv-chips::-webkit-scrollbar{display:none}
+  .rv-q{flex:1 1 160px}
   .rv-err{padding:8px 16px}
+  /* 44 px touch targets */
+  .rv .btn,.rv-chip,.rv-q input{height:44px}
+  .rv .btn.sm{height:40px}
+  .rv-nm::after{content:"";position:absolute;inset:-12px -8px}
+  /* phones: no sideways scroll; each row is a card: box, then name and status, the change, the leave time */
+  .rv-t{--rv-cols:52px minmax(0,1fr) auto;min-width:0}
+  .rv-t thead th:is(:nth-child(3),:nth-child(4)){display:none}  /* Patient and Status still sort */
+  .rv-sort{height:44px}
+  .rv-t tbody tr{align-items:start;padding:8px 0;contain-intrinsic-size:auto 128px}
+  .rv-t td{padding:2px 16px 2px 0}
+  .rv-t td.rv-c0{grid-row:1/4;align-self:start;padding:0}
+  .rv-t td.rv-c1{position:static;grid-area:1/2;padding-top:4px}
+  .rv-t td.rv-cs{grid-area:1/3;padding-top:4px}
+  .rv-t td.rv-cc{grid-area:2/2/3/4}
+  .rv-t td.rv-cl{grid-area:3/2/4/4;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 8px}
+  .rv-flag{white-space:normal}
+  .rv-bulk,.rv-okm{padding:10px 16px}
+  .rv-bulk .btn.pri{flex:1 1 auto}
+  .rv-send{padding:16px}
+  .rv-send-b .btn{flex:1 1 auto}
+  .rv-ferr{padding:8px 16px 0}
   .rv-body{position:static}  /* the sheet covers the whole dialog */
   .rv-det{width:100%;padding:16px}
 }

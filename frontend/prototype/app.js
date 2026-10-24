@@ -1,6 +1,6 @@
 /* Lumen app screen: API client, the guided run (scenes), rail, plan panel and controls.
    Calls window.LumenMap (map.js), LumenTour (tour.js), LumenReview (review.js) and LumenTimeline (timeline.js).
-   Contracts: contracts/api.md, CONTRACT-v2 (E1-E10), CONTRACT-v3 (R1-R7). */
+   Contracts: contracts/api.md, CONTRACT-v2 (E1-E10), CONTRACT-v3 (R1-R9), CONTRACT-v4 (plan check, bulk voice notes). */
 (() => {
 'use strict';
 const CFG = window.LUMEN_CONFIG || {};
@@ -17,7 +17,7 @@ const icon = id => `<svg class="i"><use href="#i-${id}"/></svg>`;
 
 // data/seed/notice.txt, verbatim
 const NOTICE = "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n";
-const SUGGEST_LIVE = 'DaVita Folsom can only take 4 more';
+const SUGGEST_LIVE = ['DaVita Folsom can only take 4 more', 'Maria Delgado declined'];
 const ROUTES_API = 'https://routes.geo.us-east-2.amazonaws.com/v2/routes';  // Amazon Location Routes v2, called with LUMEN_CONFIG.mapKey
 const NO_ROAD = 'Road route not available';
 
@@ -33,7 +33,7 @@ const FALLBACK = [
 ];
 
 const PHASES = ['Read the PG&E notice', 'Find who is affected', 'Put the most urgent first', 'Find open chairs',
-  'Write patient messages', 'Approve the plan', 'Send voice notes'];
+  'Write patient messages', 'Check the plan', 'Approve the plan', 'Send voice notes'];
 const ACTION = {
   early_session: { label: 'Come in early', cls: 'e' }, transfer: { label: 'Move', cls: 'tr' },
   hospital: { label: 'Staff call', cls: 'sc' }, notify_only: { label: 'Notice only', cls: 'n' },
@@ -46,6 +46,18 @@ const REASON = {
 };
 const RIDE = { self: 'Drives self', family: 'Family drives', paratransit: 'Paratransit', medical_van: 'Medical van', taxi: 'Taxi', transit: 'Public transit' };
 const STATUS = { draft: 'Draft', approved: 'Approved', confirmed: 'Confirmed', declined: 'Declined', no_answer: 'No answer' };
+const NOTE_WORD = { sent: 'Note sent', stale: 'Note out of date' };  // queued: "Sends 8 AM"
+// The plan check (POST /check): one plain label per warning code, for "32 patients · No hepatitis B test date on file"
+const CHECK_LABEL = {
+  no_late_shift: 'Usual late shift, and the new clinic has none', hbv_test_missing: 'No hepatitis B test date on file',
+  early_paratransit_pickup: 'Paratransit pickup before 6:30 AM', same_day_paratransit: 'Paratransit ride needed the same day',
+  long_drive: 'Drive longer than the limit', long_gap_after: 'Long gap before the next usual treatment',
+  no_message_in_language: 'No message in their language', heart_failure_long_gap: 'Heart failure and a long gap after the move',
+  lives_alone_night_pickup: 'Lives alone and leaves home at night', wheelchair_long_drive: 'Uses a wheelchair and drives over 30 minutes',
+  language_unconfirmed: 'Confirm the clinic speaks their language',
+};
+const CALL = new Set(['lives_alone_night_pickup', 'heart_failure_long_gap']);  // "Call instead": these go to /notify as call_instead
+const EVERY_ROW = new Set(['hbv_test_missing', 'language_unconfirmed', 'long_gap_after']);  // on most moved rows: the card groups them, rows show no flag for them
 const FIELD = { action: 'action', clinic_id: 'clinic', slot: 'session time', drive_minutes: 'drive time', drive_source: 'drive source',
   pickup_time: 'pickup time', book_today: 'ride booking', flags: 'flags', status: 'status', pinned: 'pin' };
 const FILTERS = {
@@ -62,6 +74,7 @@ const S = {
   diff: null, expanded: null, selected: null, filter: 'all',
   msgLang: {}, audio: {}, rowErr: {}, busy: {}, approving: false, gen: 0, anim: true,
   lang: {}, road: {}, roadFail: false, speak: {}, msgOpen: {}, opener: null, landed: null,
+  check: null, checkErr: null, checkP: null,
 };
 const isTour = () => S.region === 'santaclara';
 const hasKey = () => !!store.get('lumenDemoKey');
@@ -145,6 +158,8 @@ const live = {
   approve: b => live.call('POST', '/approve', b),
   voice: b => live.call('POST', '/voice', b),
   replan: b => live.call('POST', '/replan', b),
+  check: b => live.call('POST', '/check', b),
+  notify: b => live.call('POST', '/notify', b),
   reset: () => live.call('POST', '/reset', {}),
   speak: b => live.call('POST', '/speak', b),  // the tour uses it too: Polly (and Translate without `translated`), same demo key
 };
@@ -160,6 +175,13 @@ function tourBackend(data) {
     approve: b => run(() => (plan = t.approve(b.patient_ids[0] === 'all' ? 'all' : b.patient_ids, b.edits))),
     voice: async () => { throw new ApiError('Voice notes need the live region.', 409); },
     replan: b => run(() => { const r = t.replan(b.instruction); plan = r.plan; return r; }),
+    // the tour's own check and notes (tour.js); a tour.js without them fails the step instead of breaking the run
+    check: () => typeof t.check === 'function' ? run(() => t.check()) : Promise.reject(new ApiError('The plan check did not load. Reload the page.', 0)),
+    notify: b => typeof t.notify === 'function' ? run(() => {
+      const r = t.notify(b.patient_ids, { callInstead: b.call_instead, dryRun: b.dry_run });  // quiet hours by the tour's own clock
+      if (!b.dry_run) plan = r.plan;
+      return r;
+    }) : Promise.reject(new ApiError('Voice notes did not load. Reload the page.', 0)),
     reset: async () => { t = LumenTour.build(data); event = plan = null; return { ok: true }; },
   };
 }
@@ -401,7 +423,7 @@ function renderRail() {
         <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st">${p.status === 'done' ? '<span class="vh">Done</span>' : p.status === 'pending' ? '<span class="vh">Not started</span>' : esc(ST_WORD[p.status])}</span></div>
         ${p.res ? `<p class="res">${esc(p.res)}</p>` : ''}
         ${p.err ? `<p class="err">${esc(p.err)}</p>${p.retry ? `<button class="btn retry" type="button" data-retry="${i}" data-k="retry-${i}">Retry</button>` : ''}` : ''}
-        ${i === 5 && p.status === 'waiting' && canReview() ? '<button class="btn retry" type="button" data-review data-k="rv-rail">Review and approve</button>' : ''}
+        ${i === 6 && p.status === 'waiting' && canReview() ? '<button class="btn retry" type="button" data-review data-k="rv-rail">Review and approve</button>' : ''}
       </div></li>`;
   }).join(''); }), '#railH');
   $('#railSub').textContent = railSub();
@@ -411,9 +433,17 @@ function renderRail() {
   const act = ol.querySelector('.ph.running, .ph.error') || (S.phases.length > PHASES.length ? ol.lastElementChild : ol.querySelector('[aria-current]'));
   if (act) railScroll(act);
   // re-plan box
-  const ok = S.stage >= 4 && !S.running;
-  for (const el of [$('#instr'), $('#sugg'), $('#send')]) setDisabled(el, !ok);
-  $('#sugg').textContent = isTour() ? (S.tour?.suggestion || '').replace(/ four more$/, ' 4 more') : SUGGEST_LIVE;
+  const ok = S.stage >= 4 && !S.running, sg = suggestions();
+  for (const el of [$('#instr'), $('#send')]) setDisabled(el, !ok);
+  document.querySelectorAll('.sugg').forEach((b, k) => { b.textContent = sg[k] || ''; b.hidden = !sg[k]; setDisabled(b, !ok); });
+}
+// Two example changes: a clinic limit and a patient who declined (the tour: its busiest clinic and its first moved patient)
+function suggestions() {
+  if (!isTour()) return SUGGEST_LIVE;
+  // a used chip moves on to the next patient; tour names repeat ("Elena W."), and the tour reads only a name one patient has
+  const one = id => Object.values(S.names).filter(n => n === pname(id)).length === 1;
+  const p = rows().find(r => r.action === 'transfer' && r.status !== 'declined' && one(r.patient_id));
+  return [(S.tour?.suggestion || '').replace(/ four more$/, ' 4 more'), p ? `${pname(p.patient_id)} declined` : ''];
 }
 // Like scrollIntoView 'nearest', then snapped so a whole row (never a cut one) sits at the top of the list. Near the end
 // of the list that row's top can lie past the last scroll position, so the list gets just enough room below its last row.
@@ -427,14 +457,14 @@ function railScroll(el) {
   if (Math.abs(top - s) >= 1) ol.scrollTo({ top, behavior: reduced.matches ? 'auto' : 'smooth' });
 }
 function railSub() {
-  const n = PHASES.length;
-  let k = S.phases.findIndex(p => p.status === 'running' || p.status === 'error');
+  const n = PHASES.length, w = S.phases.find(p => p.status === 'waiting');
+  // a late plan check (step 6) runs on in the background: the step that waits for you comes first
+  let k = S.phases.findIndex((p, i) => p.status === 'error' || (p.status === 'running' && !(i === 5 && w)));
   if (k < 0 && S.directing) k = S.phases.map(p => p.status).lastIndexOf('done');  // a hold between two steps of the run: the step just shown
   if (k >= 0) {
     const p = S.phases[k];
     return `${S.paused ? 'Paused · ' : ''}${k < n ? `Step ${k + 1} of ${n} · ` : ''}${p.name}${p.status === 'error' ? ' · failed' : ''}`;
   }
-  const w = S.phases.find(p => p.status === 'waiting');
   if (w) return `Waiting for you · ${w.name}`;
   if (S.phases.every(p => p.status === 'done')) return 'Done';
   return S.event ? 'Notice read' : 'Not started';
@@ -470,24 +500,84 @@ function planPhases(p) {
   ];
 }
 function voiceWaiting() {
-  if (S.phases[6].status === 'done') return;
-  setPhase(6, { status: 'waiting', res: isTour() ? 'Open a patient, then play the voice note' : 'Confirm a patient, then play the voice note' });
+  if (S.phases[7].status === 'done') return;
+  setPhase(7, { status: 'waiting', res: 'Select patients, then send voice notes' });
 }
 function approveWaiting(n) {
-  setPhase(5, { status: 'waiting', res: n < S.plan.patients.length ? `${plural(n, 'patient')} still to approve` : 'Nothing is sent until you approve' });
+  setPhase(6, { status: 'waiting', res: n < S.plan.patients.length ? `${plural(n, 'patient')} still to approve` : 'Nothing is sent until you approve' });
+}
+// Step 8: "Voice notes sent to 31 patients · 4 wait until 8 AM · 9 skipped" (zero parts left out)
+function sentLine(sent, queued, skipped) {
+  return [sent && `Voice notes sent to ${plural(sent, 'patient')}`, queued && `${sent ? queued : plural(queued, 'voice note')} wait${queued === 1 ? 's' : ''} until 8 AM`,
+    skipped && `${skipped} skipped`].filter(Boolean).join(' · ');
 }
 function restorePhases() {
   resetPhases();
   if (S.event) setPhase(0, { status: 'done', res: noticeLine() });
   if (!S.plan) return;
   planPhases(S.plan).forEach((o, k) => setPhase(k + 1, { status: 'done', ...o }));
+  setPhase(5, S.check ? { status: 'done', res: checkLine() } : { status: 'running', res: 'Checking the plan…' });  // applyState starts the check
   const drafts = S.plan.patients.filter(r => r.status === 'draft').length;
-  if (!drafts) setPhase(5, { status: 'done', res: 'Every patient is approved' });
+  if (!drafts) setPhase(6, { status: 'done', res: 'Every patient is approved' });
   else approveWaiting(drafts);
-  if (S.plan.patients.some(r => Object.keys(r.audio || {}).length)) setPhase(6, { status: 'done', res: 'A voice note exists for this plan' });
+  const notes = s => S.plan.patients.filter(r => r.note?.status === s).length;
+  if (notes('sent') || notes('queued')) setPhase(7, { status: 'done', res: sentLine(notes('sent'), notes('queued'), 0) });
   else if (!drafts) voiceWaiting();
   const re = (S.plan.audit || []).filter(a => /^re-plan/i.test(a.change));
   re.forEach((a, k) => S.phases.push({ name: `Change: ${a.change.replace(/^re-plan:\s*/i, '')}`, status: 'done', res: k === re.length - 1 ? S.plan.summary || '' : '' }));
+}
+/* ---------- the plan check (POST /check): runs in the background; step 6 and the panel card show it ---------- */
+let checkTok = 0, checkT = 0;
+function runCheck() {
+  clearTimeout(checkT);
+  if (!S.plan || !S.event) return;
+  const tok = ++checkTok;
+  S.checkP = S.B.check({ event_id: S.event.event_id }).then(
+    c => { if (tok === checkTok) { S.check = c; S.checkErr = null; landCheck(); } },
+    e => { if (tok === checkTok) { S.checkErr = e; landCheck(); } });  // the last good check still names who to call instead
+}
+const checkSoon = () => { clearTimeout(checkT); checkT = setTimeout(runCheck, 800); };  // after approvals change statuses
+function dropCheck() { checkTok++; clearTimeout(checkT); S.check = S.checkErr = S.checkP = null; }
+function retryCheck() { setPhase(5, { status: 'running', res: 'Checking the plan…' }); renderRail(); runCheck(); }
+// Step 6 shows the newest check once the run has reached it; a check that lands earlier waits for the run.
+function landCheck() {
+  const ph = S.phases[5];
+  if (!ph || ph.status === 'pending') return;
+  if (S.checkErr && !S.check) { setPhase(5, { status: 'error', err: S.checkErr.message, retry: retryCheck }); announce(`Check the plan failed. ${S.checkErr.message}`); }
+  else if (S.checkErr) return;  // the last good check stays on screen
+  else if (S.check) ph.status === 'done' ? setPhase(5, { res: checkLine() }) : done(5, { res: checkLine() });
+  else return;
+  renderRail(); renderPanel(); syncReview();
+}
+// check texts use patient IDs and 24-hour times ("05:27"); the screen uses names and "5:27 AM"
+const named = t => String(t || '').replace(/\bP\d{3,}\b/g, id => pname(id)).replace(/\b(\d{4}-\d{2}-\d{2}) shift ([1-4])\b/g, (_, date, shift) => slotText({ date, shift: +shift })).replace(/\b([01]\d|2[0-3]):([0-5]\d)\b(?! ?[AP]M)/g, (_, h, m) => `${+h % 12 || 12}:${m} ${+h < 12 ? 'AM' : 'PM'}`);
+// Blocks one line each; warnings one line per code (a "look at" is a code, not an issue).
+function checkParts() {
+  const issues = S.check?.issues || [], groups = {};
+  for (const i of issues) if (i.severity !== 'block') (groups[i.code] ||= []).push(i);
+  return { blocks: issues.filter(i => i.severity === 'block'), groups: Object.entries(groups) };
+}
+function checkLine() {
+  const { blocks, groups } = checkParts();
+  return `${blocks.length ? `${blocks.length} to fix` : 'Nothing to fix'}${groups.length ? ` · ${groups.length} to look at` : ''}`;
+}
+// The check's issues per row: its own, plus an over-capacity block (no patient) on its clinic and slot. call: the call-instead patients.
+function checkIndex() {
+  const by = {}, slotBlocks = [], call = new Set();
+  for (const i of S.check?.issues || []) {
+    if (i.patient_id) (by[i.patient_id] ||= []).push(i); else if (i.severity === 'block') slotBlocks.push(i);
+    if (i.patient_id && CALL.has(i.code)) call.add(i.patient_id);
+  }
+  const of = r => slotBlocks.filter(i => i.facility_id === r.clinic_id && r.slot && i.slot?.date === r.slot.date && i.slot?.shift === r.slot.shift).concat(by[r.patient_id] || []);
+  return { of, call };
+}
+const callThese = (r, ck) => r.action === 'hospital' || (r.flags || []).includes('staff_call') || r.status === 'declined' || r.status === 'no_answer' || ck.call.has(r.patient_id);
+// The furthest stage a row has reached: Draft, Approved, its voice note, Confirmed, Declined, No answer, or Call.
+function pillOf(r, call) {
+  if (['confirmed', 'declined', 'no_answer'].includes(r.status)) return STATUS[r.status];
+  if (r.note?.status === 'queued') return `Sends ${time(r.note.send_at).replace(':00', '')}`;
+  if (NOTE_WORD[r.note?.status] && !(r.note.status === 'stale' && call)) return NOTE_WORD[r.note.status];  // a move that became a staff call: Call
+  return r.status !== 'draft' && call ? 'Call' : STATUS[r.status] || r.status;
 }
 function applyState(st) {
   if (st.clinics) {
@@ -501,6 +591,7 @@ function applyState(st) {
   S.outage = st.outage_area || S.outage;
   S.event = st.event; S.affected = st.affected; S.plan = st.plan; S.diff = null;
   restorePhases();
+  runCheck();
   mapStage(S.plan ? 4 : S.event ? 1 : 0);
   M('focus', S.stage >= 4 ? 'flows' : S.stage ? 'outage' : 'home');
   renderAll();
@@ -580,7 +671,7 @@ async function runDemo(from) {
 // Scene 1, "Notice received" (Mon 9:00 AM): POST /alert, then the notice card slides in over the map.
 async function sceneNotice() {
   S.event = S.plan = S.affected = S.diff = null; S.expanded = null; S.audio = {}; S.speak = {}; S.rowErr = {};
-  resetPhases(); mapStage(0); clearSel(); R('close'); M('setScene', null); $('#panel').scrollTo({ top: 0, behavior: 'instant' });
+  dropCheck(); resetPhases(); mapStage(0); clearSel(); R('close'); M('setScene', null); $('#panel').scrollTo({ top: 0, behavior: 'instant' });
   setPhase(0, { status: 'running', res: 'Reading the simulated PG&E notice' });
   renderAll();
   try { S.event = await S.B.alert(); }
@@ -609,6 +700,7 @@ async function scenesPlan() {
   if (st.clinics) S.raw = Object.fromEntries(st.clinics.map(c => [c.id, c]));
   if (st.rules) S.rules = st.rules;
   S.affected = st.affected; S.plan = plan; S.diff = null;
+  runCheck();  // in the background, so step 6 usually has it
   const res = planPhases(plan), home = cname(homeFac()?.id), pr = pairs(), closed = S.affected.closed_clinic_ids.filter(id => S.fac[id]);
   // Road routes start now, so scene 4 has them: the plan's routes, then every candidate (the search's nearest-first order, R9)
   const listP = routeList();
@@ -645,12 +737,16 @@ async function scenesPlan() {
   S.landed = null;
   M('setCapacity', capacity());
   done(3, res[2]); renderAll();
-  await beat(3500);
+  await beat(2000);
   // 5 "Messages"
   setPhase(4, { status: 'running', res: 'Writing patient messages' }); caption('Writing patient messages'); renderRail();
   await beat(2500);
   done(4, res[3]);
-  // 6 "Approve": the approval list opens (runDemo); nothing is sent until staff approve
+  // 6 "Check the plan": shown about 1.5 s; the run waits for the check 4 s at most, and a late result fills in when it lands
+  setPhase(5, { status: 'running', res: 'Checking the plan…' }); caption('Checking the plan'); renderRail();
+  await Promise.all([beat(1500), Promise.race([S.checkP, new Promise(r => setTimeout(r, 4000))])]);
+  landCheck();
+  // 7 "Approve": the run waits for staff (runDemo); nothing is sent until staff approve
   approveWaiting(plan.patients.filter(r => r.status === 'draft').length);
   caption('Waiting for your approval');
   announce('Approve the plan is waiting for you. Nothing is sent until you approve.');
@@ -661,15 +757,16 @@ async function approve(ids) {
   if (S.approving || S.running || !S.plan) throw new ApiError('Another change is still saving. Try again in a moment.', 0);
   const all = ids === 'all';
   S.approving = true;
-  setPhase(5, { status: 'running', res: all ? 'Approving every patient' : `Approving ${plural(ids.length, 'patient')}` });
+  setPhase(6, { status: 'running', res: all ? 'Approving every patient' : `Approving ${plural(ids.length, 'patient')}` });
   renderRail(); renderPanel();
   let err = null;
   try {
     S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: all ? ['all'] : ids, edits: [] });
     const left = S.plan.patients.filter(r => r.status === 'draft').length;
     if (left) approveWaiting(left);
-    else { done(5, { res: 'Every patient is approved' }); voiceWaiting(); TL('setMode', 'replay'); caption(''); }
-  } catch (e) { err = e; fail(5, e, () => approve(ids).catch(() => {})); }
+    else { done(6, { res: 'Every patient is approved' }); voiceWaiting(); TL('setMode', 'replay'); caption(''); }
+    checkSoon();
+  } catch (e) { err = e; fail(6, e, () => approve(ids).catch(() => {})); }
   S.approving = false;
   renderRail(); renderPanel(); syncReview();
   if (err) throw err;
@@ -680,6 +777,7 @@ async function edit(id, status) {
   try {
     S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: [], edits: [{ patient_id: id, status }] });
     announce(`${pname(id)}: ${STATUS[status].toLowerCase()}.`);
+    checkSoon();
   } catch (e) { S.rowErr[id] = e.message; if (e.status !== 401) banner(e.message); }
   S.busy[id] = false;
   renderPanel(); renderRail(); syncReview();
@@ -687,17 +785,30 @@ async function edit(id, status) {
 // The review panel wants a promise that rejects with the reason the write failed.
 const editOrThrow = (id, status) => edit(id, status).then(() => { if (S.rowErr[id]) throw new ApiError(S.rowErr[id], 0); });
 // Voice for the review panel: live = the Polly voice note (POST /voice), tour = translate and play (POST /speak).
+// Playing one note is a preview: step 8 is done only by sending voice notes (sendNotes).
 async function voiceFor(id, lang) {
   if (isTour()) return speak(id, lang);
-  const first = S.phases[6].status !== 'done';
-  if (first) { setPhase(6, { status: 'running', res: `Making a voice note for ${pname(id)}` }); renderRail(); }
-  try {
-    const { url } = await S.B.voice({ event_id: S.event.event_id, patient_id: id, lang });
-    S.audio[id] = url;
-    if (first) done(6, { res: `Voice note in ${langName(lang)} for ${pname(id)}` });
-    renderRail(); renderList();
-    return { url };
-  } catch (e) { if (first) fail(6, e, null); throw e; }
+  const { url } = await S.B.voice({ event_id: S.event.event_id, patient_id: id, lang });
+  S.audio[id] = url;
+  renderList();
+  return { url };
+}
+// Bulk voice notes (POST /notify, simulated). dryRun: what would happen, nothing saved. Rejects with the reason a send failed.
+async function sendNotes(ids, { dryRun } = {}) {
+  if (!dryRun && (S.running || S.approving)) throw new ApiError('Another change is still saving. Try again in a moment.', 0);
+  const before = { ...S.phases[7] };
+  if (!dryRun) { setPhase(7, { status: 'running', res: `Sending voice notes to ${plural(ids.length, 'patient')}` }); renderRail(); }
+  if (S.checkP) await Promise.race([S.checkP, new Promise(r => setTimeout(r, 25e3))]);  // a check still running: wait, so call-instead patients are known
+  let r;
+  try { r = await S.B.notify({ event_id: S.event.event_id, patient_ids: ids, call_instead: [...checkIndex().call], dry_run: !!dryRun }); }
+  catch (e) { if (!dryRun) fail(7, e, null); throw e; }
+  if (!dryRun) {
+    S.plan = r.plan;
+    if (r.sent.length || r.queued.length) done(7, { res: sentLine(r.sent.length, r.queued.length, r.skipped.length) });
+    else Object.assign(S.phases[7], before);  // nothing went out: the step stays as it was
+    renderRail(); renderPanel(); syncReview();
+  }
+  return { sent: r.sent, queued: r.queued, skipped: r.skipped.map(s => ({ id: s.patient_id, name: pname(s.patient_id), reason: s.reason })) };
 }
 // E10: POST /speak. Text already in `lang` (English, or a tour template translation written ahead of time) goes with
 // translated: true, so Polly reads it as given. Other languages need Amazon Translate first, which this AWS account may block.
@@ -712,10 +823,6 @@ async function speak(id, lang) {
     try { res = await live.speak(own ? { text: own.slice(0, 600), lang, translated: true } : { text: en.slice(0, 600), lang }); }
     catch (e) { throw /translate not permitted/i.test(e.message) ? new ApiError('Translation is not turned on for this AWS account.', e.status) : e; }
     S.speak[k] = { url: res.url || null, voice: res.voice || null, machine: !own, text: own ? null : res.text || null, note: res.url ? null : noVoice(lang) };
-    if (res.url && S.phases[6].status !== 'done') {
-      done(6, { res: `Voice note in ${langName(lang)} for ${pname(id)}` });
-      renderRail();
-    }
   }
   const sp = S.speak[k];
   return { url: sp.url || undefined, text: sp.text || undefined, note: sp.note || undefined };
@@ -732,22 +839,16 @@ async function voice(id) {
   if (S.running || S.busy[id]) return;
   const lang = $(`[data-k="vl-${id}"]`)?.value || 'en';
   S.busy[id] = true; S.rowErr[id] = null; renderList();
-  const first = S.phases[6].status !== 'done';
-  if (first) { setPhase(6, { status: 'running', res: `Making a voice note for ${pname(id)}` }); renderRail(); }
   try {
     const { url } = await S.B.voice({ event_id: S.event.event_id, patient_id: id, lang });
     S.audio[id] = url; S.busy[id] = false; renderList();
     const a = $(`audio[data-id="${id}"]`);
-    if (!a) { if (first) { setPhase(6, { status: 'waiting', res: 'Press play on the voice note' }); renderRail(); } return; }
-    a.addEventListener('playing', () => {
-      if (S.phases[6].status === 'done') return;
-      done(6, { res: `Voice note in ${langName(lang)} for ${pname(id)}` }); renderRail();
-    }, { once: true });
+    if (!a) return;
     a.addEventListener('error', () => { S.rowErr[id] = 'The voice note did not load. Play it again to retry.'; renderList(); }, { once: true });
-    a.play().catch(() => { if (first) { setPhase(6, { status: 'waiting', res: 'Press play on the voice note' }); renderRail(); } });
+    a.play().catch(() => { /* the controls stay; press play */ });
   } catch (e) {
     S.busy[id] = false; S.rowErr[id] = e.message;
-    if (first) fail(6, e, () => voice(id)); else if (e.status !== 401) banner(e.message);
+    if (e.status !== 401) banner(e.message);
     renderList();
   }
 }
@@ -763,12 +864,13 @@ async function replan(instruction) {
     const r = await S.B.replan({ event_id: S.event.event_id, instruction });
     S.plan = r.plan;
     S.diff = r.diff.reduce((m, d) => ((m[d.patient_id] ||= []).push(d), m), {});
-    const n = Object.keys(S.diff).length;
-    done(at(), { res: r.summary || r.plan.summary || `${plural(n, 'patient')} changed` });
+    const n = Object.keys(S.diff).length, read = r.understood?.length ? `Read as: ${r.understood.join(' ')}\n` : '';
+    done(at(), { res: read + (r.summary || r.plan.summary || `${plural(n, 'patient')} changed`) });
     S.phases[3].res = moveLine(r.plan);  // Find open chairs shows the plan as it is now
+    runCheck();
     if (r.plan.patients.some(x => x.status === 'draft')) {
-      setPhase(5, { status: 'waiting', res: `${plural(n, 'patient')} changed · approve them` });
-      if (S.phases[6].status !== 'done') setPhase(6, { status: 'pending', res: '' });  // one step waits at a time
+      setPhase(6, { status: 'waiting', res: `${plural(n, 'patient')} changed · approve them` });
+      if (S.phases[7].status !== 'done') setPhase(7, { status: 'pending', res: '' });  // one step waits at a time
     }
     $('#instr').value = '';
     S.running = false; S.expanded = null; clearSel();
@@ -796,7 +898,7 @@ async function doReset() {
 function clearRun() {
   Object.assign(S, { event: null, affected: null, plan: null, diff: null, expanded: null, filter: 'all',
     audio: {}, speak: {}, rowErr: {}, busy: {}, msgLang: {}, msgOpen: {}, roadFail: false, landed: null });
-  resetPhases(); mapStage(0); clearSel(); R('close'); showNotice(false); TL('setMode', 'replay'); S.ring = false;
+  dropCheck(); resetPhases(); mapStage(0); clearSel(); R('close'); showNotice(false); TL('setMode', 'replay'); S.ring = false;
   M('setScene', null);  // the map goes back to the real power state
   $('#banner').hidden = true; $('#panel').scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -941,10 +1043,11 @@ function planHTML() {
   const cell = (label, color, n) => `<div style="--c:var(${color})"><span>${label}</span><b>${n}</b></div>`;
   return `<div class="plan-h"><h2>Patient plan</h2><span class="pstat${drafts ? '' : ' ok'}">${nd ? `${nd} changed` : drafts ? 'Needs your approval' : 'Approved'}</span></div>
     <div class="cnt">${cell('Move', '--map-transfer', c.transfer)}${cell('Come in early', '--map-early', c.early_session)}${cell('Staff call', '--map-staff', c.hospital)}</div>
+    ${checkHTML()}
     ${drafts ? `<div class="acts"><button class="btn pri big${S.ring ? ' ring' : ''}" type="button" data-act="review" data-k="review-panel"${dis}>${S.approving ? 'Approving…' : `Review and approve ${plural(drafts, 'patient')}`}</button></div>
       <p class="note">Nothing is sent until staff approve.</p>`
     : `<div class="okbox" role="status"><p class="okline">${icon('ck')}Every patient is approved</p><p class="okc">${esc(moveLine(p))}</p>
-      <p class="okn">Next: send voice notes. ${isTour() ? 'Open a patient' : 'Confirm a patient'}, then play their voice note.</p>
+      <p class="okn">${esc(S.phases[7]?.status === 'done' ? S.phases[7].res : 'Next: select patients, then send voice notes.')}</p>
       <button class="btn sec" type="button" data-act="review" data-k="review-panel"${dis}><svg class="i fill"><use href="#i-play"/></svg>Send voice notes</button></div>`}
     ${nd ? `<div class="chgbar"><span>${esc(p.summary || `${plural(nd, 'patient')} changed`)}</span><button class="btn sec sm" type="button" data-act="ack" data-k="ack">Acknowledge changes</button></div>` : ''}
     ${chairsHTML()}
@@ -970,14 +1073,28 @@ function chairsHTML() {
     ${more.length ? `<details class="more"${S.chMore ? ' open' : ''}><summary data-k="chmore">${plural(more.length, 'more clinic')}${icon('chev')}</summary><ul>${more.map(li).join('')}</ul></details>` : ''}
     ${calls ? `<p class="calls">${plural(calls, 'patient')} need${calls === 1 ? 's' : ''} a staff call: no clinic within ${S.rules.drive_cap_minutes ?? 40} minutes had a free chair at their time.</p>` : ''}</section>`;
 }
+// The plan check: blocks first (3 at most), then one line per warning code; hidden until step 6 has a result.
+function checkHTML() {
+  if (!S.check || S.phases[5]?.status !== 'done') return '';
+  const { blocks, groups } = checkParts(), more = blocks.length - 3;
+  const lines = [...blocks.slice(0, 3).map(i => `<li><b class="fix">Fix:</b> ${esc(named(i.text))}</li>`),
+    more > 0 ? `<li class="more">+${more} more in the list</li>` : '',
+    ...groups.map(([code, list]) => {
+      const n = new Set(list.map(i => i.patient_id || i.facility_id)).size;
+      const text = list.length === 1 ? named(list[0].text) : `${plural(n, 'patient')} · ${CHECK_LABEL[code] || cap(code.replace(/_/g, ' '))}`;
+      return `<li>${CALL.has(code) ? '<b class="call">Call instead:</b> ' : ''}${esc(text)}</li>`;
+    })].join('');
+  return `<section class="check" aria-labelledby="ckH"><h3 id="ckH">Check the plan <span>· ${esc(checkLine())}</span></h3>${lines ? `<ul>${lines}</ul>` : ''}</section>`;
+}
 function renderChairs() { const el = $('#panel .chairs'); if (el) keepFocus(() => { el.outerHTML = chairsHTML(); }); }
 function listHTML() {
-  const list = rows().filter(FILTERS[S.filter] || FILTERS.all);
-  return list.length ? list.map(rowHTML).join('') : '<li class="empty">No patients match this filter.</li>';
+  const list = rows().filter(FILTERS[S.filter] || FILTERS.all), ck = checkIndex();
+  return list.length ? list.map(r => rowHTML(r, ck)).join('') : '<li class="empty">No patients match this filter.</li>';
 }
 function renderList() { const ul = $('#pts'); if (ul) keepFocus(() => keepScroll($('#panel'), () => keepAudio(() => { ul.innerHTML = listHTML(); }))); }
 function changeWords(entries) {
   const f = Object.fromEntries(entries.map(e => [e.field, e])), out = [];
+  if (f.status?.to === 'declined') return 'Declined · staff will call';  // the chair and the time are gone too; say it once
   const toStaff = f.action?.to === 'hospital';
   if (f.clinic_id) out.push(toStaff ? `Moved from ${cname(f.clinic_id.from)} to the staff call list` : `Moved from ${cname(f.clinic_id.from)} to ${cname(f.clinic_id.to)}`);
   if (f.action && !toStaff) out.push(`now ${ACTION[f.action.to]?.label.toLowerCase() || f.action.to}`);
@@ -1010,7 +1127,7 @@ function whyWords(r) {
 }
 const whyLine = r => whyWords(r) ? `Why ${r.rank === 1 ? 'first' : `number ${r.rank}`}: ${whyWords(r)}` : '';
 const gapOf = r => (r.flags || []).includes('long_gap_after');
-function rowHTML(r) {
+function rowHTML(r, ck) {
   const id = r.patient_id, open = S.expanded === id, chg = S.diff?.[id], a = ACTION[r.action] || ACTION.notify_only;
   const dest = r.clinic_id ? cname(r.clinic_id) : r.action === 'notify_only' ? 'Usual clinic' : 'No clinic';
   const when = r.slot ? `<span class="m">${esc(slotText(r.slot))}</span>` : r.action === 'hospital' ? '<span class="nochair">No chair fits</span>' : '';
@@ -1021,7 +1138,7 @@ function rowHTML(r) {
       <span class="rb">
         <span class="r1"><span class="nm">${esc(pname(id))}</span><span class="tag ${a.cls}">${a.label}</span></span>
         <span class="r2"><span>${esc(dest)}</span>${when}</span>
-        <span class="r3"><span>${esc(rideWord(r))}</span><span>${lang ? `${esc(lang)} · ` : ''}<span class="s-${r.status}">${STATUS[r.status] || esc(r.status)}</span></span></span>
+        <span class="r3"><span>${esc(rideWord(r))}</span><span>${lang ? `${esc(lang)} · ` : ''}<span class="s-${r.status}">${esc(pillOf(r, callThese(r, ck)))}</span></span></span>
         ${chg ? `<span class="chgt"><span class="tag">Changed</span><span>${esc(changeWords(chg))}</span></span>` : ''}
       </span>
     </button>
@@ -1030,7 +1147,7 @@ function rowHTML(r) {
 }
 // Message tabs: the patient's language first, then English. In the tour, a non-English message is a template written ahead of time.
 const msgLangs = r => Object.keys(r.messages || {}).filter(l => l === 'en' || l === (S.lang[r.patient_id] || 'en')).sort((a, b) => (a === 'en') - (b === 'en'));
-const tabLabel = l => `${langName(l)}${isTour() && l !== 'en' ? ' · Template translation' : ''}`;
+const tabLabel = l => `${langName(l)}${isTour() && l !== 'en' ? ' · Prepared translation' : ''}`;
 function detailHTML(r) {
   const id = r.patient_id, langs = msgLangs(r), leave = leaveLine(r), why = whyLine(r);
   const cur = [S.msgLang[id], S.lang[id]].find(l => langs.includes(l)) || langs[0];
@@ -1056,7 +1173,7 @@ function actionsHTML(r, langs, cur) {
       S.busy[id] ? (own ? 'Making voice note…' : 'Translating…') : own ? 'Play voice note' : 'Translate and play'}</button>`;
     if (sp) spoken = `<div class="spk">${sp.machine && sp.text ? `<p class="small">Machine translation</p><p class="msgt" lang="${esc(lang)}">${esc(sp.text)}</p>` : ''}${
       sp.url ? `<audio controls preload="auto" src="${esc(sp.url)}" data-id="${id}"></audio>` : sp.note ? `<p class="small">${esc(sp.note)}</p>` : ''}</div>`;
-  } else if (ok && langs.length) voiceUI = `<label class="selw sm"><span class="vh">Voice note language</span><select data-k="vl-${id}">${langs.map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${esc(langName(l))}</option>`).join('')}</select>${icon('chev')}</label>
+  } else if ((ok || r.status === 'approved') && langs.length) voiceUI = `<label class="selw sm"><span class="vh">Voice note language</span><select data-k="vl-${id}">${langs.map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${esc(langName(l))}</option>`).join('')}</select>${icon('chev')}</label>
     <button class="btn sec sm" type="button" data-act="voice" data-id="${id}" data-k="voice-${id}"${dis}><svg class="i fill"><use href="#i-play"/></svg>${S.busy[id] ? 'Making voice note…' : 'Play voice note'}</button>`;
   return `<div class="racts">
     ${ok ? '' : r.status === 'draft' ? `<button class="btn sec sm" type="button" disabled>${icon('ck')}Confirm after approval</button>`
@@ -1094,20 +1211,28 @@ const canReview = () => !!(window.LumenReview && S.plan && S.stage >= 4);
 const WHAT = { early_session: r => `Comes in early at ${cname(r.clinic_id)}`, transfer: r => `Moves to ${cname(r.clinic_id)}`,
   hospital: () => 'Staff will call', notify_only: () => 'Gets a notice; the usual session stays' };
 // View models for review.js: plain words only, no internal codes.
+// flag: the row's most useful check issue (blocks, then call instead, then the rest; the every-row warnings last).
+const flagRank = i => i.severity === 'block' ? 0 : CALL.has(i.code) ? 1 : EVERY_ROW.has(i.code) ? 3 : 2;
 function viewRows() {
+  const ck = checkIndex();
   return rows().map(r => {
     const id = r.patient_id, st = r.status, move = r.action === 'early_session' || r.action === 'transfer', rd = patientRoad(r);
     const lang = S.lang[id] || 'en', hasMsg = Object.keys(r.messages || {}).length > 0, own = !!r.messages?.[lang];
     const messages = Object.fromEntries(msgLangs(r).map(l => [l, r.messages[l]]));
-    const canVoice = isTour() ? !!r.messages?.en : move && st === 'confirmed' && hasMsg;
+    const okd = st === 'approved' || st === 'confirmed', canVoice = isTour() ? !!r.messages?.en : move && okd && hasMsg;
+    const issues = ck.of(r).filter(i => !EVERY_ROW.has(i.code)).sort((a, b) => flagRank(a) - flagRank(b)), top = issues[0], call = callThese(r, ck);
     return {
+      note: r.note ? { status: r.note.status, sentAt: r.note.sent_at, sendAt: r.note.send_at } : null,
+      flag: top ? { severity: top.severity, text: named(top.text), callInstead: CALL.has(top.code) } : null,
+      readyToSend: move && okd && hasMsg && (!r.note || r.note.status === 'stale') && top?.severity !== 'block' && !ck.call.has(id),
+      callThese: call,
       id, rank: r.rank, name: pname(id), lang, langName: S.langs[id] || langName(lang), action: r.action,
       what: (WHAT[r.action] || WHAT.notify_only)(r), where: r.clinic_id ? destName(r) : '',
       when: r.slot ? slotText(r.slot) : r.action === 'hospital' ? 'No chair fits' : '',
       pickup: r.slot ? `${rideWord(r)} · ${leaveBy(r)}` : rideWord(r),
       road: r.slot ? { minutes: r.drive_minutes, miles: rd?.miles ?? null, tooFar: r.drive_minutes > (S.rules.drive_cap_minutes ?? 40) } : null,
       summary: summaryOf(r), leave: leaveLine(r), why: whyLine(r), gap: gapOf(r),
-      status: st, statusText: STATUS[st] || st, changed: !!S.diff?.[id], changeText: S.diff?.[id] ? changeWords(S.diff[id]) : null,
+      status: st, statusText: pillOf(r, call), changed: !!S.diff?.[id], changeText: S.diff?.[id] ? changeWords(S.diff[id]) : null,
       messages,
       msgLabels: Object.fromEntries(Object.keys(messages).map(l => [l, tabLabel(l)])),
       canConfirm: move && st !== 'draft' && st !== 'confirmed',
@@ -1115,9 +1240,10 @@ function viewRows() {
         : st === 'draft' ? 'Approve this row first' : st === 'confirmed' ? 'Already confirmed' : '',
       canVoice,
       voiceHint: canVoice ? (!isTour() ? '' : lang === 'en' ? 'Plays the English message. Nothing is sent.'
-          : own ? `The ${langName(lang)} message is a template translation, written ahead of time. Nothing is sent.`
-          : `No ${langName(lang)} template: the English message is translated first. Nothing is sent.`)
-        : isTour() ? 'This row has no message' : !move ? 'Only moves get a voice note' : st !== 'confirmed' ? 'Mark the row confirmed first' : 'This row has no message',
+          : own ? `The ${langName(lang)} message is a prepared translation, written ahead of time. Nothing is sent.`
+          : `No prepared ${langName(lang)} message: the English message is translated first. Nothing is sent.`)
+        : isTour() ? 'This row has no message' : !move ? 'Only moves get a voice note' : st === 'draft' ? 'Approve this row first'
+          : !okd ? `${STATUS[st] || st}: no voice note` : 'This row has no message',
     };
   });
 }
@@ -1131,20 +1257,8 @@ function openReview(opener) {
     onConfirm: id => editOrThrow(id, 'confirmed'),
     onVoice: (id, lang) => voiceFor(id, lang),
     onSelect: id => { selectRow(id, false); S.listSel = true; },  // draws the road route; its time reaches the review through update()
-    onNext: toVoice,
+    onSend: (ids, o) => sendNotes(ids, o),
   });
-}
-// Step 7 "Send voice notes": the list closes and the first approved move opens in the panel, its confirm or voice button focused.
-function toVoice() {
-  const r = rows().find(x => (x.action === 'transfer' || x.action === 'early_session') && (x.status === 'approved' || x.status === 'confirmed'));
-  if (r) {
-    const id = r.patient_id, k = isTour() ? `spk-${id}` : r.status === 'confirmed' ? `voice-${id}` : `cf-${id}`;
-    const go = () => ($(`[data-k="${k}"]`) || $(`[data-k="row-${id}"]`))?.focus();
-    selectRow(id, false); openPanel(true);
-    const dlg = $('dialog.rv[open]');  // the list hands focus back to its opener on close; this runs after that
-    if (dlg) dlg.addEventListener('close', go, { once: true }); else go();
-  }
-  R('close');
 }
 // After each write, and when a road route arrives, the review gets fresh rows (it keeps its filters, search, scroll and selection).
 function syncReview() { if (canReview()) R('update', viewRows()); }
@@ -1289,7 +1403,7 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $('#panel').classList.contains('open')) { openPanel(false); $('#planTog').focus(); }
   });
-  // R8: closing the review list after picking a row there shows every route again (toVoice's row stays open)
+  // R8: closing the review list after picking a row there shows every route again
   document.addEventListener('close', e => { if (S.listSel && e.target.matches?.('dialog.rv')) { clearSel(); renderPanel(); } }, true);
   $('#phases').addEventListener('click', e => {
     const b = e.target.closest('[data-retry], [data-review]');
@@ -1298,7 +1412,7 @@ function bind() {
   $('#pause').addEventListener('click', togglePause);
   $('#replan').addEventListener('submit', e => { e.preventDefault(); replan($('#instr').value); });
   $('#instr').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); replan($('#instr').value); } });
-  $('#sugg').addEventListener('click', () => { $('#instr').value = $('#sugg').textContent; $('#instr').focus(); });
+  $('#suggs').addEventListener('click', e => { const b = e.target.closest('.sugg'); if (!b || b.disabled) return; $('#instr').value = b.textContent; $('#instr').focus(); });
   $('#panel').addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
     const id = b.dataset.id;

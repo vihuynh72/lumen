@@ -1,5 +1,5 @@
 /* Lumen Santa Clara tour (window.LumenTour): the plan pipeline computed in the page, in the live API shapes
-   (contracts/schemas). Ports backend/lumen affected, rank_fallback, match, text_fallback, replan_tools and approve. */
+   (contracts/schemas). Ports backend/lumen affected, rank_fallback, match, text_fallback, replan_tools, approve, check and notify. */
 (function () {
   'use strict';
 
@@ -306,28 +306,41 @@
     let current = v1, capNow = baseCap;  // the latest version and the chairs its match used; replan and approve build on it. Reset = LumenTour.build(data) again.
     const stamp = version => iso(NOW + (version - 1) * MIN);  // shortcut: one demo minute per version, not wall time
 
+    // Two changes, as the live re-plan reads them: "(center) can only take N more" and "(patient) declined".
     function replan(instruction) {
-      const t = performance.now();
-      const m = /^\s*(.+?)\s+can only take (\d+|\w+) more(\s+patients?)?\W*$/i.exec(String(instruction || ''));
+      const t = performance.now(), said = String(instruction || '');
+      const m = /^\s*(.+?)\s+can only take (\d+|\w+) more(\s+patients?)?\W*$/i.exec(said);
       const n = m && (/^\d+$/.test(m[2]) ? Number(m[2]) : NUMBERS[m[2].toLowerCase()]);
-      if (n == null) throw new Error("The tour understands only '(center name) can only take N more'.");
-      const name = m[1].trim().toLowerCase();
-      const hits = facilities.filter(c => c.kind === 'dialysis' && c.name.toLowerCase().includes(name));
-      const exact = hits.filter(c => c.name.toLowerCase() === name);
-      if ((exact.length || hits.length) !== 1)
-        throw new Error(`'${m[1].trim()}' matches ${hits.map(c => c.name).join(', ') || 'no center'}; use the full center name.`);
-      const center = (exact.length ? exact : hits)[0];
-      if (closedIds.includes(center.id)) throw new Error(`${center.name} is closed in this shutoff; name a receiving center.`);
-
-      const old = current, work = structuredClone(old.patients);
-      // N more = at most N visiting patients at that center across all slots: pinned and confirmed rows first, then rank order
-      const keep = work.filter(r => r.clinic_id === center.id && r.slot && r.status !== 'declined')
-        .sort((a, b) => (!(a.pinned || a.status === 'confirmed') - !(b.pinned || b.status === 'confirmed')) || a.rank - b.rank).slice(0, n);
-      const cap = new Map(baseCap);
-      for (const k of cap.keys()) if (k.startsWith(center.id + '|'))
-        cap.set(k, keep.filter(r => `${center.id}|${r.slot.date}|${r.slot.shift}` === k).length);
-      const locked = new Map(work.filter(r => r.pinned || ['confirmed', 'declined'].includes(r.status) || (r.slot && r.clinic_id !== center.id))
-        .map(r => [r.patient_id, r]));
+      const gone = n == null && /^\s*(.+?)\s+declined\W*$/i.exec(said);
+      if (n == null && !gone) throw new Error("Lumen could not read that change. Try '(center name) can only take 4 more' or '(patient name) declined'.");
+      const old = current, work = structuredClone(old.patients), cap = new Map(capNow);  // earlier cuts still hold
+      let center, who, locked;
+      if (gone) {
+        const key = s => s.trim().toLowerCase().replace(/\.$/, ''), want = key(gone[1]);
+        const full = work.filter(r => key(byPid[r.patient_id].name) === want);
+        const hits = full.length ? full : work.filter(r => key(byPid[r.patient_id].name.split(' ')[0]) === want);  // a first name only when one patient has it
+        // tour names repeat ("Elena W."), so a shared full name needs the patient's own Decline button
+        if (hits.length !== 1) throw new Error(hits.length ? `${hits.length} patients are named '${gone[1].trim()}'. ` +
+          (full.length ? 'Open the patient and press Decline.' : 'Use the full name.') : `No patient in the plan is named '${gone[1].trim()}'.`);
+        who = hits[0];
+        who.status = 'declined';
+        locked = new Map(work.filter(r => r.pinned || ['confirmed', 'declined'].includes(r.status) || r.slot).map(r => [r.patient_id, r]));
+      } else {
+        const name = m[1].trim().toLowerCase();
+        const hits = facilities.filter(c => c.kind === 'dialysis' && c.name.toLowerCase().includes(name));
+        const exact = hits.filter(c => c.name.toLowerCase() === name);
+        if ((exact.length || hits.length) !== 1)
+          throw new Error(`'${m[1].trim()}' matches ${hits.map(c => c.name).join(', ') || 'no center'}; use the full center name.`);
+        center = (exact.length ? exact : hits)[0];
+        if (closedIds.includes(center.id)) throw new Error(`${center.name} is closed in this shutoff; name a receiving center.`);
+        // N more = at most N visiting patients at that center across all slots: pinned and confirmed rows first, then rank order
+        const keep = work.filter(r => r.clinic_id === center.id && r.slot && r.status !== 'declined')
+          .sort((a, b) => (!(a.pinned || a.status === 'confirmed') - !(b.pinned || b.status === 'confirmed')) || a.rank - b.rank).slice(0, n);
+        for (const k of cap.keys()) if (k.startsWith(center.id + '|'))
+          cap.set(k, keep.filter(r => `${center.id}|${r.slot.date}|${r.slot.shift}` === k).length);
+        locked = new Map(work.filter(r => r.pinned || ['confirmed', 'declined'].includes(r.status) || (r.slot && r.clinic_id !== center.id))
+          .map(r => [r.patient_id, r]));
+      }
       const result = match(work.slice().sort((a, b) => a.rank - b.rank), cap, locked);
       const before = Object.fromEntries(old.patients.map(r => [r.patient_id, r]));
       const changed = new Set();
@@ -335,17 +348,26 @@
         const o = before[r.patient_id];
         if (DECISION.every(k => same(r[k], o[k]))) Object.assign(r, structuredClone({ reason_text: o.reason_text, messages: o.messages, audio: o.audio, status: o.status }));
         else changed.add(r.patient_id);
+        if (o.note) r.note = changed.has(r.patient_id) ? { ...o.note, status: 'stale' } : structuredClone(o.note);  // a moved row's note is out of date
       }
       const diff = [];
       for (const r of result.patients) for (const f of DIFF_FIELDS)
         if (!same(before[r.patient_id][f], r[f])) diff.push({ patient_id: r.patient_id, field: f, from: before[r.patient_id][f], to: r[f] });
       const tReplan = Math.round(performance.now() - t), tText = performance.now();
       fillText(result.patients, changed);
-      const moved = new Set(diff.filter(d => d.field === 'clinic_id' && d.from === center.id).map(d => d.patient_id)).size;
-      const toStaff = result.overflow.filter(id => !old.overflow.includes(id)).length;
       const count = (k, noun, one, many) => `${k} ${noun}${k === 1 ? '' : 's'} ${k === 1 ? one : many}`;
-      const text = moved ? `${center.name} can take only ${n} more, so ${count(moved, 'patient', 'moves', 'move')} to other chairs or the staff call list.` +
-        (toStaff ? ` ${count(toStaff, 'more patient', 'needs', 'need')} a staff call.` : '') : `${center.name} can take only ${n} more; no patient needs to move.`;
+      let text, understood;  // understood: one sentence per applied change, as the live re-plan returns it
+      if (who) {
+        const back = old.overflow.filter(id => !result.overflow.includes(id)).length;
+        understood = [`${byPid[who.patient_id].name} will not come. Staff call them.`];
+        text = back ? `${count(back, 'patient', 'moves', 'move')} from the staff call list to the open chair.` : 'No other patient needs to move.';
+      } else {
+        const moved = new Set(diff.filter(d => d.field === 'clinic_id' && d.from === center.id).map(d => d.patient_id)).size;
+        const toStaff = result.overflow.filter(id => !old.overflow.includes(id)).length;
+        understood = [`${center.name} takes at most ${n} more patient${n === 1 ? '' : 's'}.`];
+        text = moved ? `${center.name} can take only ${n} more, so ${count(moved, 'patient', 'moves', 'move')} to other chairs or the staff call list.` +
+          (toStaff ? ` ${count(toStaff, 'more patient', 'needs', 'need')} a staff call.` : '') : `${center.name} can take only ${n} more; no patient needs to move.`;
+      }
       const ts = stamp(old.version + 1);
       const timingMs = { replan: tReplan, text: Math.round(performance.now() - tText) };
       timingMs.total = Math.max(Math.round(performance.now() - t), timingMs.replan + timingMs.text);
@@ -353,7 +375,7 @@
       current = { ...old, version: old.version + 1, created_at: ts, timing_ms: timingMs, patients: result.patients, overflow: result.overflow,
         audit: old.audit.concat({ ts, actor: 'Rosa', change: `re-plan: ${String(instruction).trim().slice(0, 200)}` }), summary: text,
         ai_sources: { ...old.ai_sources, replan: 'fallback' } };
-      return { plan: current, diff, summary: text };
+      return { plan: current, diff, summary: text, understood };
     }
 
     function approve(patientIds, edits = []) {  // backend approve.apply; throws Error on a bad request
@@ -384,11 +406,82 @@
       return (current = next);
     }
 
+    // POST /check in the live shape: code rules on the tour's synthetic fields, sentences with patient IDs (the screen shows names).
+    // The tour has no heart failure field and keeps the usual day, so heart_failure_long_gap never applies here.
+    function check() {
+      const hard = [], soft = [], booked = new Map();
+      const add = (to, severity, code, patient_id, facility_id, text, more) =>
+        to.push({ patient_id, facility_id, severity, code, text, source: 'template', ...more });
+      for (const r of current.patients) {
+        if (r.action === 'notify_only' || r.status === 'declined' || !r.clinic_id) continue;
+        const pid = r.patient_id, c = fac[r.clinic_id], pickup = r.pickup_time && r.pickup_time.slice(11, 16);
+        if (r.slot) { const k = `${c.id}|${r.slot.date}|${r.slot.shift}`; booked.set(k, (booked.get(k) || 0) + 1); }
+        if (r.action === 'transfer' && r.drive_minutes > DRIVE_CAP)
+          add(hard, 'warning', 'long_drive', pid, c.id, `${pid} has a ${r.drive_minutes}-minute drive to ${c.name}, longer than the ${DRIVE_CAP}-minute limit.`);
+        if (byPid[pid].flags.includes('alone') && pickup && !(pickup >= '06:00' && pickup < '19:00'))
+          add(soft, 'warning', 'lives_alone_night_pickup', pid, c.id, `${pid} lives alone and has a pickup in the dark at ${pickup}.`, { soft: true });
+      }
+      for (const [k, count] of booked) {
+        const [id, date, shift] = k.split('|'), chairs = capNow.get(k) || 0;
+        if (count > chairs) add(hard, 'block', 'over_capacity', null, id,
+          `${fac[id].name} has ${chairs} open chairs on ${date} shift ${shift}, but the plan sends ${count} patients.`, { slot: { date, shift: +shift } });
+      }
+      const issues = hard.sort((a, b) => (a.severity !== 'block') - (b.severity !== 'block')).concat(soft);
+      return { issues, counts: { block: issues.filter(i => i.severity === 'block').length, warning: issues.filter(i => i.severity === 'warning').length },
+        explained_by: 'template' };
+    }
+
+    // backend check.blocks_row: the block names the patient, or it is the over-capacity block of the row's slot
+    const blocksRow = (i, r) => i.severity === 'block' &&
+      (i.patient_id === r.patient_id || (i.patient_id === null && i.facility_id === r.clinic_id && same(i.slot, r.slot)));
+
+    // POST /notify (simulated: nothing leaves Lumen). One outcome per row; the first matching reason wins. Throws Error on a bad request.
+    function notify(patientIds, { callInstead, dryRun = false, now } = {}) {
+      const t = performance.now(), calls = callInstead == null ? [] : callInstead;
+      if (!Array.isArray(patientIds) || !patientIds.length || !patientIds.every(p => typeof p === 'string'))
+        throw new Error('patient_ids must be a non-empty list of patient IDs');
+      if (!Array.isArray(calls)) throw new Error('call_instead must be a list');
+      const next = structuredClone(current), rows = new Map(next.patients.map(r => [r.patient_id, r]));
+      for (const id of calls) if (!rows.has(id)) throw new Error(`unknown patient ${id}`);
+      const ids = patientIds.length === 1 && patientIds[0] === 'all' ? [...rows.keys()] : [...new Set(patientIds)];
+      const blocks = check().issues.filter(i => i.severity === 'block');
+      // The tour clock (a new version's timestamp) unless the caller sets one. Quiet hours: before 08:00 or from 20:00, local time.
+      const ms = now == null ? Date.parse(stamp(current.version + 1)) : new Date(now).getTime(), hour = local(ms).getUTCHours();
+      const quiet = hour < 8 || hour >= 20;
+      let wake = Date.parse(iso(ms).slice(0, 10) + 'T08:00:00-07:00');
+      if (wake <= ms) wake += 1440 * MIN;
+      const sent = [], queued = [], skipped = [];
+      for (const id of ids) {
+        const r = rows.get(id);
+        if (!r) throw new Error(`unknown patient ${id}`);
+        const lang = byPid[id].language;
+        const reason = r.status === 'declined' ? 'declined'
+          : r.action === 'hospital' || r.flags.includes('staff_call') ? 'staff_call'
+          : !['early_session', 'transfer'].includes(r.action) || !Object.keys(r.messages).length ? 'no_message'
+          : r.status === 'draft' ? 'not_approved'
+          : blocks.some(b => blocksRow(b, r)) ? 'blocked'
+          : calls.includes(id) ? 'call_instead'
+          : r.note && ['sent', 'queued'].includes(r.note.status) ? 'already_sent' : null;
+        if (reason) { skipped.push({ patient_id: id, reason }); continue; }
+        // one note per patient, in the patient's language (English when the row has no message in it)
+        r.note = { status: quiet ? 'queued' : 'sent', sent_at: quiet ? null : iso(ms), send_at: quiet ? iso(wake) : null,
+          lang: r.messages[lang] ? lang : 'en', channel: 'simulated voice note', version: current.version };
+        (quiet ? queued : sent).push(id);
+      }
+      const k = sent.length + queued.length;
+      if (k && !dryRun) {
+        next.audit.push({ ts: iso(ms), actor: 'Rosa', change: `voice notes ${queued.length ? 'queued for 08:00 for' : 'sent to'} ${k} patient${k === 1 ? '' : 's'} (simulated)` });
+        Object.assign(next, { version: current.version + 1, created_at: iso(ms), timing_ms: { total: Math.round(performance.now() - t) } });
+        current = next;
+      }
+      return { plan: current, sent, queued, skipped, dry_run: !!dryRun };
+    }
+
     // The receiving center with the most transfers, for the rail's suggestion chip.
     const busiest = Object.entries(v1.patients.reduce((a, r) => (r.action === 'transfer' && (a[r.clinic_id] = (a[r.clinic_id] || 0) + 1), a), {}))
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
 
-    return { facilities, patients, outage: data.outage, event: { ...EVENT }, affected, plan: v1, replan, approve,
+    return { facilities, patients, outage: data.outage, event: { ...EVENT }, affected, plan: v1, replan, approve, check, notify,
       suggestion: busiest ? `${fac[busiest[0]].name} can only take four more` : '',
       // Chairs per powered hemodialysis center, from the latest plan: open = chairs the match could use, used = rows holding one.
       get capacity() {
