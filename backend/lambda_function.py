@@ -86,16 +86,18 @@ def rank(affected, patients, rules, drive):
         return rank_by_rules(affected, patients, rules, drive)
 
 
-def replan_with_bedrock(instruction, plan, tools):
+def replan_with_bedrock(instruction, plan, tools, clinics):
     from lumen.ai.replan import replan
-    return replan(instruction, plan, tools)
+    return replan(instruction, plan, tools, clinics)  # seed clinics: names and slots for the model, no patient data
 
 
 def write_text(plan, seed, sources, only_ids=None):
-    """Bedrock text (write_plan_text returns the plan with text filled), else the English template. sources["text"] says which."""
+    """Bedrock text (write_plan_text), else AI's code templates in each patient's language (template_plan_text),
+    else the English template. sources["text"] is "bedrock" or "fallback"."""
+    langs = {p["id"]: p["language"] for p in seed["patients"]}
     try:
         from lumen.ai.text import write_plan_text
-        out = with_deadline("text", write_plan_text, plan, seed["clinics"], {p["id"]: p["language"] for p in seed["patients"]}, only_ids)
+        out = with_deadline("text", write_plan_text, plan, seed["clinics"], langs, only_ids)
         if not isinstance(out, dict) or "patients" not in out:
             raise ValueError("write_plan_text did not return a plan")
         log(step="text", source="bedrock")
@@ -104,6 +106,15 @@ def write_text(plan, seed, sources, only_ids=None):
     except Exception as exc:
         log(step="text", fallback=True, reason=repr(exc)[:300])
         sources["text"] = "fallback"
+    try:
+        from lumen.ai.text import template_plan_text
+        out = template_plan_text(plan, seed["clinics"], langs, only_ids)
+        if not isinstance(out, dict) or "patients" not in out:
+            raise ValueError("template_plan_text did not return a plan")
+        log(step="text", source="template_plan_text")
+        return out
+    except Exception as exc:
+        log(step="text", fallback=True, source="text_fallback", reason=repr(exc)[:300])
         return text_fallback.fill(plan, seed["clinics"], only_ids)
 
 
@@ -195,7 +206,7 @@ def plan(body):
         "patients": matched["patients"], "overflow": matched["overflow"], "audit": [], "summary": "",
     }
     new = timed(timing, "text", write_text, new, seed, sources)
-    new["ai_sources"] = sources  # the Bedrock text step may return a copy made before it set its source
+    new["timing_ms"], new["ai_sources"] = timing, sources  # the text step returns a deep copy made before total and its source were set
     timing["total"] = round((time.perf_counter() - start) * 1000)
     timed({}, "save", lambda: (store.delete_plans(event_id), store.save_plan(new)))  # logged, not in timing_ms: total is final
     return with_names(new, patients)
@@ -214,7 +225,7 @@ def replan_route(body):
     tools = timed(timing, "tools", build_tools, event_id, old, seed)
     t = time.perf_counter()
     try:
-        result, sources["replan"] = with_deadline("replan", replan_with_bedrock, instruction, old, tools), "bedrock"
+        result, sources["replan"] = with_deadline("replan", replan_with_bedrock, instruction, old, tools, seed["clinics"]), "bedrock"
         log(step="replan", source="bedrock")
     except Exception as exc:
         log(step="replan", fallback=True, reason=repr(exc)[:300])
