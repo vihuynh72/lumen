@@ -16,7 +16,7 @@ The primary user is a dialysis clinic administrator: Rosa, the manager of SHC Ev
 
 Their situation: PG&E sends a Public Safety Power Shutoff (PSPS) warning about 48 hours before it cuts power. Before the shutoff starts, the administrator must find out which patients miss a treatment, find each one another slot, and tell every patient and every receiving clinic. In the Santa Clara demo the shutoff closes three clinics (SHC Evergreen, SHC Silver Creek and SHC Santa Teresa), and the home clinic plans for the 96 patients of all three.
 
-Secondary audience: hackathon judges (Spark Hill Hackathon 2026, AWS track) who watch a recorded or live demo.
+Secondary audience: hackathon judges (SpartHill Hackathon 2026, AWS track) who watch a recorded or live demo.
 
 ## Product Purpose
 

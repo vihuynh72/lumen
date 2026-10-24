@@ -2,7 +2,7 @@
 
 **Lumen plans dialysis care before a planned power shutoff. It turns a PG&E shutoff notice into a slot and a message for every affected patient, and one staff approval tells everyone.**
 
-Built for Spark Hill Hackathon 2026 at SJSU, AWS track, by Group 23.
+Built for SpartHill Hackathon 2026 at SJSU, AWS track, by Group 23.
 
 **Live demo: [main.d1eh2uukook6ji.amplifyapp.com](https://main.d1eh2uukook6ji.amplifyapp.com)**
 
