@@ -206,5 +206,7 @@ def test_lazy_client_uses_environment_and_disables_sdk_retries(monkeypatch, regi
         assert factory.call_args.kwargs["config"].retries == {
             "mode": "standard", "total_max_attempts": 1,
         }
+        assert factory.call_args.kwargs["config"].connect_timeout == 5
+        assert factory.call_args.kwargs["config"].read_timeout == 20
     finally:
         bedrock._get_client.cache_clear()
