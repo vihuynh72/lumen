@@ -1,11 +1,13 @@
 """Bounded orchestration over injected tools; Backend owns every plan edit."""
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 import json
+import logging
 import os
 from pathlib import Path
 import re
+from time import monotonic
 
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -13,6 +15,7 @@ from lumen.ai import bedrock
 
 
 PROMPT = Path(__file__).with_name("prompts").joinpath("replan.md").read_text()
+logger = logging.getLogger(__name__)
 ROW_FIELDS = ("patient_id", "rank", "action", "clinic_id", "slot", "status", "pinned")
 MUTATORS = frozenset(("set_clinic_capacity", "pin_patient", "decline_patient"))
 PARAMETERS = {
@@ -46,7 +49,13 @@ TOOL_SCHEMAS = [{"toolSpec": {
 class _State:
     patients: frozenset
     clinics: frozenset
-    slots: frozenset
+    slots: dict
+    requested_clinics: frozenset
+    requested_patients: frozenset
+    limits: dict
+    capacities: dict = field(default_factory=dict)
+    attempted: bool = False
+    failures: frozenset = frozenset()
     mutated: bool = False
     matched: dict | None = None
     diff: list | None = None
@@ -64,10 +73,34 @@ def _clinic_context(clinics):
                        for slot in clinic["slots"]]} for clinic in clinics]
 
 
-def _known(plan, clinics):
+def _mentions(text, value):
+    return re.search(rf"(?<!\w){re.escape(' '.join(value.casefold().split()))}(?!\w)", text)
+
+
+def _limits(text, clinics):
+    numbers = dict(zip("one two three four five six seven eight nine ten".split(), range(1, 11)))
+    limits = {}
+    for match in re.finditer(r"\bcan only take (\d+|" + "|".join(numbers) + r") more\b", text):
+        prefix = text[:match.start()].rstrip(" ():,")
+        hits = {c["id"] for c in clinics for alias in (c["id"], c["name"])
+                if re.search(rf"(?<!\w){re.escape(' '.join(alias.casefold().split()))}$", prefix)}
+        if len(hits) != 1:
+            raise ValueError("instruction not understood")
+        cid = next(iter(hits))
+        number = match[1]
+        limit = int(number) if number.isdigit() else numbers[number]
+        limits = {**limits, cid: min(limits.get(cid, limit), limit)}
+    return limits
+
+
+def _known(plan, clinics, instruction):
+    text = " ".join(instruction.casefold().split())
     return _State(frozenset(r["patient_id"] for r in plan["patients"]),
                   frozenset(c["id"] for c in clinics),
-                  frozenset((c["id"], s["date"], s["shift"]) for c in clinics for s in c["slots"]))
+                  {(c["id"], s["date"], s["shift"]): s["open_chairs"] for c in clinics for s in c["slots"]},
+                  frozenset(c["id"] for c in clinics if _mentions(text, c["id"]) or _mentions(text, c["name"])),
+                  frozenset(r["patient_id"] for r in plan["patients"] if _mentions(text, r["patient_id"])),
+                  _limits(text, clinics))
 
 
 def _validate(name, args, state):
@@ -88,6 +121,12 @@ def _validate(name, args, state):
         raise ValueError("Clinic ID is not in the supplied clinics")
     if name == "set_clinic_capacity" and (args["clinic_id"], args["date"], args["shift"]) not in state.slots:
         raise ValueError("Slot is not in the supplied clinic")
+    if name == "set_clinic_capacity" and args["clinic_id"] not in state.requested_clinics:
+        raise ValueError("Clinic capacity change was not requested")
+    if name in ("pin_patient", "decline_patient") and args["patient_id"] not in state.requested_patients:
+        raise ValueError("Patient change was not requested")
+    if name == "set_clinic_capacity" and args["chairs"] > state.slots[(args["clinic_id"], args["date"], args["shift"])]:
+        raise ValueError("Chairs exceed the slot's original open chairs")
 
 
 def _facts(diff):
@@ -99,26 +138,26 @@ def _facts(diff):
             "clinics": clinics, "new_actions": dict(sorted(actions.items()))}
 
 
-def _template(facts):
+def _summary(diff, clinics, old_plan, new_plan):
+    facts = _facts(diff)
+    names = {c["id"]: c["name"] for c in clinics}
+    changed = {d["patient_id"] for d in diff}
+    involved = set(facts["clinics"]) | {r["clinic_id"] for p in (old_plan, new_plan)
+                                        for r in p["patients"] if r["patient_id"] in changed and r.get("clinic_id")}
+    places = ", ".join(names.get(cid, cid) for cid in sorted(involved)) or "the existing clinics"
     count = facts["changed_rows"]
-    places = ", ".join(facts["clinics"]) or "the existing clinics"
-    actions = ", ".join(f"{count} {action}" for action, count in facts["new_actions"].items())
+    descriptions = {
+        "early_session": ("has an earlier treatment", "have earlier treatments"),
+        "transfer": ("transfers to another clinic", "transfer to other clinics"),
+        "hospital": ("needs a staff call", "need staff calls"),
+        "notify_only": ("receives a notification", "receive notifications"),
+    }
+    actions = "; ".join(
+        f"{n} patient{'' if n == 1 else 's'} {descriptions[action][n != 1]}"
+        for action, n in facts["new_actions"].items()
+    )
     return (f"{count} patient row{'' if count == 1 else 's'} changed at {places}. "
             f"New actions: {actions or '0 action changes'}.")
-
-
-def _valid_summary(text, facts):
-    sentences = re.findall(r"[^.!?]+[.!?]", text.strip())
-    if len(sentences) != 2 or "".join(sentences).strip() != text.strip():
-        return False
-    numbers = lambda s: [int(n) for n in re.findall(r"(?<![\w.])[+-]?\d+(?![\w.])", s)]
-    expected = list(facts["new_actions"].values()) or [0]
-    return (numbers(sentences[0]) == [facts["changed_rows"]]
-            and numbers(sentences[1]) == expected
-            and set(re.findall(r"\b[CH]\d+\b", text)) == set(facts["clinics"])
-            and all(re.search(rf"\b{re.escape(clinic)}\b", sentences[0]) for clinic in facts["clinics"])
-            and all(re.search(rf"\b{count}\s+{re.escape(action)}\b", sentences[1])
-                    for action, count in facts["new_actions"].items()))
 
 
 def _view(name, value, state):
@@ -139,90 +178,105 @@ def _updated(state, name, value):
     return replace(state, mutated=True) if name in MUTATORS else state
 
 
+def _call_tool(tools, name, args):
+    try:
+        return tools[name](**args)
+    except Exception as exc:
+        logger.warning("Replan tool %s failed: %s: %s", name, type(exc).__name__, exc)
+        raise
+
+
 def _execute(use, tools, state):
     name, args = use["name"], use["input"]
+    key = None
+    if name in MUTATORS:
+        fields = ("clinic_id", "date", "shift") if name == "set_clinic_capacity" else ("patient_id",)
+        target = [args.get(k) for k in fields] if isinstance(args, dict) else args
+        key = (name, json.dumps(target, sort_keys=True))
+        state = replace(state, attempted=True)
     try:
         _validate(name, args, state)
         # A tool may change its working copy before raising: invalidate first.
         if name in MUTATORS or name == "rerun_matching":
             state = replace(state, matched=None, diff=None)
-        value = tools[name](**args)
+        value = _call_tool(tools, name, args)
     except (BotoCoreError, ClientError):
         raise
     except ValueError as exc:
-        content, status = [{"text": str(exc)}], "error"
+        content, status = [{"text": str(exc) if len(str(exc)) < 200 else "Tool failed"}], "error"
     except Exception:
         content, status = [{"text": "Tool failed"}], "error"
     else:
         state = _updated(state, name, value)
+        if name == "set_clinic_capacity":
+            slot_key = (args["clinic_id"], args["date"], args["shift"])
+            state = replace(state, capacities={**state.capacities, slot_key: args["chairs"]})
         content, status = [{"json": _view(name, value, state)}], "success"
+    if key is not None:
+        failures = state.failures | {key} if status == "error" else state.failures - {key}
+        state = replace(state, failures=frozenset(failures))
     return state, {"toolResult": {"toolUseId": use["id"], "content": content, "status": status}}
 
 
-def _finish(state, tools):
+def _finish(state, tools, check_budget):
+    if state.attempted and not state.mutated:
+        raise RuntimeError("all tool calls failed")
+    if state.failures:
+        raise RuntimeError("partial re-plan")
+    if not state.mutated:
+        raise ValueError("instruction not understood")
+    for cid, limit in state.limits.items():
+        total = sum(state.capacities.get(key, chairs) for key, chairs in state.slots.items() if key[0] == cid)
+        if total > limit:
+            raise RuntimeError("Clinic capacity exceeds the requested total chairs")
     if state.matched is None:
-        state = _updated(state, "rerun_matching", tools["rerun_matching"]())
+        check_budget()
+        state = _updated(state, "rerun_matching", _call_tool(tools, "rerun_matching", {}))
     if state.diff is None:
-        state = replace(state, diff=tools["diff_plans"]())
+        check_budget()
+        state = replace(state, diff=_call_tool(tools, "diff_plans", {}))
+    check_budget()
     return state
-
-
-def _summary_request(facts, retry=False):
-    return {"role": "user", "content": [{"text": json.dumps({
-        "summary_facts": facts,
-        "request": ("Correct the summary. " if retry else "") +
-                   "Write exactly two sentences using only these facts. First give changed_rows and clinics; "
-                   "second give new_actions in the supplied order (0 action changes if empty). "
-                   "Use digits for counts and the exact action labels. Do not call tools.",
-    })}]}
-
-
-def _result(state, summary, clinics):
-    # Validate counts against ID tokens first, so digits/punctuation in a clinic
-    # name cannot be mistaken for a count or a sentence boundary.
-    names = {clinic["id"]: clinic["name"] for clinic in clinics}
-    summary = re.sub(r"\b[CH]\d{2}\b", lambda match: names.get(match[0], match[0]), summary)
-    return {"plan": state.matched, "diff": state.diff, "summary": summary.strip()}
 
 
 def replan(instruction: str, plan: dict, tools: dict, clinics: list | None = None) -> dict:
     """Return tool-owned results; the router falls back until it passes clinics."""
     if clinics is None:
         raise ValueError("clinic context missing")
+    deadline = monotonic() + 40
+
+    def check_budget():
+        if monotonic() >= deadline:
+            raise TimeoutError("Replan exceeded its 40 second budget")
+
     model_id = os.getenv("BEDROCK_MODEL_ID", "").strip()
     if not model_id:
         raise ValueError("BEDROCK_MODEL_ID is required for replan")
     clinics = _clinic_context(clinics)
-    state = _known(plan, clinics)
+    state = _known(plan, clinics, instruction)
     messages = [{"role": "user", "content": [{"text": json.dumps({
         "instruction": instruction, "patients": _rows(plan), "clinics": clinics,
     })}]}]
-    calls, summary_attempts = 0, 0
+    calls = 0
     while True:
-        result = bedrock.converse(model_id, PROMPT, messages, tools=TOOL_SCHEMAS, tool_choice=None)
+        check_budget()
+        with bedrock.attempt_guard(check_budget):
+            result = bedrock.converse(model_id, PROMPT, messages, tools=TOOL_SCHEMAS, tool_choice=None)
+        check_budget()
         calls += 1
         messages = [*messages, result["message"]]
         if result["stop_reason"] == "tool_use":
-            blocks = []
-            for use in result["tool_uses"]:
-                state, block = _execute(use, tools, state)
-                blocks = [*blocks, block]
             if calls >= 6:
                 raise RuntimeError("Replan still requested tools after 6 model calls")
+            blocks = []
+            for use in result["tool_uses"]:
+                check_budget()
+                state, block = _execute(use, tools, state)
+                blocks = [*blocks, block]
             messages = [*messages, {"role": "user", "content": blocks}]
-            summary_attempts = 0
             continue
         if result["stop_reason"] != "end_turn":
             raise RuntimeError("Replan model did not finish its turn")
-        if not state.mutated:
-            raise ValueError("instruction not understood")
-        had_facts = state.matched is not None and state.diff is not None
-        state = _finish(state, tools)
-        facts = _facts(state.diff)
-        if had_facts:
-            summary_attempts += 1
-            if _valid_summary(result["text"], facts):
-                return _result(state, result["text"], clinics)
-        if summary_attempts >= 2 or calls >= 6:
-            return _result(state, _template(facts), clinics)
-        messages = [*messages, _summary_request(facts, retry=had_facts)]
+        state = _finish(state, tools, check_budget)
+        return {"plan": state.matched, "diff": state.diff,
+                "summary": _summary(state.diff, clinics, plan, state.matched)}
