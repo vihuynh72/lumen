@@ -4,6 +4,7 @@ import importlib
 import logging
 import traceback
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock
 
 import boto3
@@ -187,6 +188,57 @@ def test_log_has_metrics_without_content(stub, monkeypatch, caplog):
 def test_forced_tool_requires_tools(stub):
     with pytest.raises(ValueError, match="tools"):
         bedrock.converse(MODEL, SYSTEM, MESSAGES, tool_choice="lookup")
+
+
+def test_attempt_guard_checks_initial_and_retry_after_backoff(stub, sleep):
+    events = []
+    sleep.side_effect = lambda _: events.append("sleep")
+    stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+    stub.add_response("converse", response(), REQUEST)
+    with bedrock.attempt_guard(lambda: events.append("guard")):
+        assert bedrock.converse(MODEL, SYSTEM, MESSAGES)["text"] == "Hello there!"
+    assert events == ["guard", "sleep", "guard"]
+
+
+def test_attempt_guard_denies_retry_after_backoff(stub, sleep):
+    budget_error = RuntimeError("budget exhausted")
+    guard = Mock(side_effect=[None, budget_error])
+    stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+    with bedrock.attempt_guard(guard), pytest.raises(RuntimeError) as caught:
+        bedrock.converse(MODEL, SYSTEM, MESSAGES)
+    assert caught.value is budget_error
+    assert guard.call_count == 2
+    sleep.assert_called_once_with(0.25)
+
+
+def test_attempt_guard_resets_after_nested_failure(stub):
+    outer = Mock()
+    inner_error = RuntimeError("inner budget exhausted")
+    inner = Mock(side_effect=inner_error)
+    for _ in range(3):
+        stub.add_response("converse", response(), REQUEST)
+    with bedrock.attempt_guard(outer):
+        bedrock.converse(MODEL, SYSTEM, MESSAGES)
+        with pytest.raises(RuntimeError) as caught:
+            with bedrock.attempt_guard(inner):
+                bedrock.converse(MODEL, SYSTEM, MESSAGES)
+        assert caught.value is inner_error
+        bedrock.converse(MODEL, SYSTEM, MESSAGES)
+    bedrock.converse(MODEL, SYSTEM, MESSAGES)
+    assert outer.call_count == 2
+    inner.assert_called_once_with()
+
+
+def test_attempt_guard_does_not_leak_to_another_thread(stub):
+    guard = Mock(side_effect=RuntimeError("main thread exhausted"))
+    stub.add_response("converse", response(), REQUEST)
+    with bedrock.attempt_guard(guard):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            reply = pool.submit(bedrock.converse, MODEL, SYSTEM, MESSAGES).result(timeout=3)
+        assert reply["text"] == "Hello there!"
+        with pytest.raises(RuntimeError, match="main thread exhausted"):
+            bedrock.converse(MODEL, SYSTEM, MESSAGES)
+    guard.assert_called_once_with()
 
 
 @pytest.mark.parametrize("region_variable", ["AWS_REGION", "AWS_DEFAULT_REGION"])
