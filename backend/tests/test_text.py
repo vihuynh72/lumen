@@ -79,7 +79,7 @@ def test_clean_three_languages_and_counted_summary(monkeypatch, inputs):
             k: v for k, v in plan["patients"][row["rank"] - 1].items()
             if k not in ("messages", "reason_text")}
     assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
-                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
+                                 "and 1 needs a phone call. Book 1 paratransit ride today.")
     assert result["summary"].count(".") == 2
 
 
@@ -244,8 +244,8 @@ def test_summary_uses_only_code_counts_with_plural_agreement(monkeypatch, inputs
     assert result["summary"] == (
         f"{count} {'patients dialyze' if plural else 'patient dialyzes'} early, "
         f"{count} {'move' if plural else 'moves'} to another clinic, "
-        f"and {count} {'need' if plural else 'needs'} a staff call. "
-        f"Book {count} paratransit {'rides' if plural else 'ride'} today.")
+        f"and {count} {'need' if plural else 'needs'} a phone call. "
+        f"Book {count} paratransit {'rides' if plural else 'ride'} today." if count else "No patient needs a change.")
     assert all("patients" in call and "summary" not in call for call in calls)
 
 
@@ -771,7 +771,24 @@ def test_template_messages_pass_the_model_output_validator(monkeypatch, inputs):
         facts = facts_for(module, row, clinics, langs)
         checked = {key: row[key] for key in ("patient_id", "reason_text", "messages")}
         assert module._row_error(checked, facts) is None, row["patient_id"]
-        assert all(message.count("{name}") == 1 for message in row["messages"].values())
+        assert all(message.count("{name}") == 1 and ".." not in message for message in row["messages"].values())
+
+
+@pytest.mark.parametrize("ride,line", [("family", "Vui lòng rời nhà trước 5:04 sáng."),
+                                       ("paratransit", "Xe đưa đón sẽ đến đón quý vị lúc 5:04 sáng.")])
+def test_vietnamese_rows_get_the_code_template_and_never_reach_the_model(monkeypatch, inputs, ride, line):
+    plan, clinics, langs = inputs
+    row = next(r for r in plan["patients"] if r["patient_id"] == "P003")  # a transfer to DaVita Folsom Dialysis
+    row.update(ride=ride, slot={"date": "2026-10-28", "shift": 1}, pickup_time="2026-10-28T05:04:00-07:00")
+    langs["P003"] = "vi"
+    write, calls = install(monkeypatch)
+    written = next(r for r in write(plan, clinics, langs)["patients"] if r["patient_id"] == "P003")
+    assert calls and all(f["patient_id"] != "P003" for call in calls for f in call["patients"])
+    templated = next(r for r in template_module(monkeypatch).template_plan_text(plan, clinics, langs)["patients"]
+                     if r["patient_id"] == "P003")
+    assert written["messages"] == templated["messages"] and list(written["messages"]) == ["en", "vi"]
+    vi = written["messages"]["vi"]
+    assert vi == f"6:00 sáng thứ Tư, ngày 28 tháng 10, DaVita Folsom Dialysis. {{name}}, buổi lọc máu của quý vị được dời. {line} Có thắc mắc, xin gọi 555-0100."
 
 
 def test_template_does_not_mutate_the_input(monkeypatch, inputs):
@@ -809,10 +826,13 @@ def test_template_summary_is_counted_from_the_rows(monkeypatch, inputs):
     module = template_module(monkeypatch)
     result = module.template_plan_text(*inputs)
     assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
-                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
+                                 "and 1 needs a phone call. Book 1 paratransit ride today.")
     plan = deepcopy(inputs[0])
     plan["patients"][0]["action"] = "hospital"
     assert module.template_plan_text(plan, inputs[1], inputs[2])["summary"].startswith("1 patient dialyzes early, 2 move")
+    for row in plan["patients"]:  # a part whose count is 0 is left out
+        row.update(action="transfer" if row["action"] != "hospital" else "hospital", book_today=False)
+    assert module.template_plan_text(plan, inputs[1], inputs[2])["summary"] == "3 patients move to another clinic and 2 need a phone call."
 
 
 def test_template_row_that_cannot_fit_is_empty_and_logged(monkeypatch, inputs, caplog):

@@ -51,12 +51,13 @@ def test_schema_is_valid(path):
     assert schema.get("version", 0) >= 1
 
 
-def test_seed_files_validate():
-    for c in load(SEED / "clinics.json"):
+@pytest.mark.parametrize("folder", [SEED, SEED / "santaclara"], ids=["eldorado", "santaclara"])
+def test_seed_files_validate(folder):
+    for c in load(folder / "clinics.json"):
         assert_valid(validator("clinic"), c, f"clinics.json {c.get('id')}")
-    for p in load(SEED / "patients.json"):
+    for p in load(folder / "patients.json"):
         assert_valid(validator("patient"), p, f"patients.json {p.get('id')}")
-    assert_valid(validator("rules"), load(SEED / "rules.json"), "rules.json")
+    assert_valid(validator("rules"), load(folder / "rules.json"), "rules.json")
 
 
 def test_state_fixture_validates():

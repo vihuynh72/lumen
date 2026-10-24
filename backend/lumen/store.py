@@ -5,6 +5,8 @@ import os
 import re
 
 ROOT = "plans/"  # where this request's events and plans live; lambda_handler sets it per request (one space per browser session)
+REGIONS = {"eldorado": "seed/", "santaclara": "seed/santaclara/"}  # region -> seed prefix in S3 (data/seed/ in the repo)
+REGION = "eldorado"  # lambda_handler sets it per request (?region=)
 SEED_FILES = {"clinics": "clinics.json", "patients": "patients.json", "outage_area": "outage_area.geojson", "rules": "rules.json"}
 _client = None
 
@@ -67,11 +69,12 @@ def delete_keys(keys):
     return len(keys)
 
 
-def load_seed():
-    seed = {name: get_json(f"seed/{file}") for name, file in SEED_FILES.items()}
+def load_seed(region=None):
+    prefix = REGIONS[region or REGION]
+    seed = {name: get_json(f"{prefix}{file}") for name, file in SEED_FILES.items()}
     missing = [name for name, data in seed.items() if data is None]
     if missing:
-        raise LookupError(f"seed files missing in S3: {missing}")
+        raise LookupError(f"seed files missing in S3 under {prefix}: {missing}")
     return seed
 
 

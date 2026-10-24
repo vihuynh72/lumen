@@ -1,0 +1,18 @@
+PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING
+Event ID: PSPS-DEMO-SC-01
+Issued: Monday, October 26, 2026, 8:30 AM PDT
+
+This alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.
+
+Area: Evergreen, Silver Creek, Santa Teresa and the east foothills of San Jose (Santa Clara County)
+
+Estimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT
+Estimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT
+
+Restoration times are estimates. After the weather passes, crews inspect the lines before power comes back.
+
+If you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.
+
+Questions: call 555-0199. For a medical emergency, call 911.
+
+(Simulated notice for the Lumen demo. Not issued by PG&E.)

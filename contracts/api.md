@@ -9,13 +9,24 @@ One Lambda function URL. The handler routes on method and path. The JSON schemas
 * CORS: methods `GET`, `POST`; headers `content-type`, `x-demo-key`.
 * Every response body is JSON.
 * Optional query `?session=<8 to 40 lowercase letters or digits>`. Each session has its own events and plans, so one viewer's run or Reset does not change another viewer's plan. Without it, the request uses the shared space (scripts and `demo_check`). A bad value returns `400`, `step` `"router"`.
+* Optional query `?region=eldorado|santaclara`, default `eldorado`, on every route. It picks the seed: S3 `seed/` (repo `data/seed/`) for El Dorado, `seed/santaclara/` (repo `data/seed/santaclara/`) for Santa Clara. Each region keeps its own events and plans: El Dorado under `<space>plans/`, Santa Clara under `<space>santaclara/plans/`, where `<space>` is `sessions/<session>/` or empty. So the two regions never mix, and Reset clears one region of one space. Any other value returns `400 {"error": "region must be one of eldorado, santaclara", "step": "router"}`. Both query values can be sent together: `?session=abcd1234&region=santaclara`.
+
+| Region | Clinics that close | Receiving clinics | Hospital | Patients | Notice |
+| -- | -- | -- | -- | -- | -- |
+| `eldorado` | C01 DaVita Cameron Park Dialysis (home) | C02 to C06 | H01 Mercy Hospital of Folsom | P001 to P040 | `PSPS-DEMO-01` |
+| `santaclara` | C11 SHC Evergreen (home), C12 SHC Silver Creek, C17 SHC Santa Teresa | C13 to C16, C18 to C34 (every in-center CMS clinic in the county within the drive cap, outside the zone) | H11 Regional Medical Center | P101 to P196, 32 per closed clinic | `PSPS-DEMO-SC-01` |
+
+Both notices use the same times, so the demo clock and the plan window are the same in both regions.
 
 ## Conventions
 
 * Timestamps: ISO 8601 with an explicit offset, for example `2026-10-27T18:00:00-07:00`. Dates: `YYYY-MM-DD`.
 * Shifts: `1` = 06:00-10:00, `2` = 10:30-14:30, `3` = 15:00-19:00, `4` = late 19:30-23:30 (only at clinics with `late_shift: true`). Local time, America/Los_Angeles.
-* IDs: dialysis clinics `C01`, `C02`, ...; hospitals `H01`, ...; patients `P001`, ...; the demo event `PSPS-DEMO-01`.
-* A session runs from the shift start for the patient's `hours`. It is affected when it is at a closed clinic, starts before the window end and ends after the window start.
+* IDs: dialysis clinics `C01`, `C02`, ...; hospitals `H01`, ...; patients `P001`, ...; the demo event `PSPS-DEMO-01`. Santa Clara uses `C11` to `C34`, `H11`, `P101` to `P196` and `PSPS-DEMO-SC-01`, so no ID or audio key is shared between regions. Callback numbers are unique within a region (Santa Clara P101 calls back on 555-0101, P196 on 555-0196).
+* Languages (patient `language`, message keys, note `lang`): `en`, `es`, `zh` (Mandarin, Simplified) and `vi` (Vietnamese; patient schema v2, plan schema v5). Moved rows get an English message plus one in the patient's language. Vietnamese messages come from a code template; the model writes `en`, `es` and `zh` only. POST /voice makes `en`, `es` and `zh` audio, so a `vi` row has a message and a simulated note but no audio.
+* `hbv_tested` (optional patient field, schema v2): the date of the last hepatitis B test, `YYYY-MM-DD`. See `hbv_test_missing` in POST /check.
+* `clinic_id` (optional patient field, schema v3): the patient's usual dialysis clinic. Missing means the home clinic (every El Dorado patient). Santa Clara patients have it: `C11`, `C12` or `C17`. Early sessions happen at that clinic.
+* A session runs from the shift start for the patient's `hours`. It is affected when the patient's clinic is closed, it starts before the window end and ends after the window start. The session's `clinic_id` is the patient's clinic.
 * Names: plan rows have no name field. The frontend joins names from `GET /state` by `patient_id`. Stored plan files keep the `{name}` placeholder in `messages`. The router fills names only in HTTP responses, so the fixtures show names. AI modules get stored plans. No model ever sees names: the re-plan intent step replaces names in the instruction with patient IDs before its model call.
 * Schemas: `clinic`, `patient`, `event`, `rules`, `affected` (find_affected output), `plan`, `replan` (POST /replan response), `speak` (POST /speak response), `check` (POST /check response).
 
@@ -62,7 +73,7 @@ Response `200` (fixture: `fixtures/state.json`):
 
 ## POST /alert
 
-Parses a notice into the event JSON and saves it as `plans/(event_id)/event.json`.
+Parses a notice into the event JSON and saves it as `plans/(event_id)/event.json` (under the request's region and session space, see Every request).
 
 Request:
 
@@ -131,7 +142,7 @@ Row rules:
 * `notify_only` exists for a patient with no affected session. With the demo window, every roster patient has one, so the fixtures have no `notify_only` row.
 * `messages` is `{}` on `hospital` and `notify_only` rows. Automated messages go only to moves (early_session, transfer).
 * `reason_text` is one sentence of 20 words or fewer. It is `null`, `messages` is `{}` and `summary` is `""` until the text step runs.
-* `early_session`: a home-clinic slot that starts after the demo clock, ends before the window start, and falls on a later date than the patient's previous regular session before the affected one. Derive that date from `days`, not from `last_session`. Example: a Tue/Thu/Sat patient whose Thursday session is affected cannot get a Tuesday early session.
+* `early_session`: a slot at the patient's own clinic (`clinic_id`, else the home clinic) that starts after the demo clock, ends before the window start, and falls on a later date than the patient's previous regular session before the affected one. Derive that date from `days`, not from `last_session`. Example: a Tue/Thu/Sat patient whose Thursday session is affected cannot get a Tuesday early session.
 * `status: "declined"`: on the next re-run the patient gets no chair. `clinic_id`, `slot`, `drive_minutes`, `drive_source` and `pickup_time` become `null`, `flags` has `staff_call`, and the patient is in `overflow`. `action` keeps its last value.
 * `flags`: `long_gap_after` (the next usual session date minus the new slot date, in calendar days, is more than `gap_limit_days`), `staff_call` (a person must call this patient).
 * `timing_ms`: `total` is the wall time of the request that made this version, at least the sum of its steps. Parse is timed in `POST /alert`.
@@ -158,7 +169,7 @@ Response `200` (fixture: `fixtures/replan.response.json`):
     {"patient_id": "P004", "field": "clinic_id", "from": "C02", "to": "H01"},
     {"patient_id": "P004", "field": "slot", "from": {"date": "2026-10-29", "shift": 1}, "to": null}
   ],
-  "summary": "DaVita Folsom can take only one more patient, so P004 moves from Folsom to the staff call list. Two patients now need a staff call.",
+  "summary": "DaVita Folsom Dialysis can take only 1 more, so 1 more patient needs a phone call.",
   "understood": ["DaVita Folsom Dialysis takes at most 1 more patient."]
 }
 ```
@@ -171,7 +182,7 @@ The router tries three steps in this order. The first step that works makes the 
 2. The intent step (`BEDROCK_MODEL_FAST`), when `AI_STEPS` has `intent`. Limit 20 s. One model call reads the instruction into 1 to 3 changes. Code checks each change, applies it with the re-plan tools, re-runs matching and writes the summary.
 3. The rules: "(clinic name) can only take N more", and "(full patient name) declined" (also "can't come", "cannot come", "will not come"; case and accents do not matter).
 
-When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`.
+When all three fail, the route returns `400 {"error": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.", "step": "replan"}`. With `?region=santaclara` the examples are `'SHC South San Jose can only take 10 more'` and `'Thanh Nguyen declined'`: a receiving clinic that stays open and an affected patient of that region.
 
 `AI_STEPS` is a comma list in the Lambda env. The default is `parse,text,replan,check,intent`. The demo Lambda uses `parse,check,intent`.
 
@@ -190,10 +201,10 @@ The intent step:
 | Change | Sentence |
 | -- | -- |
 | `clinic_limit` | "DaVita Folsom Dialysis takes at most 4 more patients." |
-| `decline` | "Maria Delgado will not come. Staff call them." |
+| `decline` | "Maria Delgado will not come and needs a phone call." |
 | `pin` | "Maria Delgado goes to DaVita Folsom Dialysis, Wed Oct 28, 6:00 AM." |
 
-The rules path returns the `clinic_limit` or `decline` sentence. The Bedrock tool loop returns `[]`. `summary` has no patient names: the stored plan keeps it.
+The rules path returns the `clinic_limit` or `decline` sentence. The Bedrock tool loop returns `[]`. `summary` has no patient names: the stored plan keeps it. Code writes it in plain words from counts, for example "SHC South San Jose can take only 10 more, so 3 patients move to other slots and 2 more patients need a phone call." A part whose count is 0 is left out ("Thanh Nguyen declined" gives "1 patient moves to another slot and 1 more patient needs a phone call."; nothing changed gives "Nobody moves."). The plan summary of `POST /plan` follows the same rule: "17 patients dialyze early, 75 move to another clinic, and 4 need a phone call. Book 14 paratransit rides today."
 
 `plan.ai_sources` has `replan` and `text`, for example `{"replan": "fallback", "text": "bedrock"}`. `replan` is `bedrock` when the tool loop or the intent step made the change, and `fallback` when the rules made it. `text` covers only the rows that the re-plan changed.
 
@@ -245,11 +256,11 @@ Response `200` (fixture: `fixtures/check.response.json`, schema: `check.schema.j
 ```json
 {
   "issues": [
-    {"patient_id": null, "facility_id": "C02", "severity": "block", "code": "over_capacity", "text": "DaVita Folsom Dialysis has one open chair on Thursday morning, but two patients are booked there.", "slot": {"date": "2026-10-29", "shift": 1}, "source": "bedrock"},
-    {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "P003 has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days.", "source": "template"},
+    {"patient_id": null, "facility_id": "C02", "severity": "block", "code": "over_capacity", "text": "DaVita Folsom Dialysis has one open slot on Thursday morning, but two patients are booked there.", "slot": {"date": "2026-10-29", "shift": 1}, "source": "bedrock"},
+    {"patient_id": "P004", "facility_id": "C02", "severity": "warning", "code": "hbv_test_missing", "text": "P004 has no hepatitis B test in the last 30 days.", "source": "template"},
     {"patient_id": "P003", "facility_id": "C02", "severity": "warning", "code": "language_unconfirmed", "text": "Confirm that DaVita Folsom Dialysis can speak Chinese with P003.", "source": "template", "soft": true}
   ],
-  "counts": {"block": 1, "warning": 5},
+  "counts": {"block": 1, "warning": 3},
   "explained_by": "bedrock"
 }
 ```
@@ -268,7 +279,7 @@ How code checks the plan:
 | `clinic_closed` | block | A transfer goes to a clinic in the outage area with no full backup power. |
 | `no_visitors` | block | A transfer goes to a clinic with `accepts_visiting: false`. |
 | `no_late_shift` | warning | A patient with usual shift 4 goes to a clinic with no late shift. |
-| `hbv_test_missing` | warning | A transfer or hospital row has no HBV test date. The seed has no test dates, so every transfer and hospital row gets this warning. |
+| `hbv_test_missing` | warning | A transfer or hospital row whose patient has no `hbv_tested` date, or one more than 30 days before the new session (a hospital row has no session yet: before the plan's `created_at` date). Text: "P004 has no hepatitis B test in the last 30 days." About 1 patient in 10 in the seed has an older test. |
 | `same_day_paratransit` | warning | A paratransit patient has a new session on the date of the plan's `created_at`, or earlier. |
 | `early_paratransit_pickup` | warning | A paratransit pickup is before 6:30 AM. |
 | `long_drive` | warning | A transfer drive is longer than `drive_cap_minutes`. |
@@ -407,7 +418,7 @@ Response `200` (fixture: `fixtures/voice.response.json`):
 {"url": "https://example.com/audio.mp3"}
 ```
 
-Voice notes exist for approved moves: an `early_session` or `transfer` row with `status` `approved` or `confirmed`. Any other row returns `409 {"error": "no approved move for P005", "step": "voice"}`. The MP3 is saved as `audio/(event_id)/(patient_id).(lang).mp3`, and the plan row's `audio` gets that key.
+Voice notes exist for approved moves: an `early_session` or `transfer` row with `status` `approved` or `confirmed`. Any other row returns `409 {"error": "no approved move for P005", "step": "voice"}`. `lang` must be `en`, `es` or `zh`; `vi` (no Polly voice in this demo) returns `400`. The MP3 is saved as `audio/(event_id)/(patient_id).(lang).mp3`, and the plan row's `audio` gets that key.
 
 ## POST /speak
 
@@ -454,7 +465,7 @@ Polly in us-east-2 has no Vietnamese, Tagalog, Cantonese or Telugu voice. For th
 
 ## POST /reset
 
-Deletes the events and plans of this session, so the demo starts clean. Without `?session=`, it deletes the shared `plans/` and the `audio/` cache.
+Deletes the events and plans of this session and region, so the demo starts clean. Without `?session=`, it deletes the region's shared space (`plans/` and the `audio/` cache for El Dorado, `santaclara/plans/` for Santa Clara).
 
 Request: no body (or `{}`).
 

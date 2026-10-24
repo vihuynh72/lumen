@@ -15,10 +15,12 @@ from time import monotonic
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from lumen import text_fallback
 from lumen.ai import bedrock
 
 
 MOVES = ("early_session", "transfer")
+MODEL_LANGS = ("en", "es", "zh")  # the model writes these; Vietnamese rows keep the code template
 TIMES = {1: "06:00", 2: "10:30", 3: "15:00", 4: "19:30"}
 REASONS = {
     "session_in_window": "session during shutoff", "session_within_36h": "session within 36 hours",
@@ -45,7 +47,10 @@ WORDS = {
               "por corte de luz apagon previsto favor salga casa antes a en transporte adaptado le recoge "
               "recogera recogida preguntas llame al llegue comienza nuevo horario clinica para se ha "
               "muerte peligro riesgo".split()),
+    # Plain forms (_plain): accents dropped, đ kept.
+    "vi": set("buoi loc mau cua quy vi đuoc doi vui long roi nha truoc xe đua đon se đen luc co thac mac xin goi".split()),
 }
+MARKERS = {"en": {"treatment", "dialysis", "session"}, "es": {"tratamiento", "dialisis", "sesion"}, "vi": {"loc", "mau"}}
 ZH_CHARS = set("您的治疗透析已调整改到安排在请于出发前离家等候车辆来接送您如有问题致电咨询停电计划时间地点死亡危险风险")
 
 
@@ -66,8 +71,7 @@ def _language_ok(message, facts, lang):
     if lang == "zh":
         return len(letters) >= 2 and set(letters) <= ZH_CHARS
     words = set(re.findall(r"[^\W\d_]+", _plain(remainder)))
-    markers = {"treatment", "dialysis", "session"} if lang == "en" else {"tratamiento", "dialisis", "sesion"}
-    return bool(words & markers) and words <= WORDS[lang]
+    return bool(words & MARKERS[lang]) and words <= WORDS[lang]
 
 
 def _message_error(message, facts, lang):
@@ -112,6 +116,8 @@ def _ride_ok(message, facts, lang):
         return bool(re.match(r"(?:请)?(?:出发|离家)" if own else r"(?:接您|等候接送)", after))
     if lang == "en":
         pattern = r"leave home by\s*$" if own else r"(?:ride|paratransit|transport) picks you up at\s*$"
+    elif lang == "vi":
+        pattern = r"roi nha truoc\s*$" if own else r"đon quy vi luc\s*$"
     else:
         pattern = r"salga de casa a las\s*$" if own else r"transporte le recoge a las\s*$"
     return bool(re.search(pattern, _plain(before)))
@@ -171,9 +177,13 @@ def _template(facts):
             message = f"{when}, {clinic}. {{name}}, your treatment has moved. {ride}"
             callback = " Questions? Call 555-0100."
         elif lang == "es":
-            ride = f"Salga de casa a las {pickup}." if own else f"Un transporte le recoge a las {pickup}."
+            ride = f"Salga de casa a las {pickup}" if own else f"Un transporte le recoge a las {pickup}"  # pickup ends in "a. m." or "p. m."
             message = f"{when}, {clinic}. {{name}}, su tratamiento cambió. {ride}"
             callback = " ¿Preguntas? Llame al 555-0100."
+        elif lang == "vi":  # wording from the tour's Vietnamese template
+            ride = f"Vui lòng rời nhà trước {pickup}." if own else f"Xe đưa đón sẽ đến đón quý vị lúc {pickup}."
+            message = f"{when}, {clinic}. {{name}}, buổi lọc máu của quý vị được dời. {ride}"
+            callback = " Có thắc mắc, xin gọi 555-0100."
         else:
             ride = "请出发" if own else "接您"
             message = f"{when}，{clinic}。{{name}}，治疗已调整；{pickup}{ride}。"
@@ -262,6 +272,7 @@ def _reason(codes):
 WEEKDAYS = {
     "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
     "es": ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
+    "vi": ("thứ Hai", "thứ Ba", "thứ Tư", "thứ Năm", "thứ Sáu", "thứ Bảy", "Chủ Nhật"),
 }
 MONTHS = {
     "en": ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
@@ -276,6 +287,8 @@ def _clock(value, lang):
         return clock + (" AM" if hour < 12 else " PM")
     if lang == "es":
         return clock + (" a. m." if hour < 12 else " p. m.")
+    if lang == "vi":
+        return clock + (" sáng" if hour < 12 else " chiều" if hour < 18 else " tối")
     period = "凌晨" if hour < 6 else "上午" if hour < 12 else "中午" if hour == 12 else "下午" if hour < 18 else "晚上"
     return period + clock
 
@@ -287,6 +300,8 @@ def _strings(slot, pickup, languages):
         clock = _clock(treatment, lang)
         if lang == "zh":
             when = f"{treatment.month}月{treatment.day}日 周{'一二三四五六日'[treatment.weekday()]} {clock}"
+        elif lang == "vi":
+            when = f"{clock} {WEEKDAYS['vi'][treatment.weekday()]}, ngày {treatment.day} tháng {treatment.month}"
         else:
             day, month = WEEKDAYS[lang][treatment.weekday()], MONTHS[lang][treatment.month - 1]
             when = (f"{day}, {month} {treatment.day} at {clock}" if lang == "en"
@@ -296,7 +311,7 @@ def _strings(slot, pickup, languages):
 
 
 def _facts(row, clinics, language):
-    if language not in ("en", "es", "zh"):
+    if language not in ("en", "es", "zh", "vi"):
         raise ValueError("unsupported patient language")
     clinic = clinics.get(row["clinic_id"], {})
     slot = row["slot"] if row["action"] in MOVES else None
@@ -325,14 +340,7 @@ def _call(model, payload):
 
 
 def _summary(plan):
-    counts = {action: sum(row["action"] == action for row in plan["patients"])
-              for action in ("early_session", "transfer", "hospital")}
-    early, transfers, hospital = (counts[action] for action in MOVES + ("hospital",))
-    rides = sum(row["book_today"] for row in plan["patients"])
-    return (f"{early} {'patient dialyzes' if early == 1 else 'patients dialyze'} early, "
-            f"{transfers} {'moves' if transfers == 1 else 'move'} to another clinic, "
-            f"and {hospital} {'needs' if hospital == 1 else 'need'} a staff call. "
-            f"Book {rides} paratransit {'ride' if rides == 1 else 'rides'} today.")
+    return text_fallback.summary(plan["patients"])
 
 
 def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | None = None) -> dict:
@@ -347,7 +355,8 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
     facts = [_facts(row, by_clinic, langs.get(row["patient_id"], "en")) for row in selected]
     template_rows = 0
     if facts:
-        batches = [facts[start:start + 10] for start in range(0, len(facts), 10)]
+        asked = [row_facts for row_facts in facts if row_facts["language"] in MODEL_LANGS]
+        batches = [asked[start:start + 10] for start in range(0, len(asked), 10)]
         with ThreadPoolExecutor(max_workers=4) as pool:
             outcomes = list(pool.map(lambda rows: _batch(model, rows, budget), batches))
         by_id = {pid: row for batch in outcomes for pid, row in batch.rows.items()}
@@ -361,7 +370,7 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
             if pid not in by_id:
                 by_id[pid] = _template(row_facts)
                 template_rows += 1
-                logger.warning("text fallback patient_id=%s error=%s", pid, errors[pid])
+                logger.warning("text fallback patient_id=%s error=%s", pid, errors.get(pid, "template_language"))
             row.update({key: by_id[pid][key] for key in ("reason_text", "messages")})
     if only_ids is None:
         result["summary"] = _summary(result)

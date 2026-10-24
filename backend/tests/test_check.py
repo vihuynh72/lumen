@@ -27,11 +27,14 @@ def codes(issues, severity=None):
 
 
 def test_hbsag_positive_needs_an_isolation_station():
-    assert sorted(p["id"] for p in SEED["patients"] if p["hep_b_positive"]) == ["P005", "P026", "P039"]
+    assert [p["id"] for p in SEED["patients"] if p["hep_b_positive"]] == ["P005"]  # about 1% of US hemodialysis patients
+    seed = copy.deepcopy(SEED)
+    for p in seed["patients"]:
+        p["hep_b_positive"] = p["hep_b_positive"] or p["id"] in ("P026", "P039")
     issues = check(row("P005", "transfer", "C04", "2026-10-28", 2), row("P026", "transfer", "C02", "2026-10-28", 2),
-                   row("P039", "hospital", "H01"))
+                   row("P039", "hospital", "H01"), seed=seed)
     assert codes(issues, "block") == [("P005", "hbv_no_isolation")]  # C02 and H01 have isolation stations
-    assert issues[0]["text"] == "P005 has hepatitis B, but DaVita Orangevale Dialysis Center has no isolation chair."
+    assert issues[0]["text"] == "P005 has hepatitis B, but DaVita Orangevale Dialysis Center has no isolation station."
 
 
 def test_more_patients_than_open_chairs_blocks_the_slot():
@@ -40,7 +43,7 @@ def test_more_patients_than_open_chairs_blocks_the_slot():
     issues = check(*two, row("P013", "transfer", "C02", "2026-10-28", 1))
     assert [(i["patient_id"], i["facility_id"], i["code"], i["slot"]) for i in issues if i["severity"] == "block"] == [
         (None, "C02", "over_capacity", {"date": "2026-10-28", "shift": 1})]
-    assert "has 2 open chairs on 2026-10-28 shift 1, but the plan sends 3 patients" in issues[0]["text"]
+    assert "has 2 open slots on 2026-10-28 shift 1, but the plan sends 3 patients" in issues[0]["text"]
 
 
 def test_capacity_overrides_count():
@@ -66,12 +69,22 @@ def test_late_shift_patient_at_a_clinic_with_no_late_shift():
     assert ("P007", "no_late_shift") not in codes(check(row("P007", "transfer", "C05", "2026-10-28", 4), seed=seed))
 
 
-def test_no_hbv_test_date_warns_on_every_row_sent_away():
-    issues = check(row("P007", "transfer", "C02", "2026-10-28", 2), row("P006", "hospital", "H01"),
-                   row("P009", "early_session", "C01", "2026-10-27", 1))
-    assert [i["patient_id"] for i in issues if i["code"] == "hbv_test_missing"] == ["P007", "P006"]
+def test_hbv_test_missing_or_older_than_30_days_warns_on_rows_sent_away():
+    seed = copy.deepcopy(SEED)
+    tested = {"P006": "2026-09-28", "P007": "2026-09-27", "P009": "2026-08-01", "P011": "2026-09-27"}
+    for p in seed["patients"]:
+        p["hbv_tested"] = tested.get(p["id"], p["hbv_tested"])
+    del next(p for p in seed["patients"] if p["id"] == "P010")["hbv_tested"]
+    issues = check(row("P006", "transfer", "C02", "2026-10-28", 2),  # 30 days before the new session: still recent
+                   row("P007", "transfer", "C02", "2026-10-28", 2),  # 31 days
+                   row("P010", "hospital", "H01"),  # no test date
+                   row("P011", "hospital", "H01"),  # no new session: 29 days before the plan day
+                   row("P009", "early_session", "C01", "2026-10-27", 1), seed=seed)  # stays home: no warning
+    assert [i["patient_id"] for i in issues if i["code"] == "hbv_test_missing"] == ["P007", "P010"]
     assert all(i["severity"] == "warning" for i in issues)
-    assert issues[0]["text"] == "P007 has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days."
+    assert next(i for i in issues if i["code"] == "hbv_test_missing")["text"] == "P007 has no hepatitis B test in the last 30 days."
+    assert not [i for i in check(*(row(p["id"], "transfer", "C02", "2026-10-28", 2) for p in SEED["patients"][:3]))
+                if i["code"] == "hbv_test_missing"]  # the seed's recent tests: no warning
 
 
 def test_paratransit_same_day_and_early_pickup():

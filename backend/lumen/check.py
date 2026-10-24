@@ -8,14 +8,15 @@ from lumen.geo import drive_minutes
 from lumen.match import PARATRANSIT_START, regular_dates
 
 SENT_AWAY = ("transfer", "hospital")  # rows that go to another facility and get a packet
-LANGUAGES = {"en": "English", "es": "Spanish", "zh": "Chinese"}
+HBV_TEST_DAYS = 30  # a receiving clinic wants a hepatitis B test from the last 30 days before the new session
+LANGUAGES = {"en": "English", "es": "Spanish", "zh": "Chinese", "vi": "Vietnamese"}
 TEXT = {
-    "hbv_no_isolation": "{pid} has hepatitis B, but {facility} has no isolation chair.",
-    "over_capacity": "{facility} has {chairs} open chairs on {date} shift {shift}, but the plan sends {count} patients.",
+    "hbv_no_isolation": "{pid} has hepatitis B, but {facility} has no isolation station.",
+    "over_capacity": "{facility} has {chairs} open slots on {date} shift {shift}, but the plan sends {count} patients.",
     "clinic_closed": "{facility} is closed during the shutoff.",
     "no_visitors": "{facility} does not take visiting patients.",
     "no_late_shift": "{pid} has a late shift, but {facility} has no late shift.",
-    "hbv_test_missing": "{pid} has no hepatitis B test date on file. The new clinic tests on arrival, and the result takes up to 7 days.",
+    "hbv_test_missing": "{pid} has no hepatitis B test in the last 30 days.",
     "early_paratransit_pickup": "{pid} rides paratransit, but the pickup at {pickup} is before paratransit starts at 06:30.",
     "same_day_paratransit": "{pid} rides paratransit, which must be booked the day before, but the new session is today.",
     "long_drive": "{pid} has a {minutes}-minute drive to {facility}, longer than the {cap}-minute limit.",
@@ -92,6 +93,7 @@ def _issue(severity, code, f=None, clinic=None, **values):
 def check_plan(plan, seed, capacity_overrides=None):
     """Blocks first, then warnings. Each issue: patient_id (null for a facility issue), facility_id, severity, code, text."""
     clinics = {c["id"]: c for c in apply_overrides(seed["clinics"], capacity_overrides)}
+    tested = {p["id"]: p.get("hbv_tested") for p in seed["patients"]}
     rules = seed["rules"]
     ring = outage_ring(seed["outage_area"])
     closed = {c["id"] for c in clinics.values() if point_in_polygon(c["lng"], c["lat"], ring) and c["backup_power"] != "full"}
@@ -113,8 +115,10 @@ def check_plan(plan, seed, capacity_overrides=None):
                 issues.append(_issue("warning", "no_late_shift", f))
             if f["drive_minutes"] > rules["drive_cap_minutes"]:
                 issues.append(_issue("warning", "long_drive", f, cap=rules["drive_cap_minutes"]))
-        if f["action"] in SENT_AWAY:
-            issues.append(_issue("warning", "hbv_test_missing", f))  # the seed has no HBV test dates
+        if f["action"] in SENT_AWAY:  # hospital rows have no new session yet: count from the plan's day
+            due = datetime.fromisoformat(f["slot"]["date"] if f["slot"] else today).date() - timedelta(days=HBV_TEST_DAYS)
+            if not tested[f["patient_id"]] or tested[f["patient_id"]] < due.isoformat():
+                issues.append(_issue("warning", "hbv_test_missing", f))
         if f["ride"] == "paratransit" and f["slot"]:
             if f["slot"]["date"] <= today:
                 issues.append(_issue("warning", "same_day_paratransit", f))

@@ -17,15 +17,24 @@ def fake(monkeypatch):
     return s3
 
 
-def upload_seed(s3):
+def upload_seed(s3, prefix="seed/"):
     for file in store.SEED_FILES.values():
-        s3.put_object(Bucket="b", Key=f"seed/{file}", Body=(SEED / file).read_bytes())
+        s3.put_object(Bucket="b", Key=f"{prefix}{file}", Body=(SEED.parent / prefix / file).read_bytes())
 
 
 def test_load_seed(fake):
     upload_seed(fake)
     seed = store.load_seed()
     assert len(seed["patients"]) == 40 and seed["rules"]["drive_cap_minutes"] == 60
+
+
+def test_load_seed_per_region(fake, monkeypatch):
+    upload_seed(fake, "seed/santaclara/")
+    with pytest.raises(LookupError):
+        store.load_seed()  # El Dorado's seed/ is not there
+    assert store.load_seed("santaclara")["patients"][0]["id"] == "P101"
+    monkeypatch.setattr(store, "REGION", "santaclara")  # lambda_handler sets it from ?region=
+    assert next(c for c in store.load_seed()["clinics"] if c["home"])["name"] == "SHC Evergreen"
 
 
 def test_load_seed_missing_file_raises(fake):

@@ -1,5 +1,6 @@
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / "data" / "seed"
 SCHEMAS = ROOT / "contracts" / "schemas"
 NOTICE = (SEED / "notice.txt").read_text()
+SC_NOTICE = (SEED / "santaclara" / "notice.txt").read_text()
 
 
 def stand_in_rank(affected, patients, rules, drive):
@@ -35,17 +37,20 @@ def env(monkeypatch):
     for name in ("BEDROCK_MODEL_ID", "BEDROCK_MODEL_FAST", "AI_STEPS"):  # tests never reach a live model
         monkeypatch.delenv(name, raising=False)
     s3 = FakeS3()
-    for file in store.SEED_FILES.values():
-        s3.put_object(Bucket="b", Key=f"seed/{file}", Body=(SEED / file).read_bytes())
+    for prefix in store.REGIONS.values():  # seed/ is data/seed/, seed/santaclara/ is data/seed/santaclara/
+        for file in store.SEED_FILES.values():
+            s3.put_object(Bucket="b", Key=f"{prefix}{file}", Body=(SEED.parent / prefix / file).read_bytes())
     monkeypatch.setattr(store, "_client", s3)
     monkeypatch.setattr(store, "ROOT", "plans/")
+    monkeypatch.setattr(store, "REGION", "eldorado")
     monkeypatch.setattr(router, "parse_with_bedrock", bedrock_blocked)
     monkeypatch.setattr(router, "rank", stand_in_rank)
     return s3
 
 
-def call(method, path, body=None, key="k3y", session=None):
-    event = {"requestContext": {"http": {"method": method}}, "rawPath": path, "queryStringParameters": {"session": session} if session else None,
+def call(method, path, body=None, key="k3y", session=None, region=None):
+    query = {k: v for k, v in (("session", session), ("region", region)) if v}
+    event = {"requestContext": {"http": {"method": method}}, "rawPath": path, "queryStringParameters": query or None,
              "headers": {"X-Demo-Key": key} if key else {}, "body": json.dumps(body) if body is not None else None}
     resp = router.lambda_handler(event, None)
     return resp["statusCode"], json.loads(resp["body"])
@@ -161,7 +166,7 @@ def test_replan_falls_back_to_rules(monkeypatch):
     assert body["understood"] == ["DaVita Folsom Dialysis takes at most 1 more patient."]
     assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
     assert body["plan"]["audit"][-1]["change"].startswith("re-plan: DaVita Folsom")
-    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"}) == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "do something"}) == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
 
 
 def test_approve_then_voice(monkeypatch):
@@ -266,6 +271,22 @@ def test_text_fallback_ends_at_the_english_template(monkeypatch):
     assert {lang for r in plan["patients"] for lang in r["messages"]} == {"en"}
 
 
+def test_english_template_comes_from_the_patients_own_clinic(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=bedrock_blocked, template_plan_text=bedrock_blocked))
+    call("POST", "/alert", {"notice_text": SC_NOTICE}, region="santaclara")
+    plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")[1]
+    seed = store.load_seed("santaclara")
+    names = {c["id"]: c["name"] for c in seed["clinics"]}
+    own = {p["id"]: p["clinic_id"] for p in seed["patients"]}
+    moves = [r for r in plan["patients"] if r["messages"]]
+    assert {own[r["patient_id"]] for r in moves} == {"C11", "C12", "C17"}  # Silver Creek and Santa Teresa patients too
+    for r in moves:
+        text = r["messages"]["en"]
+        assert f"this is {names[own[r['patient_id']]]}." in text
+        assert ("your usual clinic" in text) == (r["action"] == "early_session"), text
+
+
 def test_replan_gets_the_seed_clinics(monkeypatch):
     seen = {}
 
@@ -326,6 +347,57 @@ def test_sessions_keep_their_own_plans():
     status, plan = call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"], "edits": []}, session=a)
     assert status == 200 and plan["version"] == 2
     assert call("GET", "/state", session="BAD!")[0] == 400
+
+
+def test_santaclara_plan_end_to_end(monkeypatch):
+    monkeypatch.setattr(router, "rank", REAL_RANK)
+    status, event = call("POST", "/alert", {"notice_text": SC_NOTICE}, region="santaclara")
+    assert status == 200 and event["event_id"] == "PSPS-DEMO-SC-01" and event["start"] == "2026-10-27T18:00:00-07:00"
+    status, plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")
+    assert status == 200, plan
+    assert not list(validator("plan").iter_errors(plan))
+    state = call("GET", "/state", region="santaclara")[1]
+    assert [c["id"] for c in state["clinics"]] == [f"C{n}" for n in range(11, 35)] + ["H11"]
+    assert {p["id"] for p in state["patients"]} == {f"P{n}" for n in range(101, 197)}
+    assert state["affected"]["closed_clinic_ids"] == ["C11", "C12", "C17"]  # Evergreen, Silver Creek, Santa Teresa
+    sessions = state["affected"]["sessions"]
+    assert {s["patient_id"] for s in sessions} == {p["id"] for p in state["patients"]}  # every patient has a session in the window
+    usual = {p["id"]: p["clinic_id"] for p in state["patients"]}
+    assert all(s["clinic_id"] == usual[s["patient_id"]] for s in sessions) and set(Counter(usual.values()).values()) == {32}
+    rows = {r["patient_id"]: r for r in plan["patients"]}
+    assert Counter(r["action"] for r in rows.values()) == {"early_session": 17, "transfer": 75, "hospital": 4}
+    assert all(r["clinic_id"] == usual[pid] for pid, r in rows.items() if r["action"] == "early_session")  # early at their own clinic
+    assert plan["summary"] == "17 patients dialyze early, 75 move to another clinic, and 4 need a phone call. Book 14 paratransit rides today."
+    langs = {p["id"]: p["language"] for p in state["patients"]}
+    vi = [r for r in rows.values() if langs[r["patient_id"]] == "vi" and r["slot"]]
+    assert vi and all(r["messages"]["vi"].count("buổi lọc máu") == 1 for r in vi)
+    issues = call("POST", "/check", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")[1]["issues"]
+    # the check card shows one line per kind of warning: keep it short
+    assert not [i for i in issues if i["severity"] == "block"] and {i["code"] for i in issues} <= {"hbv_test_missing", "long_gap_after", "no_late_shift"}
+
+
+@pytest.mark.parametrize("region,notice", [("eldorado", NOTICE), ("santaclara", SC_NOTICE)])
+def test_replan_error_examples_work_in_their_region(region, notice):
+    event_id = call("POST", "/alert", {"notice_text": notice}, region=region)[1]["event_id"]
+    call("POST", "/plan", {"event_id": event_id}, region=region)
+    text = router.NOT_UNDERSTOOD[region]
+    assert call("POST", "/replan", {"event_id": event_id, "instruction": "do something"}, region=region) == (400, {"error": text, "step": "replan"})
+    for example in text.split("'")[1::2]:  # the quoted examples name a clinic and a patient of this region
+        assert call("POST", "/replan", {"event_id": event_id, "instruction": example}, region=region)[0] == 200, example
+
+
+def test_regions_keep_their_own_events_and_plans(env):
+    for s in (None, "abcd1234"):
+        call("POST", "/alert", {"notice_text": SC_NOTICE}, session=s, region="santaclara")
+        call("POST", "/plan", {"event_id": "PSPS-DEMO-SC-01"}, session=s, region="santaclara")
+    assert {k.rsplit("/", 2)[0] for k in env.objects if "PSPS-DEMO-SC-01" in k} == {"santaclara/plans", "sessions/abcd1234/santaclara/plans"}
+    assert call("GET", "/state")[1]["event"] is None and call("GET", "/state", session="abcd1234")[1]["event"] is None
+    plan_v1()
+    assert call("GET", "/state", region="santaclara")[1]["plan"]["event_id"] == "PSPS-DEMO-SC-01"
+    assert call("POST", "/plan", {"event_id": "PSPS-DEMO-01"}, region="santaclara")[0] == 404  # El Dorado's event is not there
+    assert call("POST", "/reset", region="santaclara") == (200, {"ok": True, "deleted": 3})
+    assert call("GET", "/state")[1]["plan"]["event_id"] == "PSPS-DEMO-01"
+    assert call("GET", "/state", region="nowhere") == (400, {"error": "region must be one of eldorado, santaclara", "step": "router"})
 
 
 def test_reset_twice_in_a_row():
@@ -556,7 +628,7 @@ def test_intent_reads_a_decline_without_seeing_names(monkeypatch):
     assert status == 200, body
     assert seen["tool_choice"] == "change" and json.loads(seen["raw"])["instruction"] == "P001 declined"
     assert "Maria" not in seen["raw"] and "Delgado" not in seen["raw"]
-    assert body["understood"] == ["Maria Delgado will not come. Staff call them."] and body["plan"]["ai_sources"]["replan"] == "bedrock"
+    assert body["understood"] == ["Maria Delgado will not come and needs a phone call."] and body["plan"]["ai_sources"]["replan"] == "bedrock"
     row = next(r for r in body["plan"]["patients"] if r["patient_id"] == "P001")
     assert row["status"] == "declined" and "P001" in body["plan"]["overflow"]
     assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
@@ -609,16 +681,16 @@ def test_the_tool_loop_gets_ids_not_names(monkeypatch):
     plan_v1()
     status, body = replan("Ruben Ochoa declined")  # AI_STEPS default has replan; the intent step has no model here
     assert status == 200 and body["plan"]["ai_sources"]["replan"] == "fallback"  # the rules read the name, without accents too
-    assert body["understood"] == ["Rubén Ochoa will not come. Staff call them."]
-    assert seen["instruction"] == "P021 declined"
+    assert body["understood"] == ["Rubén Ochoa will not come and needs a phone call."]
+    assert seen["instruction"] == "P020 declined"
 
 
 def test_ai_steps_without_intent_skips_the_model(monkeypatch):
     seen = fake_intent(monkeypatch, lambda payload: [{"kind": "decline", "patient_id": "P001"}], steps="parse,check")
     plan_v1()
     assert replan("DaVita Folsom Dialysis can only take four more")[1]["plan"]["ai_sources"]["replan"] == "fallback"
-    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come. Staff call them."]
-    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come and needs a phone call."]
+    assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
     assert seen["calls"] == 0
 
 
@@ -626,5 +698,5 @@ def test_replan_400_when_every_step_fails(monkeypatch):
     seen = fake_intent(monkeypatch, bedrock_blocked, steps="parse,text,replan,check,intent")
     plan_v1()
     seen["calls"] = 0  # the text step also asked the model
-    assert replan("please sort it out") == (400, {"error": router.NOT_UNDERSTOOD, "step": "replan"})
+    assert replan("please sort it out") == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
     assert seen["calls"] == 1  # the tool loop failed without BEDROCK_MODEL_ID; the intent step ran once

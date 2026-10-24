@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "contracts" / "fixtures"
 GOOD = "1 patient row changed at C02, H01. New actions: 1 hospital."
-SUMMARY = "1 patient row changed at DaVita Folsom Dialysis, Mercy Hospital of Folsom. New actions: 1 patient needs a staff call; 1 pickup change."
+SUMMARY = "1 patient row changed at DaVita Folsom Dialysis, Mercy Hospital of Folsom. New actions: 1 patient needs a phone call; 1 pickup change."
 CAPACITY = {"clinic_id": "C02", "date": "2026-10-29", "shift": 1, "chairs": 2}
 PIN = ("pin_patient", {"patient_id": "P003", "clinic_id": "C02", "date": "2026-10-29", "shift": 1})
 
@@ -540,7 +540,7 @@ def test_late_final_response_cannot_return_a_plan(monkeypatch, setup):
 
 
 @pytest.mark.parametrize("action,words", [("early_session", "has an earlier treatment"),
-    ("transfer", "transfers to another clinic"), ("hospital", "needs a staff call"),
+    ("transfer", "transfers to another clinic"), ("hospital", "needs a phone call"),
     ("notify_only", "receives a notification")])
 def test_summary_uses_plain_actions_and_clinics_of_changed_rows(monkeypatch, setup, action, words):
     plan, tools, _, _, _, clinics = setup
@@ -657,7 +657,7 @@ def test_review_nested_clinic_names(monkeypatch, setup, separate):
 
 
 @pytest.mark.parametrize("case,expected", [
-    ("decline", ["1 patient declined", "1 patient needs a staff call"]),
+    ("decline", ["1 patient declined", "1 patient needs a phone call"]),
     ("pin", ["1 pinned move", "1 pickup change"]),
     ("capacity", ["DaVita Folsom Dialysis", "nobody moved"]),
     ("unknown", ["1 patient has an updated action"]),

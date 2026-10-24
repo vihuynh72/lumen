@@ -19,11 +19,11 @@ NAMES = [p["name"] for p in PATIENTS]
     ("Maria Delgado declined", "P001 declined"),
     ("maria  DELGADO declined", "P001 declined"),
     ("Delgado declined, and Chen too", "P001 declined, and P003 too"),
-    ("Guadalupe Ríos declined", "P009 declined"),
-    ("guadalupe ríos declined", "P009 declined"),
-    ("Ríos declined", "P009 declined"),
-    ("Guadalupe Rios and Ruben declined", "P009 and P021 declined"),  # typed without accents
-    ("Rubén Ochoa canceló mañana", "P021 cancelo manana"),
+    ("Guadalupe Ríos declined", "P017 declined"),
+    ("guadalupe ríos declined", "P017 declined"),
+    ("Ríos declined", "P017 declined"),
+    ("Guadalupe Rios and Ruben declined", "P017 and P020 declined"),  # typed without accents
+    ("Rubén Ochoa canceló mañana", "P020 cancelo manana"),
     ("Linda Park declined; Park cannot come", "P004 declined; P004 cannot come"),
     ("DaVita Cameron Park can only take 2 more", "DaVita Cameron Park can only take 2 more"),  # a clinic, not Linda Park
     ("DaVita Folsom can only take 4 more", "DaVita Folsom can only take 4 more"),

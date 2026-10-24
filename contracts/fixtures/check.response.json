@@ -5,7 +5,7 @@
       "facility_id": "C02",
       "severity": "block",
       "code": "over_capacity",
-      "text": "DaVita Folsom Dialysis has one open chair on Thursday morning, but two patients are booked there.",
+      "text": "DaVita Folsom Dialysis has one open slot on Thursday morning, but two patients are booked there.",
       "slot": {
         "date": "2026-10-29",
         "shift": 1
@@ -21,27 +21,11 @@
       "source": "bedrock"
     },
     {
-      "patient_id": "P003",
-      "facility_id": "C02",
-      "severity": "warning",
-      "code": "hbv_test_missing",
-      "text": "No HBV test date on file for P003: receiver tests on intake, result within 7 days.",
-      "source": "template"
-    },
-    {
-      "patient_id": "P005",
-      "facility_id": "H01",
-      "severity": "warning",
-      "code": "hbv_test_missing",
-      "text": "No HBV test date on file for P005: receiver tests on intake, result within 7 days.",
-      "source": "template"
-    },
-    {
       "patient_id": "P004",
       "facility_id": "C02",
       "severity": "warning",
       "code": "hbv_test_missing",
-      "text": "No HBV test date on file for P004: receiver tests on intake, result within 7 days.",
+      "text": "P004 has no hepatitis B test in the last 30 days.",
       "source": "template"
     },
     {
@@ -56,7 +40,7 @@
   ],
   "counts": {
     "block": 1,
-    "warning": 5
+    "warning": 3
   },
   "explained_by": "bedrock"
 }

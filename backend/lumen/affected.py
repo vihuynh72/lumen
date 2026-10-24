@@ -51,17 +51,19 @@ def find_affected(event, clinics, patients, polygon, now, modes=None):
     home = next(c for c in clinics if c["home"])
 
     sessions = []
-    if home["id"] in closed:
-        for p in patients:
-            days = {WEEKDAY[d] for d in p["days"]}
-            for offset in range(5):  # the demo week, from the notice day on
-                day = now.astimezone(LOCAL).date() + timedelta(days=offset)
-                if day.weekday() not in days:
-                    continue
-                s = session_start(day, p["shift"])
-                e = s + timedelta(hours=p["hours"])
-                if s < end and e > start:
-                    sessions.append({"patient_id": p["id"], "clinic_id": home["id"], "start": s.isoformat(), "end": e.isoformat()})
+    for p in patients:
+        clinic_id = p.get("clinic_id", home["id"])  # the patient's usual clinic; the home clinic when the seed has one clinic
+        if clinic_id not in closed:
+            continue
+        days = {WEEKDAY[d] for d in p["days"]}
+        for offset in range(5):  # the demo week, from the notice day on
+            day = now.astimezone(LOCAL).date() + timedelta(days=offset)
+            if day.weekday() not in days:
+                continue
+            s = session_start(day, p["shift"])
+            e = s + timedelta(hours=p["hours"])
+            if s < end and e > start:
+                sessions.append({"patient_id": p["id"], "clinic_id": clinic_id, "start": s.isoformat(), "end": e.isoformat()})
 
     lead = round((start - now).total_seconds() / 3600, 1)
     return {
