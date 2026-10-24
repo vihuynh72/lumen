@@ -218,14 +218,15 @@ function renderRail() {
   const ol = $('#phases');
   keepFocus(() => { ol.innerHTML = S.phases.map((p, i) => {
     const cur = ['running', 'waiting', 'error'].includes(p.status);
-    const st = p.status === 'done' ? fms(p.ms) : ST_WORD[p.status];
+    // a step restored from GET /state can lack its server time; say so instead of leaving a blank
+    const st = p.status !== 'done' ? esc(ST_WORD[p.status]) : p.ms != null ? `<span class="m">${fms(p.ms)}</span>` : isTour() ? '' : 'time not saved';
     const res = !p.res ? '' : p.det
       ? `<details class="det res" data-i="${i}"${p.open ? ' open' : ''}><summary data-k="det-${i}"><span>${esc(p.res)}</span>${icon('chev')}</summary><p>${esc(p.det)}</p></details>`
       : `<p class="res">${esc(p.res)}</p>`;
     return `<li class="ph ${p.status}"${cur ? ' aria-current="step"' : ''}>
       <span class="d" aria-hidden="true">${p.status === 'done' ? icon('ck') : p.status === 'error' ? icon('x') : ''}</span>
       <div>
-        <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st m">${p.status === 'done' ? '<span class="vh">Done, </span>' : p.status === 'pending' ? '<span class="vh">Not started</span>' : ''}${esc(st)}</span></div>
+        <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st">${p.status === 'done' ? '<span class="vh">Done, </span>' : p.status === 'pending' ? '<span class="vh">Not started</span>' : ''}${st}</span></div>
         <div class="meta"><span class="svc">${esc(p.svc)}</span>${p.src ? `<span title="${esc(p.src)}">${esc(p.src)}</span>` : ''}</div>
         ${res}
         ${p.err ? `<p class="err">${esc(p.err)}</p>${p.retry ? `<button class="btn retry" type="button" data-retry="${i}" data-k="retry-${i}">Retry</button>` : ''}` : ''}

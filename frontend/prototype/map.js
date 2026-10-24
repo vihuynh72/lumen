@@ -164,11 +164,13 @@
       layout: { 'symbol-placement': 'line-center', 'text-field': 'Feeder (illustrative)', 'text-font': fontR, 'text-size': 10.5, 'text-offset': [0, -0.9] },
       paint: { 'text-color': T.powerInk, ...halo } });
     add({ id: 'lm-flow-count', type: 'symbol', source: 'lm-flow-mid',
-      layout: { 'text-field': ['to-string', ['get', 'n']], 'text-font': fontB, 'text-size': 12.5, 'text-allow-overlap': true, 'symbol-sort-key': ['case', ['get', 'changed'], 0, 1] },
+      // Counts collide with each other and the rank tags; changed arcs place first, then the biggest counts.
+      layout: { 'text-field': ['to-string', ['get', 'n']], 'text-font': fontB, 'text-size': 12.5, 'text-allow-overlap': false, 'text-ignore-placement': false, 'text-padding': 4,
+        'symbol-sort-key': ['-', ['case', ['get', 'changed'], 0, 1e4], ['get', 'n']] },
       paint: { 'text-color': T.ink, 'text-halo-color': T.halo, 'text-halo-width': 2.4 } });
     add({ id: 'lm-pat-label', type: 'symbol', source: 'lm-pat', filter: ['!=', ['get', 'txt'], ''],
       layout: { 'text-field': ['get', 'txt'], 'text-font': fontB, 'text-size': 11.5, 'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
-        'text-radial-offset': 0.85, 'symbol-sort-key': ['case', ['get', 'sel'], 0, 1] },
+        'text-radial-offset': 0.85, 'text-padding': 4, 'symbol-sort-key': ['case', ['get', 'sel'], 0, 1] },
       paint: { 'text-color': T.ink, ...halo } });
   }
 
@@ -406,6 +408,7 @@
     const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
     const placeArea = () => { // area label: where it is now, else center, else the first nearby spot no pin or label covers
       if (!area.box) return;
+      const labels = placed.slice(items.length); // pins come first; after them only the home label is placed yet
       const c = map.project(area.marker.getLngLat()), [w, h] = area.box, dx = w / 2 + 12, dy = h + 6, cur = area.marker.getOffset();
       const at = ([x, y]) => [c.x + x - w / 2, c.y + y - h / 2, c.x + x + w / 2, c.y + y + h / 2];
       const fits = (o) => { const b = at(o); return b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !placed.some((p) => hit(b, p)); };
@@ -414,7 +417,10 @@
       const off = [[cur.x, cur.y], [0, 0], [dx, 0], [0, dy], [0, -dy], [-dx, 0], [dx, dy], [dx, -dy]].find(fits)
         || (c.x >= 0 && c.x <= W && c.y >= 0 && c.y <= H ? [cl(0, w / 2 - c.x, W - w / 2 - c.x), cl(0, h / 2 - c.y, H - h / 2 - c.y)] : [0, 0]);
       if (cur.x !== off[0] || cur.y !== off[1]) area.marker.setOffset(off);
-      placed.push(at(off));
+      // Over a label or past the map edge: hide it; the red area and its legend row still say what it is.
+      const b = at(off), show = b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !labels.some((p) => hit(b, p));
+      area.text.style.visibility = show ? '' : 'hidden';
+      if (show) placed.push(b);
     };
     let areaDone = false;
     items.sort((a, b) => a.m.rank - b.m.rank).forEach(({ m, p, pin }) => {
@@ -631,16 +637,18 @@
     const home = S.facilities.find((f) => f.home);
     const bbox = S.region && S.region.bbox;
     const region = () => bbox && fit([[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]], 'over');
+    // The whole affected area: shutoff polygon, home clinic and every affected patient's home.
+    const whole = () => [...coordsOf(S.outage), facPt(home), ...(S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat)).map((p) => [p.lng, p.lat])];
     if (target === 'home') { // the home building, its feeder and the substation that feeds it
       if (!home) return region();
       return fit([facPt(home), ...coordsOf(D.feeders.features.find((f) => f.properties.facility_id === home.id))], 'home', 15.2);
     }
     if (target === 'region') return region();
-    if (target === 'outage') return S.outage ? fit([...coordsOf(S.outage), facPt(home)], 'over') : region();
-    if (target === 'flows') { // after a re-plan: the changed routes and home; { all: true } fits the whole plan
+    if (target === 'outage') return S.outage ? fit(whole(), 'over') : region();
+    if (target === 'flows') { // after a re-plan: the changed routes and home (D7); else, or with { all: true }, the whole plan and area
       const fl = (S.flows || []).filter((f) => f && f.from && f.to), ch = o.all ? [] : fl.filter((f) => f.changed);
       const pts = (ch.length ? ch : fl).flatMap((f) => [snap(f.from), snap(f.to)]);
-      return pts.length ? fit([...pts, facPt(home)], 'over') : region();
+      return pts.length ? fit([...pts, ...(ch.length ? [facPt(home)] : whole())], 'over') : region();
     }
     if (target.facility != null) { const f = S.facilities.find((x) => x.id === target.facility); return f && at(facPt(f), 15.5, 'near'); }
     if (target.patient != null) { // their home and destination together, else just their home

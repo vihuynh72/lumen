@@ -132,7 +132,7 @@ button,select,input,textarea{font:inherit;color:inherit}
 .ph.running .st,.ph.waiting .st{color:var(--rail-amber)}
 .ph.error .st{color:var(--rail-err)}
 .meta{display:flex;align-items:center;gap:4px 8px;margin-top:2px;color:var(--rail-mute);font-size:12px;line-height:18px}
-.meta>span:not(.svc){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta>span:not(.svc){min-width:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .svc{flex:none;padding:0 6px;border:1px solid var(--rail-line);border-radius:4px;font-size:11px;font-weight:600;line-height:18px;color:var(--rail-ink-2)}
 .res{margin-top:4px;font-size:13px;line-height:18px;color:var(--rail-ink)}
 .ph.done p.res{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -200,6 +200,7 @@ button,select,input,textarea{font:inherit;color:inherit}
 .sw.hosp{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:4px;background:var(--map-transfer);color:var(--map-halo)}
 .sw.hosp .i{width:10px;height:10px;stroke-width:2.5}
 .sw.bld{width:14px;height:10px;margin:0 3px;border:1.5px dashed var(--ink-2);border-radius:2px;background:var(--map-fac)}
+.sw.rk{width:20px;text-align:center;font-weight:700;color:var(--ink)}
 .sw.dot{width:8px;height:8px;margin:0 6px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1.5px var(--map-halo)}
 .ctl{position:absolute;z-index:2;right:10px;bottom:152px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .ctl .btn{box-shadow:var(--shadow)}
@@ -308,11 +309,11 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 @media (max-width:1180px){
   .app{grid-template-columns:var(--rail-w) minmax(0,1fr)}
   .planbtn{display:inline-flex}
-  #chipId{display:none}
   .panel{position:fixed;z-index:20;top:var(--top-h);right:0;bottom:0;width:min(400px,100vw);box-shadow:var(--shadow);transform:translateX(100%);visibility:hidden;transition:transform .2s ease-out,visibility 0s linear .2s}
   .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
   .planbtn[aria-expanded="true"]{background:var(--paper-3)}
 }
+@media (max-width:1359px){#chipId{display:none}}  /* keeps "Simulated PG&E notice" whole */
 @media (max-width:1000px){.home,.home+.sep{display:none}}
 /* phone: rail is a top sheet, panel a bottom sheet */
 @media (max-width:760px){
@@ -326,7 +327,6 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .top .selw,#tourTag,.chip,.planbtn{order:6}
   .top .selw{flex:1 1 140px}
   .top .selw select{width:100%}
-  #chipId{display:none}
   .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
   .rail{padding:12px}
   .railtog{display:inline-flex;height:32px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
