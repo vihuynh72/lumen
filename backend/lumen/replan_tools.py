@@ -23,7 +23,7 @@ def diff_rows(old_rows, new_rows):
 
 
 def build_tools(event_id, plan, seeds):
-    """The five functions replan() calls. They share one working copy of the slots and rows."""
+    """The five functions replan() calls, plus the capacity cuts they applied. They share one working copy of the slots and rows."""
     event = store.load_event(event_id)
     if event is None:
         raise LookupError(f"no event {event_id}")
@@ -35,6 +35,7 @@ def build_tools(event_id, plan, seeds):
     old_rows = {r["patient_id"]: r for r in plan["patients"]}
     work = {"rows": copy.deepcopy(plan["patients"]), "overflow": list(plan["overflow"])}
     changed_clinics, touched = set(), set()
+    overrides = []  # the cuts this working copy applied; the router saves them as plan["capacity_overrides"]
 
     def row(patient_id):
         found = next((r for r in work["rows"] if r["patient_id"] == patient_id), None)
@@ -69,7 +70,8 @@ def build_tools(event_id, plan, seeds):
         else:
             slot["open_chairs"] = chairs
         changed_clinics.add(clinic_id)
-        return {"clinic_id": clinic_id, "date": date, "shift": shift, "open_chairs": chairs}
+        overrides.append({"clinic_id": clinic_id, "date": date, "shift": shift, "open_chairs": chairs})
+        return dict(overrides[-1])
 
     def pin_patient(patient_id, clinic_id, date, shift):
         r = row(patient_id)
@@ -113,7 +115,7 @@ def build_tools(event_id, plan, seeds):
         return diff_rows(plan["patients"], work["rows"])
 
     return {"set_clinic_capacity": set_clinic_capacity, "pin_patient": pin_patient, "decline_patient": decline_patient,
-            "rerun_matching": rerun_matching, "diff_plans": diff_plans}
+            "rerun_matching": rerun_matching, "diff_plans": diff_plans, "capacity_overrides": overrides}
 
 
 def replan_by_rules(instruction, plan, tools, clinics):

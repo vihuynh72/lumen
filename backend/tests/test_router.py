@@ -311,3 +311,130 @@ def test_reset_twice_in_a_row():
     assert call("POST", "/reset") == (200, {"ok": True, "deleted": 0})
     state = call("GET", "/state")[1]
     assert state["event"] is None and state["plan"] is None and state["affected"] is None
+
+
+def edit_stored(pid, **fields):
+    """Change one row of the latest stored plan in place (no new version)."""
+    plan = store.latest_plan("PSPS-DEMO-01")
+    next(r for r in plan["patients"] if r["patient_id"] == pid).update(fields)
+    store.save_plan(plan)
+
+
+def block_p005():
+    """P005 is HBsAg positive; C04 has no isolation station."""
+    edit_stored("P005", action="transfer", clinic_id="C04", slot={"date": "2026-10-28", "shift": 2}, status="approved")
+
+
+def fake_model(monkeypatch, reply):
+    """Stub bedrock.converse for the explain tool; reply(payload) gives the tool input or raises."""
+    from lumen.ai import bedrock
+    monkeypatch.setenv("BEDROCK_MODEL_FAST", "test-fast")
+    seen = {}
+
+    def converse(model_id, system, messages, tools=None, tool_choice=None):
+        seen.update(model_id=model_id, tool_choice=tool_choice, payload=json.loads(messages[0]["content"][0]["text"]))
+        return {"tool_uses": [{"id": "t", "name": "explain", "input": reply(seen["payload"])}]}
+    monkeypatch.setattr(bedrock, "converse", converse)
+    return seen
+
+
+def key(issues):
+    return [(i["patient_id"], i["facility_id"], i["severity"], i["code"]) for i in issues if not i.get("soft")]
+
+
+def test_check_falls_back_to_templates_when_the_model_fails(monkeypatch, capsys):
+    plan_v1()
+    block_p005()
+    fake_model(monkeypatch, bedrock_blocked)
+    status, body = call("POST", "/check", {"event_id": "PSPS-DEMO-01"})
+    assert status == 200 and not list(validator("check").iter_errors(body))
+    assert body["explained_by"] == "template" and {i["source"] for i in body["issues"]} == {"template"}
+    assert body["issues"][0]["code"] == "hbv_no_isolation" and body["counts"]["block"] >= 1
+    assert '"step": "check", "fallback": true' in capsys.readouterr().out
+    assert call("POST", "/check", {})[0] == 400
+
+
+def test_check_uses_model_sentences_that_pass_and_never_clears_a_block(monkeypatch):
+    plan_v1()
+    block_p005()
+    fake_model(monkeypatch, bedrock_blocked)
+    template = call("POST", "/check", {"event_id": "PSPS-DEMO-01"})[1]
+    langs = {p["id"]: p["language"] for p in json.loads((SEED / "patients.json").read_text())}
+    spanish = next(r["patient_id"] for r in store.latest_plan("PSPS-DEMO-01")["patients"]
+                   if r["action"] == "transfer" and r["patient_id"] != "P005" and langs[r["patient_id"]] == "es")
+
+    def reply(payload):
+        texts = {0: "This one is fine now.", 1: "", 2: " ".join(["word"] * 31)}
+        return {"items": [{"index": i["index"], "text": texts.get(i["index"], f"Plain sentence {i['index']}.")} for i in payload["issues"]]
+                + [{"index": 999, "text": "No such issue."}],
+                "soft": [{"patient_id": spanish, "code": "language_unconfirmed"}, {"patient_id": "P007", "code": "heart_failure_long_gap"},
+                         {"patient_id": "P007", "code": "made_up"}]}
+    seen = fake_model(monkeypatch, reply)
+    status, body = call("POST", "/check", {"event_id": "PSPS-DEMO-01"})
+    assert status == 200 and not list(validator("check").iter_errors(body))
+    assert seen["model_id"] == "test-fast" and seen["tool_choice"] == "explain"
+    assert "Maria Delgado" not in json.dumps(seen["payload"])  # the model never sees names
+    issues = body["issues"]
+    assert key(issues) == key(template["issues"]) and body["counts"]["block"] == template["counts"]["block"]  # blocks stay
+    assert issues[0] == {"patient_id": "P005", "facility_id": "C04", "severity": "block", "code": "hbv_no_isolation",
+                         "text": "This one is fine now.", "source": "bedrock"}  # reworded, still a block
+    assert body["explained_by"] == "bedrock"
+    assert [i["source"] for i in issues[1:3]] == ["template", "template"]  # empty and 31-word sentences are dropped
+    assert [i["text"] for i in issues[1:3]] == [i["text"] for i in template["issues"][1:3]]
+    assert all(i["source"] == "bedrock" for i in issues[3:] if "soft" not in i)
+    assert [(i["patient_id"], i["code"], i["source"]) for i in issues if i.get("soft")] == [(spanish, "language_unconfirmed", "template")]
+    assert body["counts"]["warning"] == template["counts"]["warning"] + 1
+
+
+def approved_plan():
+    plan_v1()
+    call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]})
+    rows = store.latest_plan("PSPS-DEMO-01")["patients"]
+    return {a: [r["patient_id"] for r in rows if r["action"] == a] for a in ("transfer", "hospital", "early_session")}
+
+
+def test_packet_sends_approved_rows_and_skips_the_rest():
+    draft = next(r["patient_id"] for r in plan_v1()["patients"] if r["action"] == "transfer")
+    status, body = call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": [draft]})
+    assert status == 200 and body["sent"] == [] and body["skipped"][0]["reason"].startswith("status is draft")
+    assert body["plan"]["version"] == 1  # nothing sent: no new version
+    ids = approved_plan()
+    block_p005()
+    transfer, hospital, early = next(p for p in ids["transfer"] if p != "P005"), ids["hospital"][0], ids["early_session"][0]
+    status, body = call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": [transfer, hospital, early, "P005"]})
+    assert status == 200 and not list(validator("plan").iter_errors(body["plan"]))
+    assert body["sent"] == [transfer, hospital] and body["plan"]["version"] == 3
+    assert [s["patient_id"] for s in body["skipped"]] == [early, "P005"]
+    assert body["skipped"][1]["reason"].startswith("blocked: P005 is HBsAg positive")
+    rows = {r["patient_id"]: r for r in body["plan"]["patients"]}
+    clinic = next(c for c in store.load_seed()["clinics"] if c["id"] == rows[transfer]["clinic_id"])
+    assert rows[transfer]["packet"] == {"status": "sent", "sent_at": body["plan"]["created_at"], "channel": "simulated fax",
+                                        "to": f"{clinic['name']} {clinic['phone']}", "version": 2}
+    assert "packet" not in rows[early] and "packet" not in rows["P005"]
+    assert body["plan"]["audit"][-2]["change"] == f"{transfer} packet sent (simulated fax to {clinic['phone']})"
+    again = call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": [transfer]})[1]
+    assert again["skipped"] == [{"patient_id": transfer, "reason": "packet already sent"}] and again["plan"]["version"] == 3
+    assert call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": ["P999"]})[0] == 404
+    assert call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": []})[0] == 400
+
+
+def test_replan_marks_moved_sent_packets_stale_and_keeps_capacity_cuts(monkeypatch):
+    monkeypatch.setattr(router, "replan_with_bedrock", bedrock_blocked)
+    ids = approved_plan()
+    call("POST", "/packet", {"event_id": "PSPS-DEMO-01", "patient_ids": ids["transfer"] + ids["hospital"]})
+    before = {r["patient_id"]: r for r in store.latest_plan("PSPS-DEMO-01")["patients"]}
+    status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})
+    assert status == 200 and not list(validator("plan").iter_errors(body["plan"]))
+    moved = {d["patient_id"] for d in body["diff"] if d["field"] in ("action", "clinic_id", "slot")}
+    packets = {r["patient_id"]: r.get("packet") for r in body["plan"]["patients"]}
+    assert moved & set(ids["transfer"]) and all(packets[p]["status"] == "stale" for p in moved if "packet" in before[p])
+    assert all(packets[p] == before[p]["packet"] for p in before if "packet" in before[p] and p not in moved)
+    assert packets[next(iter(moved & set(ids["transfer"])))]["sent_at"] == before[next(iter(moved & set(ids["transfer"])))]["packet"]["sent_at"]
+    cuts = body["plan"]["capacity_overrides"]
+    assert {c["clinic_id"] for c in cuts} == {"C02"} and sum(c["open_chairs"] for c in cuts) == 4
+    assert call("POST", "/approve", {"event_id": "PSPS-DEMO-01", "patient_ids": ["all"]})[1]["capacity_overrides"] == cuts
+    body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Orangevale Dialysis Center can only take two more"})[1]
+    assert {c["clinic_id"] for c in body["plan"]["capacity_overrides"]} == {"C02", "C04"}
+    assert store.latest_plan("PSPS-DEMO-01")["capacity_overrides"] == body["plan"]["capacity_overrides"]
+    fake_model(monkeypatch, bedrock_blocked)
+    assert call("POST", "/check", {"event_id": "PSPS-DEMO-01"})[1]["counts"]["block"] == 0  # the second re-plan kept the C02 cut
