@@ -55,7 +55,7 @@ DEMO_KEY=<demo key from Discord> python scripts/demo_check.py warmup
 
 ## Debugging
 
-Every request writes one JSON log line per pipeline step with milliseconds, plus one summary line with `path`, `status`, `version` and `request_id`. A Bedrock step that fails or runs past its time limit (parse 20 s, text 25 s, re-plan 45 s) logs `"fallback": true` and the reason, then uses its rule-based path.
+Every request writes one JSON log line per pipeline step with milliseconds, plus one summary line with `path`, `status`, `version` and `request_id`. A Bedrock step that fails or runs past its time limit (parse 20 s, text 25 s, re-plan 45 s, check 25 s) logs `"fallback": true` and the reason, then uses its rule-based path.
 
 CloudWatch Logs Insights, log group `/aws/lambda/lumen-api` (us-east-2), query for errors and fallbacks:
 

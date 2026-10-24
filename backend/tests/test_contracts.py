@@ -38,6 +38,7 @@ PLANS = {
     "plan.v2.json": load(FIXTURES / "plan.v2.json"),
     "replan.response.json plan": load(FIXTURES / "replan.response.json")["plan"],
     "approve.response.json": load(FIXTURES / "approve.response.json"),
+    "packet.response.json plan": load(FIXTURES / "packet.response.json")["plan"],
     "state.json plan": STATE["plan"],
 }
 
@@ -150,6 +151,24 @@ def test_approve_and_reset_responses():
     assert {r["status"] for r in approved["patients"]} == {"approved"}
     assert approved["audit"][-1]["change"] == "approved all"
     assert load(FIXTURES / "reset.response.json") == {"ok": True, "deleted": 4}
+
+
+def test_check_response():
+    body = load(FIXTURES / "check.response.json")
+    assert_valid(validator("check"), body, "check.response.json")
+    assert body["counts"] == {s: sum(i["severity"] == s for i in body["issues"]) for s in ("block", "warning")}
+    assert body["explained_by"] == ("bedrock" if any(i["source"] == "bedrock" for i in body["issues"]) else "template")
+    assert all(len(i["text"].split()) <= 30 for i in body["issues"] if i["source"] == "bedrock")
+
+
+def test_packet_response():
+    body = load(FIXTURES / "packet.response.json")
+    rows = {r["patient_id"]: r for r in body["plan"]["patients"]}
+    assert {p for p, r in rows.items() if "packet" in r} == set(body["sent"])
+    assert all(rows[p]["action"] in ("transfer", "hospital") and rows[p]["status"] in ("approved", "confirmed") for p in body["sent"])
+    assert [a["change"] for a in body["plan"]["audit"][-len(body["sent"]):]] == [
+        f"{p} packet sent (simulated fax to {CLINICS[rows[p]['clinic_id']]['phone']})" for p in body["sent"]]
+    assert body["skipped"] == [{"patient_id": "P001", "reason": "early_session rows get no packet"}]
 
 
 def test_voice_response():

@@ -12,13 +12,13 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime, timedelta, timezone
 
-from lumen import approve, speak, store, text_fallback, voice
+from lumen import approve, check, speak, store, text_fallback, voice
 from lumen.affected import find_affected
 from lumen.geo import drive_minutes
 from lumen.match import match
 from lumen.notice import parse_fallback
 from lumen.rank_fallback import rank_by_rules
-from lumen.replan_tools import build_tools, replan_by_rules
+from lumen.replan_tools import DECISION, build_tools, replan_by_rules
 
 try:
     from lumen._version import VERSION  # written by scripts/deploy_lambda.sh
@@ -29,7 +29,7 @@ logging.getLogger().setLevel(logging.INFO)  # the Lambda runtime defaults to WAR
 
 DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at + 30 min (master plan section 5)
 # Seconds a Bedrock step may take before the router uses its rule-based fallback (Lambda timeout is 120 s).
-DEADLINES = {"parse": 20, "text": 25, "replan": 45}
+DEADLINES = {"parse": 20, "text": 25, "replan": 45, "check": 25}
 MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
 _pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
@@ -73,7 +73,7 @@ def with_deadline(step, fn, *args):
 # AI-lane functions are imported when called, so the router runs before they land.
 def ai_step(step):
     """AI_STEPS in the Lambda env (comma list, default all) turns a slow or failing model step off without a deploy."""
-    if step not in {s.strip() for s in os.environ.get("AI_STEPS", "parse,text,replan").split(",")}:
+    if step not in {s.strip() for s in os.environ.get("AI_STEPS", "parse,text,replan,check").split(",")}:
         raise RuntimeError(f"AI_STEPS turns {step} off")
 
 
@@ -110,6 +110,12 @@ def model_written_rows(out, plan, clinics, langs, only_ids):
         return None
     return sum(1 for r in out["patients"] if r["patient_id"] in tmpl and (only_ids is None or r["patient_id"] in only_ids)
                and (r.get("reason_text"), r.get("messages")) != tmpl[r["patient_id"]])
+
+
+def explain_with_bedrock(issues, facts):
+    ai_step("check")
+    from lumen.ai.explain import explain_issues
+    return explain_issues(issues, facts, os.getenv("BEDROCK_MODEL_FAST", "").strip())
 
 
 def write_text(plan, seed, sources, only_ids=None):
@@ -245,6 +251,7 @@ def replan_route(body):
     start = time.perf_counter()
     timing, sources = {}, {}
     seed = timed(timing, "store", store.load_seed)
+    seed["clinics"] = check.apply_overrides(seed["clinics"], old.get("capacity_overrides"))  # earlier cuts still hold
     tools = timed(timing, "tools", build_tools, event_id, old, seed)
     t = time.perf_counter()
     try:
@@ -252,8 +259,9 @@ def replan_route(body):
         log(step="replan", source="bedrock")
     except Exception as exc:
         log(step="replan", fallback=True, reason=repr(exc)[:300])
-        try:  # fresh tools: a failed Bedrock loop may have changed the working copy
-            result, sources["replan"] = replan_by_rules(instruction, old, build_tools(event_id, old, seed), seed["clinics"]), "fallback"
+        tools = build_tools(event_id, old, seed)  # fresh tools: a failed Bedrock loop may have changed the working copy
+        try:
+            result, sources["replan"] = replan_by_rules(instruction, old, tools, seed["clinics"]), "fallback"
         except ValueError as exc2:
             raise ApiError(400, str(exc2), "replan") from exc2
     timing["replan"] = round((time.perf_counter() - t) * 1000)
@@ -264,6 +272,15 @@ def replan_route(body):
            "audit": old["audit"] + [{"ts": now, "actor": "Rosa", "change": f"re-plan: {instruction.strip()[:200]}"}]}
     new = timed(timing, "text", write_text, new, seed, sources, changed)
     new["summary"] = result["summary"]
+    cuts = {(o["clinic_id"], o["date"], o["shift"]): o for o in old.get("capacity_overrides", []) + tools["capacity_overrides"]}
+    if cuts:
+        new["capacity_overrides"] = list(cuts.values())
+    old_rows = {r["patient_id"]: r for r in old["patients"]}
+    for r in new["patients"]:  # re-matched rows lose their packet; a sent packet for a moved row goes stale
+        before = old_rows.get(r["patient_id"], {})
+        if "packet" in before:
+            moved = before["packet"]["status"] == "sent" and any(r[k] != before[k] for k in DECISION)
+            r["packet"] = {**before["packet"], "status": "stale"} if moved else before["packet"]
     timing["total"] = round((time.perf_counter() - start) * 1000)
     new["timing_ms"], new["ai_sources"] = timing, sources  # replaces the ai_sources copied from the old version
     save_new_version(new, "replan")
@@ -280,6 +297,44 @@ def approve_route(body):
         raise ApiError(400, str(exc), "approve") from exc
     save_new_version(new, "approve")
     return with_names(new, store.load_seed()["patients"])
+
+
+def check_route(body):
+    """Code finds the issues; Bedrock only rewords them. Template sentences on any model failure."""
+    _, plan = latest(body, "check")
+    seed = store.load_seed()
+    issues = timed({}, "check", check.check_plan, plan, seed, plan.get("capacity_overrides"))
+    facts = check.row_facts(plan, seed)
+    out = [{**i, "source": "template"} for i in issues]
+    try:
+        explained = with_deadline("check", explain_with_bedrock, issues, facts)
+        texts = {e["index"]: e["text"] for e in explained["items"] if isinstance(e["text"], str) and 0 < len(e["text"].split()) <= 30}
+        # The model only rewords: severity, code and the issue list stay as code set them. Soft warnings pass a fact check.
+        out = [{**i, "text": texts[n], "source": "bedrock"} if n in texts else i for n, i in enumerate(out)]
+        out += [{**s, "source": "template", "soft": True} for s in check.soft_warnings(explained["soft"], facts)]
+        log(step="check", source="bedrock")
+    except Exception as exc:
+        log(step="check", fallback=True, reason=repr(exc)[:300])
+        out = [{**i, "source": "template"} for i in issues]
+    counts = {severity: sum(i["severity"] == severity for i in out) for severity in ("block", "warning")}
+    return {"issues": out, "counts": counts, "explained_by": "bedrock" if any(i["source"] == "bedrock" for i in out) else "template"}
+
+
+def packet_route(body):
+    """Simulated send: a new plan version with row["packet"] and an audit entry. Nothing leaves Lumen."""
+    event_id, old = latest(body, "packet")
+    seed = store.load_seed()
+    blocks = [i for i in check.check_plan(old, seed, old.get("capacity_overrides")) if i["severity"] == "block"]
+    try:
+        new, sent, skipped = approve.send_packets(old, body.get("patient_ids"), blocks, {c["id"]: c for c in seed["clinics"]},
+                                                  clock(store.load_event(event_id)))
+    except approve.UnknownPatient as exc:
+        raise ApiError(404, str(exc), "packet") from exc
+    except ValueError as exc:
+        raise ApiError(400, str(exc), "packet") from exc
+    if new:
+        save_new_version(new, "packet")
+    return {"plan": with_names(new or old, seed["patients"]), "sent": sent, "skipped": skipped}
 
 
 def voice_route(body):
@@ -331,7 +386,7 @@ def reset(_body):
 
 ROUTES = {("GET", "/state"): state, ("POST", "/alert"): alert, ("POST", "/plan"): plan, ("POST", "/replan"): replan_route,
           ("POST", "/approve"): approve_route, ("POST", "/voice"): voice_route, ("POST", "/speak"): speak_route,
-          ("POST", "/reset"): reset}
+          ("POST", "/check"): check_route, ("POST", "/packet"): packet_route, ("POST", "/reset"): reset}
 
 
 def lambda_handler(event, context):

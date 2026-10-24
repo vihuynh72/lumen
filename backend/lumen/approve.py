@@ -1,7 +1,9 @@
-"""Apply Rosa's approvals and row edits to a plan and return the next version (POST /approve)."""
+"""Apply Rosa's approvals, row edits and packet sends to a plan and return the next version (POST /approve, POST /packet)."""
 
 import copy
 import time
+
+from lumen.check import blocks_row
 
 ACTOR = "Rosa"
 EDIT_STATUSES = ("approved", "confirmed", "declined", "no_answer")
@@ -68,3 +70,42 @@ def apply(plan, patient_ids, edits, now):
     new["timing_ms"] = {"total": round((time.perf_counter() - start) * 1000)}
     new["ai_sources"] = {}  # no AI step runs here; do not keep the old version's sources
     return new
+
+
+def send_packets(plan, patient_ids, blocks, clinics, now):
+    """Simulated transfer-packet send (POST /packet): nothing leaves Lumen. Returns (the next version, or None when
+    nothing was sent; the sent IDs; skipped [{patient_id, reason}]). blocks: check.check_plan's block issues for this plan."""
+    if not isinstance(patient_ids, list) or not patient_ids or not all(isinstance(p, str) for p in patient_ids):
+        raise ValueError("patient_ids must be a non-empty list of patient IDs")
+    start = time.perf_counter()
+    new = copy.deepcopy(plan)
+    ts = now.isoformat(timespec="seconds")
+    rows = {r["patient_id"]: r for r in new["patients"]}
+    sent, skipped = [], []
+    for pid in dict.fromkeys(patient_ids):
+        if pid not in rows:
+            raise UnknownPatient(f"unknown patient {pid}")
+        r = rows[pid]
+        block = next((b for b in blocks if blocks_row(b, r)), None)
+        if r["action"] not in ("transfer", "hospital"):
+            reason = f"{r['action']} rows get no packet"
+        elif r["status"] not in ("approved", "confirmed"):
+            reason = f"status is {r['status']}, not approved or confirmed"
+        elif block:
+            reason = f"blocked: {block['text']}"
+        elif r.get("packet", {}).get("status") == "sent":
+            reason = "packet already sent"
+        else:
+            clinic = clinics[r["clinic_id"]]
+            r["packet"] = {"status": "sent", "sent_at": ts, "channel": "simulated fax",
+                           "to": f"{clinic['name']} {clinic['phone']}", "version": plan["version"]}
+            new["audit"].append({"ts": ts, "actor": ACTOR, "change": f"{pid} packet sent (simulated fax to {clinic['phone']})"})
+            sent.append(pid)
+            continue
+        skipped.append({"patient_id": pid, "reason": reason})
+    if not sent:
+        return None, sent, skipped
+    new.update(version=plan["version"] + 1, created_at=ts)
+    new["timing_ms"] = {"total": round((time.perf_counter() - start) * 1000)}
+    new["ai_sources"] = {}
+    return new, sent, skipped
