@@ -549,3 +549,138 @@ def test_validator_rejects(lang, message, label):
 def test_validator_accepts_boundaries(lang, message, label):
     assert check(lang, message) is None, label
 
+
+
+def expanded_inputs(inputs, size):
+    plan, clinics, _ = inputs
+    original = plan["patients"][0]
+    plan["patients"] = [{**deepcopy(original), "patient_id": f"P{i:03}", "rank": i}
+                        for i in range(1, size + 1)]
+    return plan, clinics, {row["patient_id"]: "es" for row in plan["patients"]}
+
+
+def provider_error(kind):
+    if kind == "ClientError":
+        return ClientError({"Error": {"Code": "AccessDeniedException", "Message": "PRIVATE prompt content"}}, "Converse")
+    if kind == "BotoCoreError":
+        return BotoCoreError()
+    return TimeoutError("PRIVATE prompt content")
+
+
+@pytest.mark.parametrize("kind", ["ClientError", "BotoCoreError", "TimeoutError"])
+def test_failed_batch_preserves_successful_batches(monkeypatch, inputs, caplog, kind):
+    caplog.set_level(logging.INFO, logger="lumen.ai.text")
+    inputs = expanded_inputs(inputs, 21)
+    error = provider_error(kind)
+
+    def change(payload, result):
+        if payload["patients"][0]["rank"] > 10:
+            raise error
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    first = next(p for p in calls if p["patients"][0]["rank"] == 1)
+    for row, facts in zip(result["patients"][:10], first["patients"]):
+        assert row["messages"] == generated(facts)["messages"]
+    assert all("555-0100" in row["messages"]["en"] for row in result["patients"][10:])
+    assert caplog.text.count("text fallback") == 11
+    assert f"error={kind}" in caplog.text
+    assert "bedrock_rows=10 template_rows=11" in caplog.text
+    assert "PRIVATE" not in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["ClientError", "BotoCoreError", "TimeoutError"])
+def test_all_failed_batches_reraise_original_error(monkeypatch, inputs, kind):
+    inputs = expanded_inputs(inputs, 21)
+    error = provider_error(kind)
+
+    def fail(*_):
+        raise error
+
+    write, calls = install(monkeypatch, fail)
+    with pytest.raises(type(error)) as caught:
+        write(*inputs)
+    assert caught.value is error
+    assert len(calls) == 3
+
+
+def test_failed_split_child_preserves_successful_sibling(monkeypatch, inputs):
+    inputs = expanded_inputs(inputs, 4)
+
+    def change(payload, result):
+        rows = payload["patients"]
+        if len(rows) > 2:
+            return {"stop_reason": "max_tokens"}
+        if rows[0]["rank"] > 2:
+            raise TimeoutError("private")
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    assert len(calls) == 3
+    assert result["patients"][0]["messages"] == generated(calls[1]["patients"][0])["messages"]
+    assert "555-0100" in result["patients"][2]["messages"]["en"]
+
+
+@pytest.mark.parametrize("truncated", [False, True])
+def test_deadline_prevents_retry_and_split_calls(monkeypatch, inputs, truncated, caplog):
+    module = importlib.import_module("lumen.ai.text")
+    clock = [0.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0], raising=False)
+
+    def change(payload, result):
+        clock[0] = 20.0
+        if truncated:
+            return {"stop_reason": "max_tokens"}
+        for row in result["tool_uses"][0]["input"]["patients"]:
+            row["reason_text"] = "Wrong"
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    assert len(calls) == 1
+    assert all(row["reason_text"] != "Wrong" for row in result["patients"])
+    assert "error=deadline" in caplog.text
+
+
+def test_deadline_prevents_queued_batches(monkeypatch, inputs, caplog):
+    module = importlib.import_module("lumen.ai.text")
+    inputs = expanded_inputs(inputs, 60)
+    clock = [0.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0], raising=False)
+    barrier = Barrier(4, timeout=3)
+
+    def change(payload, result):
+        assert clock[0] < 20
+        barrier.wait()
+        clock[0] = 20.0
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs)
+    assert len(calls) == 4
+    assert len(result["patients"]) == 60
+    assert caplog.text.count("error=deadline") == 20
+
+
+def test_total_call_budget_includes_splits_and_retries(monkeypatch, inputs, caplog):
+    inputs = expanded_inputs(inputs, 80)
+    write, calls = install(monkeypatch, lambda *_: {"stop_reason": "max_tokens"})
+    result = write(*inputs)
+    assert len(calls) == 30
+    assert "error=call_limit" in caplog.text
+    assert len(result["patients"]) == 80
+    assert all(row["messages"]["es"] for row in result["patients"])
+
+
+def test_non_provider_error_is_not_hidden(monkeypatch, inputs):
+    error = ValueError("programming error")
+
+    def fail(*_):
+        raise error
+
+    write, _ = install(monkeypatch, fail)
+    with pytest.raises(ValueError) as caught:
+        write(*inputs)
+    assert caught.value is error
