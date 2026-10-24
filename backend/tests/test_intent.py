@@ -22,6 +22,8 @@ NAMES = [p["name"] for p in PATIENTS]
     ("Guadalupe Ríos declined", "P009 declined"),
     ("guadalupe ríos declined", "P009 declined"),
     ("Ríos declined", "P009 declined"),
+    ("Guadalupe Rios and Ruben declined", "P009 and P021 declined"),  # typed without accents
+    ("Rubén Ochoa canceló mañana", "P021 cancelo manana"),
     ("Linda Park declined; Park cannot come", "P004 declined; P004 cannot come"),
     ("DaVita Cameron Park can only take 2 more", "DaVita Cameron Park can only take 2 more"),  # a clinic, not Linda Park
     ("DaVita Folsom can only take 4 more", "DaVita Folsom can only take 4 more"),
@@ -69,6 +71,11 @@ def test_each_kind_passes(monkeypatch):
     assert read_changes("x", PLAN, CLINICS, PATIENTS, "m") == changes
 
 
+def test_keys_of_other_kinds_are_dropped(monkeypatch):
+    fake_model(monkeypatch, [{"kind": "decline", "patient_id": "P001", "clinic_id": None, "more": None, "date": None, "shift": None}])
+    assert read_changes("x", PLAN, CLINICS, PATIENTS, "m") == [{"kind": "decline", "patient_id": "P001"}]
+
+
 @pytest.mark.parametrize("changes", [
     [],
     [{"kind": "decline", "patient_id": f"P00{i}"} for i in range(1, 5)],
@@ -81,7 +88,6 @@ def test_each_kind_passes(monkeypatch):
     [{"kind": "clinic_limit", "clinic_id": "C02", "more": "4"}],
     [{"kind": "clinic_limit", "clinic_id": "C02"}],
     [{"kind": "decline", "patient_id": "P999"}],
-    [{"kind": "decline", "patient_id": "P001", "clinic_id": "C02"}],
     [{"kind": "pin", "patient_id": "P001", "clinic_id": "C02", "date": "Oct 28", "shift": 1}],
     [{"kind": "pin", "patient_id": "P001", "clinic_id": "C02", "date": "2026-10-28", "shift": 5}],
     ["P001"],

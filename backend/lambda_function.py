@@ -96,10 +96,12 @@ def rank(affected, patients, rules, drive):
         return rank_by_rules(affected, patients, rules, drive)
 
 
-def replan_with_bedrock(instruction, plan, tools, clinics):
+def replan_with_bedrock(instruction, plan, tools, seed):
     ai_step("replan")
+    from lumen.ai.intent import hide_names
     from lumen.ai.replan import replan
-    return replan(instruction, plan, tools, clinics)  # seed clinics: names and slots for the model, no patient data
+    # seed clinics: names and slots for the model; patient names become IDs, as in the intent step
+    return replan(hide_names(instruction, seed["patients"], seed["clinics"]), plan, tools, seed["clinics"])
 
 
 def intent_with_bedrock(instruction, plan, tools, seed):
@@ -268,9 +270,9 @@ def replan_route(body):
     result = None
     # The Bedrock tool loop, then the intent step, then the rules. Each step after a failure gets fresh tools,
     # because a failed step may have changed the working copy.
-    for step, fn, args in (("replan", replan_with_bedrock, (seed["clinics"],)), ("intent", intent_with_bedrock, (seed,))):
+    for step, fn in (("replan", replan_with_bedrock), ("intent", intent_with_bedrock)):
         try:
-            result, sources["replan"] = with_deadline(step, fn, instruction, old, tools, *args), "bedrock"
+            result, sources["replan"] = with_deadline(step, fn, instruction, old, tools, seed), "bedrock"
             log(step=step, source="bedrock")
             break
         except Exception as exc:

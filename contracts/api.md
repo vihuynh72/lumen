@@ -84,7 +84,7 @@ Response `200`: the event (fixture: `fixtures/event.json`, schema: `event.schema
 }
 ```
 
-`parse_source` (optional, event schema v2) says how the notice was parsed: `bedrock`, or `fallback` when the Bedrock parse failed and the router parsed the PG&E notice layout with rules. The router sets it; the model never does. Show a "Parsed by fallback rules" tag when it is `fallback`.
+`parse_source` (optional, event schema v2) says how the notice was parsed: `bedrock`, or `fallback` when the Bedrock parse failed and the router parsed the PG&E notice layout with rules. The router sets it; the model never does. The frontend never shows it: no source labels on screen.
 
 ## POST /plan
 
@@ -136,7 +136,7 @@ Row rules:
 * `flags`: `long_gap_after` (the next usual session date minus the new slot date, in calendar days, is more than `gap_limit_days`), `staff_call` (a person must call this patient).
 * `timing_ms`: `total` is the wall time of the request that made this version, at least the sum of its steps. Parse is timed in `POST /alert`.
 
-`ai_sources` (optional, plan schema v2) says who did each AI step of the request that made this version: `bedrock`, or `fallback` when the Bedrock step failed or ran past its time limit and the router used its rule-based path. Only the steps that ran have a key. `POST /plan` sets `text`, for example `{"text": "fallback"}`. Rank uses rules only, so it has no key. `POST /approve` runs no AI step, so it sets `{}`. The router sets it. The model never does. Show a fallback tag on each step that has `fallback`.
+`ai_sources` (optional, plan schema v2) says who did each AI step of the request that made this version: `bedrock`, or `fallback` when the Bedrock step failed or ran past its time limit and the router used its rule-based path. Only the steps that ran have a key. `POST /plan` sets `text`, for example `{"text": "fallback"}`. Rank uses rules only, so it has no key. `POST /approve` runs no AI step, so it sets `{}`. The router sets it. The model never does. The frontend never shows it.
 
 ## POST /replan
 
@@ -167,7 +167,7 @@ Schema: `replan.schema.json` (the `plan` inside follows `plan.schema.json`). `di
 
 The router tries three steps in this order. The first step that works makes the change:
 
-1. The Bedrock tool loop (`BEDROCK_MODEL_ID`), when `AI_STEPS` has `replan`. Limit 45 s.
+1. The Bedrock tool loop (`BEDROCK_MODEL_ID`), when `AI_STEPS` has `replan`. Limit 45 s. It gets the instruction with names replaced, as below.
 2. The intent step (`BEDROCK_MODEL_FAST`), when `AI_STEPS` has `intent`. Limit 20 s. One model call reads the instruction into 1 to 3 changes. Code checks each change, applies it with the re-plan tools, re-runs matching and writes the summary.
 3. The rules: only "(clinic name) can only take N more".
 
@@ -177,13 +177,13 @@ When all three fail, the route returns `400 {"error": "Lumen could not read that
 
 The intent step:
 
-* Before the call, code replaces each patient name in the instruction with the patient ID: the full name, and a first or last name that exactly one patient has. Case does not matter. Accents do. Two words of a clinic name stay, so "Cameron Park" is not Linda Park. The model never sees names or addresses.
+* Before the call, code replaces each patient name in the instruction with the patient ID: the full name, and a first or last name that exactly one patient has. Case and accents do not matter ("Rios" is Guadalupe Ríos), and the model gets the instruction without accents. Two words of a clinic name stay, so "Cameron Park" is not Linda Park. The model never sees names or addresses.
 * The model gets the instruction, the dialysis clinics (`id`, `name`, `home`, `slots` with `date`, `shift`, `open_chairs`, after earlier cuts) and the plan rows (`patient_id`, `action`, `clinic_id`, `slot`, `status`).
 * The model calls the tool `change` with `{"changes": [...]}`. Each change is one of:
   * `{"kind": "clinic_limit", "clinic_id": "C02", "more": 4}`: the clinic takes at most `more` visiting patients, with the same algorithm as the rules.
   * `{"kind": "decline", "patient_id": "P012"}`: the patient will not come (`decline_patient`).
   * `{"kind": "pin", "patient_id": "P012", "clinic_id": "C02", "date": "2026-10-28", "shift": 1}`: the patient goes to that slot (`pin_patient`).
-* Code rejects the whole reply, and the router tries the rules, when the list is empty or has more than 3 changes, a kind is unknown, a change has a missing or extra key, an ID is not in the plan or not a dialysis clinic, `more` is below 0, or a tool rejects the change (for example a pin to a slot the clinic does not have).
+* Code rejects the whole reply, and the router tries the rules, when the list is empty or has more than 3 changes, a kind is unknown, a change misses one of its keys (keys of other kinds are dropped), an ID is not in the plan or not a dialysis clinic, `more` is below 0, or a tool rejects the change (for example a pin to a slot the clinic does not have).
 
 `understood` is one plain sentence per applied change. Code writes it from the change, with patient names. It is in the response only, never in the stored plan:
 
@@ -293,7 +293,7 @@ What Bedrock does:
 | `wheelchair_long_drive` | The patient uses a wheelchair and the drive is more than 30 minutes. |
 | `language_unconfirmed` | The patient's language is not `en` and the row is a transfer or hospital row. |
 
-Show an AI tag on each sentence with `source: "bedrock"` and on each soft warning.
+The frontend never shows `source` or `explained_by`.
 
 ## POST /packet
 

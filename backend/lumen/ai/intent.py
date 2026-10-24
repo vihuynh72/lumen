@@ -3,6 +3,7 @@ changes; code checks each change and applies it (replan_tools.apply_changes). Th
 
 import json
 import re
+import unicodedata
 from collections import Counter
 
 from lumen.ai import bedrock
@@ -40,13 +41,19 @@ def _words(text):
     return rf"(?<!\w){r'\s+'.join(map(re.escape, text.split()))}(?!\w)"
 
 
+def _plain(text):
+    """text without accents: staff often type Rios for Ríos."""
+    return unicodedata.normalize("NFC", "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c)))
+
+
 def hide_names(text, patients, clinics):
-    """The instruction with each patient name replaced by the patient ID: the full name, and a first or last name that
-    exactly one patient has. Case does not matter; accents do. Two words of a clinic name stay ("Cameron Park")."""
+    """The instruction, without accents, with each patient name replaced by the patient ID: the full name, and a first or
+    last name that exactly one patient has. Case and accents do not matter. Two words of a clinic name stay ("Cameron Park")."""
+    text = _plain(text)
     for p in sorted(patients, key=lambda p: -len(p["name"])):
-        text = re.sub(_words(p["name"]), p["id"], text, flags=re.IGNORECASE)
-    count = Counter(w for p in patients for w in {w.casefold() for w in p["name"].split()})
-    one = {w.casefold(): p["id"] for p in patients for w in p["name"].split() if count[w.casefold()] == 1}
+        text = re.sub(_words(_plain(p["name"])), p["id"], text, flags=re.IGNORECASE)
+    count = Counter(w for p in patients for w in {_plain(w).casefold() for w in p["name"].split()})
+    one = {_plain(w).casefold(): p["id"] for p in patients for w in p["name"].split() if count[_plain(w).casefold()] == 1}
     if not one:
         return text
     kept = [m.span() for c in clinics for pair in zip(c["name"].split(), c["name"].split()[1:])
@@ -56,11 +63,11 @@ def hide_names(text, patients, clinics):
 
 
 def check_change(change, patient_ids, clinic_ids):
-    """The change with only its own keys. ValueError on a bad kind, a missing or extra key, an unknown ID, a bad date or
-    shift, or more below 0."""
+    """The change with only its own keys; other keys are dropped (an emulated tool call may fill them with null).
+    ValueError on a bad kind, a missing key, an unknown ID, a bad date or shift, or more below 0."""
     keys = KINDS.get(change.get("kind")) if isinstance(change, dict) else None
-    if keys is None or set(change) != {"kind", *keys}:
-        raise ValueError("each change needs a known kind and exactly its keys")
+    if keys is None or not set(keys) <= set(change):
+        raise ValueError("each change needs a known kind and its keys")
     valid = {"clinic_id": lambda v: isinstance(v, str) and v in clinic_ids,
              "patient_id": lambda v: isinstance(v, str) and v in patient_ids,
              "more": lambda v: type(v) is int and v >= 0,

@@ -229,7 +229,7 @@ def test_ai_sources_say_bedrock_when_it_works(monkeypatch):
     monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
         write_plan_text=lambda plan, clinics, languages, only_ids: {**plan, "summary": "Bedrock wrote this. It has two sentences."}))
     monkeypatch.setattr(router, "replan_with_bedrock",
-                        lambda instruction, plan, tools, clinics: router.replan_by_rules(instruction, plan, tools, clinics))
+                        lambda instruction, plan, tools, seed: router.replan_by_rules(instruction, plan, tools, seed["clinics"]))
     plan = plan_v1()
     assert plan["ai_sources"] == {"text": "bedrock"} and not list(validator("plan").iter_errors(plan))
     body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
@@ -596,6 +596,19 @@ def test_intent_falls_back_to_the_rules(monkeypatch, changes):
     assert status == 200 and seen["calls"] == 1 and body["plan"]["ai_sources"]["replan"] == "fallback"
     assert body["understood"] == ["DaVita Folsom Dialysis takes at most 4 more patients."]
     assert not any(r["pinned"] for r in body["plan"]["patients"])  # the failed pin left no trace
+
+
+def test_the_tool_loop_gets_ids_not_names(monkeypatch):
+    import lumen.ai.replan as tool_loop
+    seen = {}
+
+    def loop(instruction, plan, tools, clinics):
+        seen["instruction"] = instruction
+        raise RuntimeError("throttled")
+    monkeypatch.setattr(tool_loop, "replan", loop)
+    plan_v1()
+    assert replan("Ruben Ochoa declined")[0] == 400  # AI_STEPS default has replan; the intent step has no model here
+    assert seen["instruction"] == "P021 declined"
 
 
 def test_ai_steps_without_intent_skips_the_model(monkeypatch):
