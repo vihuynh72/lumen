@@ -16,14 +16,24 @@
     "accepts_visiting": true,
     "slots": [
       {
+        "date": "2026-10-26",
+        "shift": 2,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-26",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
         "date": "2026-10-27",
         "shift": 1,
-        "open_chairs": 1
+        "open_chairs": 2
       },
       {
         "date": "2026-10-27",
         "shift": 2,
-        "open_chairs": 1
+        "open_chairs": 3
       }
     ],
     "simulated": [
@@ -52,47 +62,217 @@
       {
         "date": "2026-10-27",
         "shift": 1,
-        "open_chairs": 0
+        "open_chairs": 1
       },
       {
         "date": "2026-10-27",
         "shift": 2,
-        "open_chairs": 0
-      },
-      {
-        "date": "2026-10-27",
-        "shift": 3,
-        "open_chairs": 0
+        "open_chairs": 1
       },
       {
         "date": "2026-10-28",
-        "shift": 1,
-        "open_chairs": 0
-      },
-      {
-        "date": "2026-10-28",
-        "shift": 2,
-        "open_chairs": 0
-      },
-      {
-        "date": "2026-10-28",
-        "shift": 3,
-        "open_chairs": 0
-      },
-      {
-        "date": "2026-10-29",
         "shift": 1,
         "open_chairs": 2
       },
       {
-        "date": "2026-10-29",
+        "date": "2026-10-28",
         "shift": 2,
-        "open_chairs": 0
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 1
       },
       {
         "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 1
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C03",
+    "name": "SHC Folsom",
+    "address": "210 Blue Ravine Rd Suite 100, Folsom, CA 95630",
+    "phone": "(916) 365-8100",
+    "lat": 38.655766,
+    "lng": -121.172951,
+    "stations": 13,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": false,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C04",
+    "name": "DaVita Orangevale Dialysis Center",
+    "address": "9267 Greenback Lane #A2, Orangevale, CA 95662",
+    "phone": "(916) 988-5666",
+    "lat": 38.678281,
+    "lng": -121.209671,
+    "stations": 20,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-27",
+        "shift": 2,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-27",
         "shift": 3,
-        "open_chairs": 0
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 4
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 4
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 2
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C05",
+    "name": "DaVita Sunset Dialysis Center",
+    "address": "3071 Gold Canal Drive, Rancho Cordova, CA 95670",
+    "phone": "(916) 638-8429",
+    "lat": 38.592495,
+    "lng": -121.268534,
+    "stations": 24,
+    "late_shift": true,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-27",
+        "shift": 3,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 4,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 4,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 1
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C06",
+    "name": "DCI Rancho Dialysis Clinic",
+    "address": "10294 Rockingham Drive, Sacramento, CA 95827",
+    "phone": "(916) 857-1819",
+    "lat": 38.573939,
+    "lng": -121.307105,
+    "stations": 16,
+    "late_shift": false,
+    "chain": "Dialysis Clinic, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 1
       }
     ],
     "simulated": [
