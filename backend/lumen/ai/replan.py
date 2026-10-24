@@ -181,7 +181,7 @@ def _summary(diff, clinics, old_plan, new_plan, capacity_clinics):
     descriptions = {
         "early_session": ("has an earlier treatment", "have earlier treatments"),
         "transfer": ("transfers to another clinic", "transfer to other clinics"),
-        "hospital": ("needs a staff call", "need staff calls"),
+        "hospital": ("needs a phone call", "need phone calls"),
         "notify_only": ("receives a notification", "receive notifications"),
     }
     ids = lambda field, predicate: {d["patient_id"] for d in diff if d["field"] == field and predicate(d)}
@@ -197,11 +197,10 @@ def _summary(diff, clinics, old_plan, new_plan, capacity_clinics):
                             (ids("pickup_time", lambda d: d["from"] != d["to"]), "pickup change{s}")):
         if count_ids:
             actions = [*actions, f"{len(count_ids)} {noun.format(s='' if len(count_ids) == 1 else 's')}"]
-    details = "; ".join(actions) or "0 action changes"
     if capacity_clinics and not moves:
-        details += "; capacity reduced and nobody moved"
-    return (f"{count} patient row{'' if count == 1 else 's'} changed at {places}. "
-            f"New actions: {details}.")
+        actions = [*actions, "capacity reduced and nobody moved"]
+    head = f"{count} patient row{'' if count == 1 else 's'} changed at {places}." if count else f"No patient changed at {places}."
+    return f"{head} New actions: {'; '.join(actions)}." if actions else head
 
 
 def _view(name, value, state):

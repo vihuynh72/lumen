@@ -5,7 +5,7 @@
       "facility_id": "C02",
       "severity": "block",
       "code": "over_capacity",
-      "text": "DaVita Folsom Dialysis has one open chair on Thursday morning, but two patients are booked there.",
+      "text": "DaVita Folsom Dialysis has one open slot on Thursday morning, but two patients are booked there.",
       "slot": {
         "date": "2026-10-29",
         "shift": 1

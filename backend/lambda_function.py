@@ -35,7 +35,7 @@ MODEL_ISSUES = 12
 MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
 NOT_UNDERSTOOD = {  # per region: the examples name a clinic and a patient that exist there
     "eldorado": "Lumen could not read that change. Try 'DaVita Folsom can only take 4 more' or 'Maria Delgado declined'.",
-    "santaclara": "Lumen could not read that change. Try 'SHC Silver Creek can only take 4 more' or 'Thanh Nguyen declined'.",
+    "santaclara": "Lumen could not read that change. Try 'SHC South San Jose can only take 10 more' or 'Thanh Nguyen declined'.",
 }
 _pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after

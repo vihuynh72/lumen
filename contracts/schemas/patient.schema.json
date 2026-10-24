@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lumen.demo/schemas/patient.schema.json",
-  "version": 2,
+  "version": 3,
   "title": "Patient",
-  "description": "One synthetic patient on the home clinic's roster. data/seed/patients.json (El Dorado, P001-P040) and data/seed/santaclara/patients.json (Santa Clara, P101-P140) are arrays of these. Names and homes never go to Bedrock. Schema v2 adds vi and hbv_tested.",
+  "description": "One synthetic patient of a clinic the shutoff closes. data/seed/patients.json (El Dorado, P001-P040) and data/seed/santaclara/patients.json (Santa Clara, P101-P196) are arrays of these. Names and homes never go to Bedrock. Schema v2 adds vi and hbv_tested; v3 adds clinic_id.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,6 +27,11 @@
     "id": {
       "type": "string",
       "pattern": "^P\\d{3}$"
+    },
+    "clinic_id": {
+      "type": "string",
+      "pattern": "^C\\d{2}$",
+      "description": "Optional (schema v3). The patient's usual dialysis clinic. Missing: the home clinic. Santa Clara patients have it (C11, C12 or C17); El Dorado patients do not."
     },
     "name": {
       "type": "string",

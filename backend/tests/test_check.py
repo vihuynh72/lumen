@@ -34,7 +34,7 @@ def test_hbsag_positive_needs_an_isolation_station():
     issues = check(row("P005", "transfer", "C04", "2026-10-28", 2), row("P026", "transfer", "C02", "2026-10-28", 2),
                    row("P039", "hospital", "H01"), seed=seed)
     assert codes(issues, "block") == [("P005", "hbv_no_isolation")]  # C02 and H01 have isolation stations
-    assert issues[0]["text"] == "P005 has hepatitis B, but DaVita Orangevale Dialysis Center has no isolation chair."
+    assert issues[0]["text"] == "P005 has hepatitis B, but DaVita Orangevale Dialysis Center has no isolation station."
 
 
 def test_more_patients_than_open_chairs_blocks_the_slot():
@@ -43,7 +43,7 @@ def test_more_patients_than_open_chairs_blocks_the_slot():
     issues = check(*two, row("P013", "transfer", "C02", "2026-10-28", 1))
     assert [(i["patient_id"], i["facility_id"], i["code"], i["slot"]) for i in issues if i["severity"] == "block"] == [
         (None, "C02", "over_capacity", {"date": "2026-10-28", "shift": 1})]
-    assert "has 2 open chairs on 2026-10-28 shift 1, but the plan sends 3 patients" in issues[0]["text"]
+    assert "has 2 open slots on 2026-10-28 shift 1, but the plan sends 3 patients" in issues[0]["text"]
 
 
 def test_capacity_overrides_count():

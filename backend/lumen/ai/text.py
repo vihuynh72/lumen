@@ -15,6 +15,7 @@ from time import monotonic
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from lumen import text_fallback
 from lumen.ai import bedrock
 
 
@@ -339,14 +340,7 @@ def _call(model, payload):
 
 
 def _summary(plan):
-    counts = {action: sum(row["action"] == action for row in plan["patients"])
-              for action in ("early_session", "transfer", "hospital")}
-    early, transfers, hospital = (counts[action] for action in MOVES + ("hospital",))
-    rides = sum(row["book_today"] for row in plan["patients"])
-    return (f"{early} {'patient dialyzes' if early == 1 else 'patients dialyze'} early, "
-            f"{transfers} {'moves' if transfers == 1 else 'move'} to another clinic, "
-            f"and {hospital} {'needs' if hospital == 1 else 'need'} a staff call. "
-            f"Book {rides} paratransit {'ride' if rides == 1 else 'rides'} today.")
+    return text_fallback.summary(plan["patients"])
 
 
 def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | None = None) -> dict:

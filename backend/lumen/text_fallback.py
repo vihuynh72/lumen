@@ -34,8 +34,24 @@ def fill(plan, clinics, only_ids=None):
         if (only_ids is None or r["patient_id"] in only_ids) and r["action"] in MOVES and r["slot"]:
             r = {**r, "messages": {"en": message(r, clinics)}}
         rows.append(r)
-    count = {a: sum(1 for r in rows if r["action"] == a) for a in ("early_session", "transfer", "hospital")}
-    rides = sum(1 for r in rows if r["book_today"])
-    summary = (f"{count['early_session']} patients dialyze early, {count['transfer']} move to another clinic, "
-               f"and {count['hospital']} need a staff call. Book {rides} paratransit rides today.")
-    return {**plan, "patients": rows, "summary": plan["summary"] if only_ids is not None else summary}
+    return {**plan, "patients": rows, "summary": plan["summary"] if only_ids is not None else summary(rows)}
+
+
+def summary(rows):
+    """The plan in one or two sentences from code counts. A part whose count is 0 is left out."""
+    parts = []
+    for action, one, many in (("early_session", "dialyzes early", "dialyze early"),
+                              ("transfer", "moves to another clinic", "move to another clinic"),
+                              ("hospital", "needs a phone call", "need a phone call")):
+        n = sum(r["action"] == action for r in rows)
+        if n:
+            noun = "" if parts else ("patient " if n == 1 else "patients ")  # only the first part names the noun
+            parts.append(f"{n} {noun}{one if n == 1 else many}")
+    if not parts:
+        text = "No patient needs a change"
+    elif len(parts) == 1:
+        text = parts[0]
+    else:
+        text = f"{', '.join(parts[:-1])}{',' if len(parts) > 2 else ''} and {parts[-1]}"
+    rides = sum(r["book_today"] for r in rows)
+    return f"{text}." + (f" Book {rides} paratransit ride{'' if rides == 1 else 's'} today." if rides else "")

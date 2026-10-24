@@ -1,5 +1,6 @@
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -332,23 +333,31 @@ def test_sessions_keep_their_own_plans():
     assert call("GET", "/state", session="BAD!")[0] == 400
 
 
-def test_santaclara_plan_end_to_end():
+def test_santaclara_plan_end_to_end(monkeypatch):
+    monkeypatch.setattr(router, "rank", REAL_RANK)
     status, event = call("POST", "/alert", {"notice_text": SC_NOTICE}, region="santaclara")
     assert status == 200 and event["event_id"] == "PSPS-DEMO-SC-01" and event["start"] == "2026-10-27T18:00:00-07:00"
     status, plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")
     assert status == 200, plan
     assert not list(validator("plan").iter_errors(plan))
     state = call("GET", "/state", region="santaclara")[1]
-    assert [c["id"] for c in state["clinics"]] == ["C11", "C12", "C13", "C14", "C15", "C16", "C17", "H11"]
-    assert {p["id"] for p in state["patients"]} == {f"P{n}" for n in range(101, 141)} and state["affected"]["closed_clinic_ids"] == ["C11"]
-    affected = {s["patient_id"] for s in state["affected"]["sessions"]}
+    assert [c["id"] for c in state["clinics"]] == [f"C{n}" for n in range(11, 35)] + ["H11"]
+    assert {p["id"] for p in state["patients"]} == {f"P{n}" for n in range(101, 197)}
+    assert state["affected"]["closed_clinic_ids"] == ["C11", "C12", "C17"]  # Evergreen, Silver Creek, Santa Teresa
+    sessions = state["affected"]["sessions"]
+    assert {s["patient_id"] for s in sessions} == {p["id"] for p in state["patients"]}  # every patient has a session in the window
+    usual = {p["id"]: p["clinic_id"] for p in state["patients"]}
+    assert all(s["clinic_id"] == usual[s["patient_id"]] for s in sessions) and set(Counter(usual.values()).values()) == {32}
     rows = {r["patient_id"]: r for r in plan["patients"]}
-    assert len(affected) >= 30 and all(rows[p]["action"] in ("early_session", "transfer") for p in affected)  # every one gets a chair
+    assert Counter(r["action"] for r in rows.values()) == {"early_session": 17, "transfer": 75, "hospital": 4}
+    assert all(r["clinic_id"] == usual[pid] for pid, r in rows.items() if r["action"] == "early_session")  # early at their own clinic
+    assert plan["summary"] == "17 patients dialyze early, 75 move to another clinic, and 4 need a phone call. Book 14 paratransit rides today."
     langs = {p["id"]: p["language"] for p in state["patients"]}
     vi = [r for r in rows.values() if langs[r["patient_id"]] == "vi" and r["slot"]]
     assert vi and all(r["messages"]["vi"].count("buổi lọc máu") == 1 for r in vi)
     issues = call("POST", "/check", {"event_id": "PSPS-DEMO-SC-01"}, region="santaclara")[1]["issues"]
-    assert not [i for i in issues if i["severity"] == "block"] and len(issues) <= 15
+    # the check card shows one line per kind of warning: keep it short
+    assert not [i for i in issues if i["severity"] == "block"] and {i["code"] for i in issues} <= {"hbv_test_missing", "long_gap_after", "no_late_shift"}
 
 
 @pytest.mark.parametrize("region,notice", [("eldorado", NOTICE), ("santaclara", SC_NOTICE)])
@@ -603,7 +612,7 @@ def test_intent_reads_a_decline_without_seeing_names(monkeypatch):
     assert status == 200, body
     assert seen["tool_choice"] == "change" and json.loads(seen["raw"])["instruction"] == "P001 declined"
     assert "Maria" not in seen["raw"] and "Delgado" not in seen["raw"]
-    assert body["understood"] == ["Maria Delgado will not come. Staff call them."] and body["plan"]["ai_sources"]["replan"] == "bedrock"
+    assert body["understood"] == ["Maria Delgado will not come and needs a phone call."] and body["plan"]["ai_sources"]["replan"] == "bedrock"
     row = next(r for r in body["plan"]["patients"] if r["patient_id"] == "P001")
     assert row["status"] == "declined" and "P001" in body["plan"]["overflow"]
     assert not list(validator("replan").iter_errors(body)) and not list(validator("plan").iter_errors(body["plan"]))
@@ -656,7 +665,7 @@ def test_the_tool_loop_gets_ids_not_names(monkeypatch):
     plan_v1()
     status, body = replan("Ruben Ochoa declined")  # AI_STEPS default has replan; the intent step has no model here
     assert status == 200 and body["plan"]["ai_sources"]["replan"] == "fallback"  # the rules read the name, without accents too
-    assert body["understood"] == ["Rubén Ochoa will not come. Staff call them."]
+    assert body["understood"] == ["Rubén Ochoa will not come and needs a phone call."]
     assert seen["instruction"] == "P020 declined"
 
 
@@ -664,7 +673,7 @@ def test_ai_steps_without_intent_skips_the_model(monkeypatch):
     seen = fake_intent(monkeypatch, lambda payload: [{"kind": "decline", "patient_id": "P001"}], steps="parse,check")
     plan_v1()
     assert replan("DaVita Folsom Dialysis can only take four more")[1]["plan"]["ai_sources"]["replan"] == "fallback"
-    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come. Staff call them."]
+    assert replan("Maria Delgado declined")[1]["understood"] == ["Maria Delgado will not come and needs a phone call."]
     assert replan("Move everyone to Tuesday") == (400, {"error": router.NOT_UNDERSTOOD["eldorado"], "step": "replan"})
     assert seen["calls"] == 0
 

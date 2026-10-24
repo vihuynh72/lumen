@@ -320,7 +320,7 @@
             "hospital",
             "notify_only"
           ],
-          "description": "early_session: an earlier chair at the home clinic. transfer: a chair at another open clinic. hospital: no chair fits; the patient is in overflow and gets a staff call. notify_only: the usual slot stays; the patient gets a heads-up (for example the home is in the outage area but no session overlaps the window)."
+          "description": "early_session: an earlier chair at the patient's own clinic. transfer: a chair at another open clinic. hospital: no chair fits; the patient is in overflow and gets a staff call. notify_only: the usual slot stays; the patient gets a heads-up (for example the home is in the outage area but no session overlaps the window)."
         },
         "clinic_id": {
           "type": [

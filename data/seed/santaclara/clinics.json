@@ -16,16 +16,6 @@
     "accepts_visiting": true,
     "slots": [
       {
-        "date": "2026-10-26",
-        "shift": 2,
-        "open_chairs": 2
-      },
-      {
-        "date": "2026-10-26",
-        "shift": 3,
-        "open_chairs": 2
-      },
-      {
         "date": "2026-10-27",
         "shift": 1,
         "open_chairs": 3
@@ -33,7 +23,7 @@
       {
         "date": "2026-10-27",
         "shift": 2,
-        "open_chairs": 2
+        "open_chairs": 3
       }
     ],
     "simulated": [
@@ -60,29 +50,14 @@
     "accepts_visiting": true,
     "slots": [
       {
-        "date": "2026-10-28",
-        "shift": 1,
-        "open_chairs": 2
-      },
-      {
-        "date": "2026-10-28",
-        "shift": 2,
-        "open_chairs": 2
-      },
-      {
-        "date": "2026-10-28",
-        "shift": 3,
-        "open_chairs": 1
-      },
-      {
-        "date": "2026-10-29",
+        "date": "2026-10-27",
         "shift": 1,
         "open_chairs": 3
       },
       {
-        "date": "2026-10-29",
+        "date": "2026-10-27",
         "shift": 2,
-        "open_chairs": 2
+        "open_chairs": 3
       }
     ],
     "simulated": [
@@ -111,22 +86,27 @@
       {
         "date": "2026-10-28",
         "shift": 1,
-        "open_chairs": 1
+        "open_chairs": 2
       },
       {
         "date": "2026-10-28",
         "shift": 2,
-        "open_chairs": 2
+        "open_chairs": 3
       },
       {
         "date": "2026-10-28",
         "shift": 3,
-        "open_chairs": 2
+        "open_chairs": 3
       },
       {
         "date": "2026-10-29",
         "shift": 1,
-        "open_chairs": 1
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 3
       }
     ],
     "simulated": [
@@ -178,17 +158,17 @@
       {
         "date": "2026-10-27",
         "shift": 3,
-        "open_chairs": 1
-      },
-      {
-        "date": "2026-10-28",
-        "shift": 1,
         "open_chairs": 2
       },
       {
         "date": "2026-10-28",
-        "shift": 2,
+        "shift": 1,
         "open_chairs": 3
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 4
       },
       {
         "date": "2026-10-28",
@@ -198,12 +178,12 @@
       {
         "date": "2026-10-29",
         "shift": 1,
-        "open_chairs": 4
+        "open_chairs": 3
       },
       {
         "date": "2026-10-29",
         "shift": 2,
-        "open_chairs": 3
+        "open_chairs": 4
       }
     ],
     "simulated": [
@@ -236,6 +216,11 @@
       },
       {
         "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
         "shift": 2,
         "open_chairs": 2
       },
@@ -247,11 +232,16 @@
       {
         "date": "2026-10-28",
         "shift": 4,
-        "open_chairs": 3
+        "open_chairs": 2
       },
       {
         "date": "2026-10-29",
         "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
         "open_chairs": 2
       }
     ],
@@ -279,9 +269,102 @@
     "accepts_visiting": true,
     "slots": [
       {
+        "date": "2026-10-27",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 2,
+        "open_chairs": 3
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C18",
+    "name": "SHC South San Jose",
+    "address": "393 Blossom Hill Rd Ste 110, San Jose, CA 95123",
+    "phone": "(408) 629-9802",
+    "lat": 37.251435,
+    "lng": -121.82746,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-27",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
         "date": "2026-10-28",
         "shift": 1,
-        "open_chairs": 1
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 3
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C19",
+    "name": "SHC Blossom Valley",
+    "address": "1450 Kooser Rd, San Jose, CA 95118",
+    "phone": "(408) 440-3260",
+    "lat": 37.245441,
+    "lng": -121.892,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 3
       },
       {
         "date": "2026-10-28",
@@ -289,16 +372,398 @@
         "open_chairs": 1
       },
       {
-        "date": "2026-10-28",
-        "shift": 4,
+        "date": "2026-10-29",
+        "shift": 1,
         "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 3
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C20",
+    "name": "SHC WB San Jose",
+    "address": "1525 Meridian Ave Ste 101, San Jose, CA 95125",
+    "phone": "(408) 269-3600",
+    "lat": 37.296824,
+    "lng": -121.913632,
+    "stations": 4,
+    "late_shift": true,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": false,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C21",
+    "name": "DaVita Cornerhouse Dialysis Center",
+    "address": "2005 Naglee Ave, San Jose, CA 95128",
+    "phone": "(408) 998-0183",
+    "lat": 37.327809,
+    "lng": -121.932192,
+    "stations": 16,
+    "late_shift": true,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C22",
+    "name": "Santa Clara Valley Renal Care Center",
+    "address": "2220 Moorpark Ave, San Jose, CA 95128",
+    "phone": "(408) 885-5730",
+    "lat": 37.316059,
+    "lng": -121.933589,
+    "stations": 25,
+    "late_shift": true,
+    "chain": null,
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 1
       },
       {
         "date": "2026-10-29",
         "shift": 1,
         "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 2
       }
     ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C23",
+    "name": "SHC San Jose LLC",
+    "address": "888 S Bascom Ave, San Jose, CA 95128",
+    "phone": "(408) 855-6900",
+    "lat": 37.311021,
+    "lng": -121.93172,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C24",
+    "name": "DaVita Stevens Creek Dialysis",
+    "address": "275 Di Salvo Ave, San Jose, CA 95128",
+    "phone": "(408) 297-0103",
+    "lat": 37.323976,
+    "lng": -121.937097,
+    "stations": 24,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C25",
+    "name": "DaVita Silicon Valley Dialysis",
+    "address": "725 Ridder Park Dr Ste 10, San Jose, CA 95131",
+    "phone": "(408) 392-0390",
+    "lat": 37.378715,
+    "lng": -121.901601,
+    "stations": 32,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 2
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C26",
+    "name": "Fresenius Medical Care Los Gatos",
+    "address": "14651 S Bascom Ave Ste 100, Los Gatos, CA 95032",
+    "phone": "(408) 358-3791",
+    "lat": 37.255674,
+    "lng": -121.950493,
+    "stations": 12,
+    "late_shift": false,
+    "chain": "Fresenius Medical Care",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C27",
+    "name": "DaVita Los Gatos Dialysis",
+    "address": "14251 Winchester Blvd Ste 100, Los Gatos, CA 95032",
+    "phone": "(408) 370-6756",
+    "lat": 37.26058,
+    "lng": -121.963039,
+    "stations": 16,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C28",
+    "name": "SHC Stevens Creek",
+    "address": "4360-A Stevens Creek Blvd, San Jose, CA 95129",
+    "phone": "(408) 517-5777",
+    "lat": 37.322984,
+    "lng": -121.978959,
+    "stations": 42,
+    "late_shift": true,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C29",
+    "name": "DaVita Santa Clara Dialysis",
+    "address": "777 Lawrence Expy, Santa Clara, CA 95051",
+    "phone": "(408) 243-1130",
+    "lat": 37.337677,
+    "lng": -121.995922,
+    "stations": 24,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C30",
+    "name": "SHC Milpitas",
+    "address": "1860 Milmont Dr, Milpitas, CA 95035",
+    "phone": "(408) 935-0600",
+    "lat": 37.456358,
+    "lng": -121.917299,
+    "stations": 24,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C31",
+    "name": "SHC Morgan Hill",
+    "address": "16060 Caputo Dr Ste 140, Morgan Hill, CA 95037",
+    "phone": "(408) 337-4100",
+    "lat": 37.117886,
+    "lng": -121.634123,
+    "stations": 17,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C32",
+    "name": "SHC North Sunnyvale",
+    "address": "610 N Pastoria Ave, Sunnyvale, CA 94085",
+    "phone": "(408) 215-1475",
+    "lat": 37.393111,
+    "lng": -122.033445,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C33",
+    "name": "SHC Mountain View",
+    "address": "247 W El Camino Real Ste 100, Mountain View, CA 94040",
+    "phone": "(650) 417-6420",
+    "lat": 37.382894,
+    "lng": -122.078439,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C34",
+    "name": "SHC Gilroy",
+    "address": "8095 Camino Arroyo #100, Gilroy, CA 95020",
+    "phone": "(408) 848-5410",
+    "lat": 37.019409,
+    "lng": -121.56059,
+    "stations": 24,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [],
     "simulated": [
       "backup_power",
       "isolation_station",

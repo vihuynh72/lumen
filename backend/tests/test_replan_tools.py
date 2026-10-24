@@ -94,7 +94,7 @@ def test_replan_by_rules_matches_the_fixture():
     result = replan_by_rules("DaVita Folsom Dialysis can only take one more", PLAN1, tools(), SEEDS["clinics"])
     assert result["diff"] == REPLAN["diff"]
     assert result["plan"]["overflow"] == PLAN2["overflow"]
-    assert "1 patient moves" in result["summary"]
+    assert "1 more patient needs a phone call" in result["summary"]
     assert result["understood"] == ["DaVita Folsom Dialysis takes at most 1 more patient."]
 
 
@@ -131,7 +131,8 @@ def test_rules_reject_ambiguous_or_extra_text():
 
 def test_rules_summary_counts_and_grammar():
     summary = replan_by_rules("DaVita Folsom Dialysis can only take one more", PLAN1, tools(), SEEDS["clinics"])["summary"]
-    assert "1 patient moves" in summary and "1 more patient needs a staff call" in summary
+    # the patient who loses the chair goes to the call list, so no one "moves" and that part is left out
+    assert summary == "DaVita Folsom Dialysis can take only 1 more, so 1 more patient needs a phone call."
 
 
 def test_pin_needs_a_real_slot_and_capacity_respects_locks():
@@ -155,9 +156,9 @@ def test_apply_changes_decline_and_pin_write_the_sentences_in_code():
     by = rows(result["plan"])
     assert by["P003"]["status"] == "declined" and result["plan"]["overflow"] == ["P003"]
     assert by["P005"]["pinned"] and by["P005"]["action"] == "transfer" and by["P005"]["slot"] == {"date": "2026-10-29", "shift": 1}
-    assert result["understood"] == [f"{names['P003']} will not come. Staff call them.",
+    assert result["understood"] == [f"{names['P003']} will not come and needs a phone call.",
                                     f"{names['P005']} goes to DaVita Folsom Dialysis, Thu Oct 29, 6:00 AM."]
-    assert result["summary"] == "2 patients move to other chairs or the staff call list. 1 more patient needs a staff call."
+    assert result["summary"] == "1 patient moves to another slot and 1 more patient needs a phone call."
     assert not any(n in result["summary"] for n in names.values())  # the summary is stored: no names
 
 
@@ -166,7 +167,7 @@ def test_rules_read_a_full_name_decline_with_or_without_accents():
     name = next(p["name"] for p in SEEDS["patients"] if p["id"] == pid)
     for text in (f"{name} declined", f"{name.upper()} can't come.", f"{name} will not come"):
         result = replan_by_rules(text, PLAN1, tools(), SEEDS["clinics"], SEEDS["patients"])
-        assert result["understood"] == [f"{name} will not come. Staff call them."]
+        assert result["understood"] == [f"{name} will not come and needs a phone call."]
         assert next(r for r in result["plan"]["patients"] if r["patient_id"] == pid)["status"] == "declined"
     with pytest.raises(ValueError):
         replan_by_rules("Nobody Here declined", PLAN1, tools(), SEEDS["clinics"], SEEDS["patients"])

@@ -125,8 +125,11 @@ def check_region(folder):
                 errors.append(f"{folder}clinics.json {c.get('id')}: shift 4 (late) slot but late_shift is false")
 
     # Patients
+    dialysis = {c.get("id") for c in clinics if c.get("kind") == "dialysis"}
     for p in patients:
         pid = p.get("id")
+        if "clinic_id" in p and p["clinic_id"] not in dialysis:
+            errors.append(f"{folder}patients.json {pid}: clinic_id {p['clinic_id']} is not a dialysis clinic in clinics.json")
         if p.get("days") not in (MWF, TTS):
             errors.append(f"{folder}patients.json {pid}: days must be {MWF} or {TTS}")
         if not CALLBACK.match(str(p.get("callback", ""))):
@@ -166,12 +169,15 @@ def check_region(folder):
 
 def main():
     found = {region: check_region(folder) for region, folder in REGIONS.items()}
-    # The regions share one API and one audio cache: patient IDs and callback numbers must never collide.
-    for field in ("id", "callback"):
-        values = [p.get(field) for _, patients, _ in found.values() for p in patients]
-        shared = {v for v in values if values.count(v) > 1}
-        if shared:
-            errors.append(f"patients: {field} used more than once across the regions {sorted(shared)}")
+    # The regions share one API and one audio cache: patient IDs must never collide. Callback numbers only need to be
+    # unique within a region (the fictional 555-01XX range has 100 numbers; Santa Clara uses 555-0101 to 555-0196).
+    ids = [p.get("id") for _, patients, _ in found.values() for p in patients]
+    if len(set(ids)) != len(ids):
+        errors.append(f"patients: id used more than once across the regions {sorted({i for i in ids if ids.count(i) > 1})}")
+    for region, (_, patients, _) in found.items():
+        callbacks = [p.get("callback") for p in patients]
+        if len(set(callbacks)) != len(callbacks):
+            errors.append(f"{region} patients: callback used more than once {sorted({c for c in callbacks if callbacks.count(c) > 1})}")
     if errors:
         print("\n".join(errors))
         return 1

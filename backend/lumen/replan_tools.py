@@ -31,6 +31,8 @@ def build_tools(event_id, plan, seeds):
         raise LookupError(f"no event {event_id}")
     clinics = copy.deepcopy(seeds["clinics"])
     patients, rules = seeds["patients"], seeds["rules"]
+    home_id = next(c["id"] for c in clinics if c["home"])
+    usual = {p["id"]: p.get("clinic_id", home_id) for p in patients}  # a pin at the patient's own clinic is an early session
     now = datetime.fromisoformat(event["issued_at"]) + timedelta(minutes=30)  # the plan's demo clock, as in /plan
     affected = find_affected(event, clinics, patients, seeds["outage_area"], now, rules["modes"])
     drive = drive_minutes(patients, clinics)
@@ -85,7 +87,7 @@ def build_tools(event_id, plan, seeds):
             changed_clinics.add(clinic_id)  # re-match the slot's other patients so the pin can take a chair
             minutes = drive[patient_id][clinic_id]["minutes"]
             start = session_start(datetime.fromisoformat(date).date(), shift)
-            r.update(action="early_session" if clinic["home"] else "transfer", clinic_id=clinic_id,
+            r.update(action="early_session" if clinic_id == usual[patient_id] else "transfer", clinic_id=clinic_id,
                      slot={"date": date, "shift": shift}, drive_minutes=minutes, drive_source=drive[patient_id][clinic_id]["source"],
                      pickup_time=(start - timedelta(minutes=minutes + rules["pickup_buffer_minutes"])).isoformat(),
                      book_today=r["ride"] == "paratransit", flags=[f for f in r["flags"] if f == "long_gap_after"],
@@ -139,7 +141,7 @@ def apply_changes(changes, plan, tools, clinics, names):
             understood.append(f"{clinic['name']} takes at most {n} more patient{'' if n == 1 else 's'}.")
         elif ch["kind"] == "decline":
             tools["decline_patient"](ch["patient_id"])
-            understood.append(f"{names[ch['patient_id']]} will not come. Staff call them.")
+            understood.append(f"{names[ch['patient_id']]} will not come and needs a phone call.")
         else:
             tools["pin_patient"](ch["patient_id"], ch["clinic_id"], ch["date"], ch["shift"])
             at = session_start(datetime.fromisoformat(ch["date"]).date(), ch["shift"])
@@ -147,15 +149,17 @@ def apply_changes(changes, plan, tools, clinics, names):
                               f"{at:%a %b} {at.day}, {at.hour % 12 or 12}:{at:%M %p}.")
     result = tools["rerun_matching"]()
     diff = tools["diff_plans"]()
-    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id"}
-    to_staff = set(result["overflow"]) - set(plan["overflow"])
+    to_call = set(result["overflow"]) - set(plan["overflow"])
+    moved = {d["patient_id"] for d in diff if d["field"] == "clinic_id"} - to_call
 
     def count(k, noun, one, many):
         return f"{k} {noun}{'' if k == 1 else 's'} {one if k == 1 else many}"
 
     lead = f"{' and '.join(limits)}, so " if limits else ""
-    summary = (f"{lead}{count(len(moved), 'patient', 'moves', 'move')} to other chairs or the staff call list. "
-               f"{count(len(to_staff), 'more patient', 'needs', 'need')} a staff call.")
+    said = [text for k, text in ((len(moved), count(len(moved), "patient", "moves to another slot", "move to other slots")),
+                                 (len(to_call), count(len(to_call), "more patient", "needs", "need") + " a phone call")) if k]
+    summary = f"{lead}{' and '.join(said) or 'nobody moves'}."  # a part whose count is 0 is left out
+    summary = summary[0].upper() + summary[1:]
     return {"plan": {**plan, **result}, "diff": diff, "summary": summary, "understood": understood}
 
 

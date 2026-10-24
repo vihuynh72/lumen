@@ -11,8 +11,8 @@ SENT_AWAY = ("transfer", "hospital")  # rows that go to another facility and get
 HBV_TEST_DAYS = 30  # a receiving clinic wants a hepatitis B test from the last 30 days before the new session
 LANGUAGES = {"en": "English", "es": "Spanish", "zh": "Chinese", "vi": "Vietnamese"}
 TEXT = {
-    "hbv_no_isolation": "{pid} has hepatitis B, but {facility} has no isolation chair.",
-    "over_capacity": "{facility} has {chairs} open chairs on {date} shift {shift}, but the plan sends {count} patients.",
+    "hbv_no_isolation": "{pid} has hepatitis B, but {facility} has no isolation station.",
+    "over_capacity": "{facility} has {chairs} open slots on {date} shift {shift}, but the plan sends {count} patients.",
     "clinic_closed": "{facility} is closed during the shutoff.",
     "no_visitors": "{facility} does not take visiting patients.",
     "no_late_shift": "{pid} has a late shift, but {facility} has no late shift.",

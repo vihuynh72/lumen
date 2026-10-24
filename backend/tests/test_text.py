@@ -79,7 +79,7 @@ def test_clean_three_languages_and_counted_summary(monkeypatch, inputs):
             k: v for k, v in plan["patients"][row["rank"] - 1].items()
             if k not in ("messages", "reason_text")}
     assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
-                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
+                                 "and 1 needs a phone call. Book 1 paratransit ride today.")
     assert result["summary"].count(".") == 2
 
 
@@ -244,8 +244,8 @@ def test_summary_uses_only_code_counts_with_plural_agreement(monkeypatch, inputs
     assert result["summary"] == (
         f"{count} {'patients dialyze' if plural else 'patient dialyzes'} early, "
         f"{count} {'move' if plural else 'moves'} to another clinic, "
-        f"and {count} {'need' if plural else 'needs'} a staff call. "
-        f"Book {count} paratransit {'rides' if plural else 'ride'} today.")
+        f"and {count} {'need' if plural else 'needs'} a phone call. "
+        f"Book {count} paratransit {'rides' if plural else 'ride'} today." if count else "No patient needs a change.")
     assert all("patients" in call and "summary" not in call for call in calls)
 
 
@@ -826,10 +826,13 @@ def test_template_summary_is_counted_from_the_rows(monkeypatch, inputs):
     module = template_module(monkeypatch)
     result = module.template_plan_text(*inputs)
     assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
-                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
+                                 "and 1 needs a phone call. Book 1 paratransit ride today.")
     plan = deepcopy(inputs[0])
     plan["patients"][0]["action"] = "hospital"
     assert module.template_plan_text(plan, inputs[1], inputs[2])["summary"].startswith("1 patient dialyzes early, 2 move")
+    for row in plan["patients"]:  # a part whose count is 0 is left out
+        row.update(action="transfer" if row["action"] != "hospital" else "hospital", book_today=False)
+    assert module.template_plan_text(plan, inputs[1], inputs[2])["summary"] == "3 patients move to another clinic and 2 need a phone call."
 
 
 def test_template_row_that_cannot_fit_is_empty_and_logged(monkeypatch, inputs, caplog):

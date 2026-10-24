@@ -37,7 +37,7 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
     window_start = datetime.fromisoformat(affected["window"]["start"])
     by_id = {p["id"]: p for p in patients}
     sessions = {s["patient_id"]: s for s in affected["sessions"]}
-    home = next(c for c in clinics if c["home"])
+    by_clinic = {c["id"]: c for c in clinics}
     hospital = next(c for c in clinics if c["kind"] == "hospital")  # shortcut: first hospital; pick the nearest if the seed gets two
     open_now = {(c["id"], s["date"], s["shift"]): s["open_chairs"] for c in clinics for s in c["slots"]}  # a copy; inputs stay unchanged
     mode = affected["mode"]
@@ -72,6 +72,8 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
         return True
 
     def try_early(row, p, s_date):
+        """An extra session at the patient's own clinic that ends before the power goes off."""
+        home = by_clinic[sessions[p["id"]]["clinic_id"]]
         prev = next(regular_dates(p, s_date, -1))
         for slot in sorted(home["slots"], key=lambda s: (s["date"], s["shift"])):
             start = session_start(datetime.fromisoformat(slot["date"]).date(), slot["shift"])
