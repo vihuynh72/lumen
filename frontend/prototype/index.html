@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Lumen</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Lumen turns a PG&amp;E power shutoff notice into a checked, patient-by-patient dialysis treatment plan.">
@@ -410,6 +411,7 @@ details.more > div{padding:0 13px 13px}
       <div class="hero-actions">
         <button class="btn btn-primary lg" id="btnStart" type="button">Start the demo<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
         <button class="btn btn-secondary lg" id="btnExplore" type="button">Explore the map</button>
+        <button class="btn btn-secondary lg" id="btnLive" type="button">Run live demo</button>
       </div>
       <p class="hero-meta">31 dialysis centers and 642 stations from CMS facility data. 2,568 synthetic patients. The PG&amp;E notice and power grid are illustrative.</p>
     </div>
@@ -1478,5 +1480,182 @@ requestAnimationFrame(()=>setTimeout(()=>{
   try{initScene();Wd.grid.visible=true;requestAnimationFrame(loop);if(!REDUCED)controls.autoRotate=true;}
   catch(err){renderer=null;$('#nogl').hidden=false;$('#gl').style.display='none';console.warn('Lumen 3D map unavailable:',err&&err.message);}
 },30));
+})();
+</script>
+
+<!-- Live mode (VI-171): steps 1-4 against the deployed API. Self-contained; the guided demo above is unchanged. -->
+<style>
+.apiv{position:fixed;inset:0;z-index:60;overflow:auto;background:var(--ground);color:var(--ink);padding:max(16px,env(safe-area-inset-top)) 16px 32px}
+.apiv[hidden]{display:none}
+.apiv .pill:empty{display:none}
+.apiv-in{max-width:1180px;margin:0 auto;display:grid;gap:14px}
+.apiv-in>*{min-width:0}
+.apiv-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.apiv-top h2{margin:0;font-size:22px;font-weight:800}
+.apiv-sp{flex:1}
+.apiv-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--shadow)}
+.apiv-card h3{margin:0 0 10px;font-size:17px}
+.apiv-card dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:12px 0 0}
+.apiv-card dt{color:var(--mute)}
+.apiv-card dd{margin:0;font-weight:700}
+.apiv-err{background:var(--red-bg);color:var(--red-ink);border-radius:10px;padding:10px 14px;font-weight:700}
+.apiv-key{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.apiv-key input{height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--doc);color:var(--ink);padding:0 10px;font:inherit;min-width:220px}
+.apiv-tw{overflow:auto;margin-top:12px}
+.apiv table{border-collapse:collapse;width:100%;font-size:14px}
+.apiv th,.apiv td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+.apiv th{color:var(--mute);font-weight:700;position:sticky;top:0;background:var(--paper)}
+.apiv td.chips{white-space:normal;min-width:340px}
+.apiv .chip{display:inline-block;margin:0 4px 4px 0;padding:1px 7px;border-radius:999px;background:var(--paper-2);font-size:12px}
+.apiv .act-hospital{color:var(--red-ink);font-weight:700}
+.apiv .act-early_session{color:var(--blue-ink);font-weight:700}
+.apiv .act-transfer{color:var(--green-ink);font-weight:700}
+.apiv .note{color:var(--mute);font-size:13px;margin:8px 0 0}
+</style>
+<section class="apiv" id="apiView" hidden aria-labelledby="apiTitle">
+  <div class="apiv-in">
+    <div class="apiv-top">
+      <h2 id="apiTitle">Lumen live demo</h2>
+      <span class="pill" id="apiClinic"></span>
+      <span class="pill" id="apiVer"></span>
+      <span class="apiv-sp"></span>
+      <button class="btn btn-ghost sm" id="apiReset" type="button">Reset demo</button>
+      <button class="btn btn-secondary sm" id="apiClose" type="button">Close</button>
+    </div>
+    <form class="apiv-key apiv-card" id="apiKeyForm" hidden>
+      <label for="apiKey">Demo key (from Discord, kept in this browser only)</label>
+      <input id="apiKey" type="password" autocomplete="off" required>
+      <button class="btn btn-primary sm" type="submit">Save</button>
+    </form>
+    <div class="apiv-err" id="apiErr" role="alert" hidden></div>
+    <div class="apiv-card">
+      <h3>1. The shutoff notice</h3>
+      <button class="btn btn-primary" id="apiAlert" type="button">Simulate alert</button>
+      <div id="apiEvent" aria-live="polite"></div>
+    </div>
+    <div class="apiv-card">
+      <h3>2. What loses power</h3>
+      <div id="apiAffected" aria-live="polite"><p class="note">Appears after the alert.</p></div>
+    </div>
+    <div class="apiv-card">
+      <h3>3–4. The plan and the queue</h3>
+      <button class="btn btn-primary" id="apiPlan" type="button" disabled>Confirm and build the plan</button>
+      <div id="apiSummary" aria-live="polite"></div>
+      <div class="apiv-tw"><table id="apiQueue"></table></div>
+      <p class="note"><span class="pill">Simulated</span> clinic capacity, backup power and the notice. <span class="pill">Demo assumption</span> ranking points. Synthetic patients only.</p>
+    </div>
+  </div>
+</section>
+<script>
+(() => {
+  const API = 'https://7nkmh6ezx4unlwxzfjh3gy5lci0brirr.lambda-url.us-east-2.on.aws/';
+  // Copy of data/seed/notice.txt: the page is served from frontend/prototype/ and cannot read data/.
+  const NOTICE = "PG&E PUBLIC SAFETY POWER SHUTOFF (PSPS) WARNING\nEvent ID: PSPS-DEMO-01\nIssued: Monday, October 26, 2026, 8:30 AM PDT\n\nThis alert goes to customers and critical facilities served by PG&E in the area below. Forecast high winds and very dry conditions may require PG&E to turn off power to your area to reduce the risk of wildfire.\n\nArea: Cameron Park, Shingle Springs and Placerville (El Dorado County)\n\nEstimated power shutoff: Tuesday, October 27, 2026, 6:00 PM PDT\nEstimated power restoration: Thursday, October 29, 2026, 12:00 PM PDT\n\nRestoration times are estimates. After the weather passes, crews inspect the lines before power comes back.\n\nIf you use power for medical equipment, make a backup plan now. Charge devices and keep a list of emergency contacts.\n\nQuestions: call 555-0199. For a medical emergency, call 911.\n\n(Simulated notice for the Lumen demo. Not issued by PG&E.)\n";
+  const SHIFT = {1: '6:00 AM', 2: '10:30 AM', 3: '3:00 PM', 4: '7:30 PM'};
+  const ACTION = {early_session: 'Early session', transfer: 'Transfer', hospital: 'Staff call (hospital)', notify_only: 'Notify only'};
+  const TZ = 'America/Los_Angeles';
+  const q = s => document.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+  const when = iso => iso ? new Date(iso).toLocaleString('en-US', {weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ}) : '—';
+  const day = d => new Date(d + 'T12:00:00-07:00').toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric', timeZone: TZ});
+  let state = null, event = null;
+
+  const getKey = () => { try { return localStorage.getItem('lumenDemoKey') || ''; } catch { return ''; } };
+  const askKey = () => { q('#apiKeyForm').hidden = false; q('#apiKey').focus(); };
+  q('#apiKeyForm').addEventListener('submit', e => {
+    e.preventDefault();
+    try { localStorage.setItem('lumenDemoKey', q('#apiKey').value.trim()); } catch {}
+    q('#apiKey').value = ''; q('#apiKeyForm').hidden = true; load();
+  });
+
+  async function call(method, path, body) {
+    if (!getKey()) { askKey(); throw new Error('auth: enter the demo key first'); }
+    const res = await fetch(API + path, {method, body: body && JSON.stringify(body),
+      headers: {'x-demo-key': getKey(), ...(body ? {'content-type': 'application/json'} : {})}});
+    const data = await res.json().catch(() => ({error: 'HTTP ' + res.status, step: path}));
+    if (res.status === 401) { try { localStorage.removeItem('lumenDemoKey'); } catch {} askKey(); }
+    if (!res.ok) throw new Error(data.step + ': ' + data.error);
+    return data;
+  }
+
+  async function run(btn, label, fn) {
+    const old = btn && btn.textContent;
+    if (btn) { btn.disabled = true; btn.textContent = label; }
+    q('#apiErr').hidden = true;
+    try { await fn(); }
+    catch (err) { q('#apiErr').textContent = err.message; q('#apiErr').hidden = false; }
+    finally { if (btn) { btn.textContent = old; btn.disabled = false; } }
+  }
+
+  function showEvent(ev) {
+    q('#apiEvent').innerHTML = !ev ? '' : '<dl>'
+      + '<dt>Event</dt><dd>' + esc(ev.event_id) + ' · ' + esc(ev.notice_type) + '</dd>'
+      + '<dt>Area</dt><dd>' + esc(ev.area_name) + '</dd>'
+      + '<dt>Issued</dt><dd>' + when(ev.issued_at) + '</dd>'
+      + '<dt>Power off</dt><dd>' + when(ev.start) + '</dd>'
+      + '<dt>Power back</dt><dd>' + when(ev.end) + '</dd>'
+      + '<dt>Parsed by</dt><dd>' + (ev.parse_source === 'fallback' ? '<span class="pill">Parsed by fallback rules</span>' : 'Amazon Bedrock') + '</dd></dl>';
+  }
+
+  function showAffected(af) {
+    if (!af) { q('#apiAffected').innerHTML = '<p class="note">Appears after the alert.</p>'; return; }
+    const closed = af.closed_clinic_ids.map(id => (state.clinics.find(c => c.id === id) || {}).name || id);
+    const homes = Object.values(af.home_in_outage).filter(Boolean).length;
+    q('#apiAffected').innerHTML = '<dl>'
+      + '<dt>Clinics that close</dt><dd>' + esc(closed.join(', ') || 'none') + '</dd>'
+      + '<dt>Sessions to move</dt><dd>' + af.sessions.length + ' of ' + state.patients.length + ' patients</dd>'
+      + '<dt>Homes without power</dt><dd>' + homes + '</dd>'
+      + '<dt>Lead time</dt><dd>' + af.lead_hours + ' hours · mode ' + esc(af.mode) + '</dd></dl>';
+  }
+
+  function showPlan(plan) {
+    if (!plan) { q('#apiSummary').innerHTML = ''; q('#apiQueue').innerHTML = ''; return; }
+    const name = id => (state.patients.find(p => p.id === id) || {}).name || id;
+    const clinic = id => id ? ((state.clinics.find(c => c.id === id) || {}).name || id) : '—';
+    const count = a => plan.patients.filter(r => r.action === a).length;
+    q('#apiSummary').innerHTML = '<p>' + esc(plan.summary) + '</p><p class="note">Plan v' + plan.version + ' · '
+      + count('early_session') + ' early · ' + count('transfer') + ' transfers · ' + count('hospital') + ' staff calls · '
+      + plan.patients.filter(r => r.book_today).length + ' rides to book today</p>';
+    q('#apiQueue').innerHTML = '<thead><tr>' + ['#', 'Patient', 'Usual session', 'Action', 'Clinic', 'New slot', 'Pickup', 'Ride', 'Why', 'Status']
+      .map(h => '<th scope="col">' + h + '</th>').join('') + '</tr></thead><tbody>'
+      + plan.patients.map(r => '<tr>'
+        + '<td>' + r.rank + '</td><td>' + esc(name(r.patient_id)) + '</td><td>' + when(r.affected_session) + '</td>'
+        + '<td class="act-' + esc(r.action) + '">' + esc(ACTION[r.action] || r.action) + '</td><td>' + esc(clinic(r.clinic_id)) + '</td>'
+        + '<td>' + (r.slot ? day(r.slot.date) + ' · ' + SHIFT[r.slot.shift] : '—') + '</td><td>' + when(r.pickup_time) + '</td>'
+        + '<td>' + esc(r.ride.replace('_', ' ')) + (r.book_today ? ' <span class="pill amber">Book today</span>' : '') + '</td>'
+        + '<td class="chips">' + r.reasons.map(x => '<span class="chip">' + esc(x.replace(/_/g, ' ')) + '</span>').join('')
+        + r.flags.map(x => '<span class="chip">' + esc(x.replace(/_/g, ' ')) + '</span>').join('') + '</td>'
+        + '<td>' + esc(r.status) + '</td></tr>').join('') + '</tbody>';
+  }
+
+  async function load() {
+    await run(null, '', async () => {
+      state = await call('GET', 'state');
+      event = state.event;
+      q('#apiVer').textContent = 'API ' + state.version;
+      q('#apiClinic').textContent = (state.clinics.find(c => c.home) || {}).name || '';
+      showEvent(event); showAffected(state.affected); showPlan(state.plan);
+      q('#apiPlan').disabled = !event;
+    });
+  }
+
+  q('#apiAlert').addEventListener('click', () => run(q('#apiAlert'), 'Reading the notice…', async () => {
+    event = await call('POST', 'alert', {notice_text: NOTICE});
+    showEvent(event);
+    state = await call('GET', 'state');
+    showAffected(state.affected); showPlan(null);
+  }).then(() => { q('#apiPlan').disabled = !event; }));
+
+  q('#apiPlan').addEventListener('click', () => run(q('#apiPlan'), 'Building the plan…', async () => {
+    showPlan(await call('POST', 'plan', {event_id: event.event_id}));
+  }));
+
+  q('#apiReset').addEventListener('click', () => run(q('#apiReset'), 'Resetting…', async () => {
+    await call('POST', 'reset');
+    await load();
+  }));
+
+  q('#apiClose').addEventListener('click', () => { q('#apiView').hidden = true; });
+  document.getElementById('btnLive').addEventListener('click', () => { q('#apiView').hidden = false; load(); });
 })();
 </script>
