@@ -5,6 +5,8 @@ import pytest
 from jsonschema import Draft202012Validator
 
 import lambda_function as router
+
+REAL_RANK = router.rank
 from fake_s3 import FakeS3
 from lumen import store
 
@@ -100,13 +102,13 @@ def test_plan_errors():
     assert call("POST", "/plan", {})[0] == 400
 
 
-def test_rank_missing_gives_rank_step(monkeypatch):
-    def not_landed(*args):
-        raise ImportError("No module named 'lumen.ai.rank'")
-    monkeypatch.setattr(router, "rank", not_landed)
+def test_rank_falls_back_to_rules_when_rank_py_is_missing(monkeypatch, capsys):
+    monkeypatch.setattr(router, "rank", REAL_RANK)  # lumen.ai.rank has not landed in this repo yet
     call("POST", "/alert", {"notice_text": NOTICE})
-    status, body = call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})
-    assert status == 500 and body["step"] == "rank"
+    status, plan = call("POST", "/plan", {"event_id": "PSPS-DEMO-01"})
+    assert status == 200 and [r["rank"] for r in plan["patients"]][:3] == [1, 2, 3]
+    assert plan["patients"][0]["urgency"] >= plan["patients"][-1]["urgency"]
+    assert '"step": "rank", "fallback": true' in capsys.readouterr().out
 
 
 def test_reset(env):
