@@ -71,7 +71,14 @@ def with_deadline(step, fn, *args):
 
 
 # AI-lane functions are imported when called, so the router runs before they land.
+def ai_step(step):
+    """AI_STEPS in the Lambda env (comma list, default all) turns a slow or failing model step off without a deploy."""
+    if step not in {s.strip() for s in os.environ.get("AI_STEPS", "parse,text,replan").split(",")}:
+        raise RuntimeError(f"AI_STEPS turns {step} off")
+
+
 def parse_with_bedrock(text):
+    ai_step("parse")
     from lumen.ai.parse import parse_notice
     return parse_notice(text)
 
@@ -87,6 +94,7 @@ def rank(affected, patients, rules, drive):
 
 
 def replan_with_bedrock(instruction, plan, tools, clinics):
+    ai_step("replan")
     from lumen.ai.replan import replan
     return replan(instruction, plan, tools, clinics)  # seed clinics: names and slots for the model, no patient data
 
@@ -109,6 +117,7 @@ def write_text(plan, seed, sources, only_ids=None):
     else the English template. sources["text"] is "bedrock" or "fallback"."""
     langs = {p["id"]: p["language"] for p in seed["patients"]}
     try:
+        ai_step("text")
         from lumen.ai.text import write_plan_text
         out = with_deadline("text", write_plan_text, plan, seed["clinics"], langs, only_ids)
         if not isinstance(out, dict) or "patients" not in out:

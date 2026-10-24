@@ -270,6 +270,18 @@ def test_replan_gets_the_seed_clinics(monkeypatch):
     assert [c["id"] for c in seen["clinics"]] == [c["id"] for c in store.load_seed()["clinics"]]
 
 
+def test_ai_steps_turns_model_steps_off(monkeypatch):
+    calls = []
+    monkeypatch.setenv("AI_STEPS", "parse")
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=lambda *a: calls.append("text"), template_plan_text=lambda *a: calls.append("tmpl") or a[0]))
+    monkeypatch.setitem(sys.modules, "lumen.ai.replan", SimpleNamespace(replan=lambda *a: calls.append("replan")))
+    plan = plan_v1()
+    body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
+    assert "text" not in calls and "replan" not in calls
+    assert plan["ai_sources"] == {"text": "fallback"} and body["plan"]["ai_sources"]["replan"] == "fallback"
+
+
 def test_plan_timing_total_covers_every_reported_step():
     t = plan_v1()["timing_ms"]
     assert "save" not in t and t["total"] >= sum(v for k, v in t.items() if k != "total")
