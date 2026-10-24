@@ -141,10 +141,10 @@ def plan_v1():
 def test_plan_gets_template_messages_when_text_fails():
     plan = plan_v1()
     moves = [r for r in plan["patients"] if r["action"] in ("early_session", "transfer")]
-    assert moves and all("{name}" not in r["messages"]["en"] for r in moves)
+    assert moves and all("{name}" not in m for r in moves for m in r["messages"].values())
     assert plan["summary"].count(".") == 2
-    stored = store.latest_plan("PSPS-DEMO-01")
-    assert all(r["messages"]["en"].startswith("{name}") for r in stored["patients"] if r["action"] in ("early_session", "transfer"))
+    stored = store.latest_plan("PSPS-DEMO-01")  # names are filled only in responses; stored text keeps the placeholder
+    assert all("{name}" in m for r in stored["patients"] if r["action"] in ("early_session", "transfer") for m in r["messages"].values())
 
 
 def test_replan_falls_back_to_rules(monkeypatch):
@@ -220,13 +220,46 @@ def test_ai_sources_say_bedrock_when_it_works(monkeypatch):
     monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
         write_plan_text=lambda plan, clinics, languages, only_ids: {**plan, "summary": "Bedrock wrote this. It has two sentences."}))
     monkeypatch.setattr(router, "replan_with_bedrock",
-                        lambda instruction, plan, tools: router.replan_by_rules(instruction, plan, tools, store.load_seed()["clinics"]))
+                        lambda instruction, plan, tools, clinics: router.replan_by_rules(instruction, plan, tools, clinics))
     plan = plan_v1()
     assert plan["ai_sources"] == {"text": "bedrock"} and not list(validator("plan").iter_errors(plan))
     body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})[1]
     assert body["plan"]["ai_sources"] == {"replan": "bedrock", "text": "bedrock"}
     assert not list(validator("plan").iter_errors(body["plan"]))
     assert store.latest_plan("PSPS-DEMO-01")["ai_sources"] == {"replan": "bedrock", "text": "bedrock"}
+
+
+def test_text_fallback_writes_each_patient_language(monkeypatch):
+    from lumen.ai import text
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=bedrock_blocked, template_plan_text=text.template_plan_text))
+    plan = plan_v1()
+    langs = {p["id"]: p["language"] for p in json.loads((SEED / "patients.json").read_text())}
+    moves = [r for r in plan["patients"] if r["action"] in ("early_session", "transfer")]
+    assert plan["ai_sources"] == {"text": "fallback"} and not list(validator("plan").iter_errors(plan))
+    assert moves and all(langs[r["patient_id"]] in r["messages"] for r in moves)
+    assert any(langs[r["patient_id"]] != "en" for r in moves)
+
+
+def test_text_fallback_ends_at_the_english_template(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lumen.ai.text", SimpleNamespace(
+        write_plan_text=bedrock_blocked, template_plan_text=bedrock_blocked))
+    plan = plan_v1()
+    assert plan["ai_sources"] == {"text": "fallback"}
+    assert {lang for r in plan["patients"] for lang in r["messages"]} == {"en"}
+
+
+def test_replan_gets_the_seed_clinics(monkeypatch):
+    seen = {}
+
+    def replan(instruction, plan, tools, clinics=None):
+        seen["clinics"] = clinics
+        raise RuntimeError("stop here, so the router uses the rules")
+    monkeypatch.setitem(sys.modules, "lumen.ai.replan", SimpleNamespace(replan=replan))
+    plan_v1()
+    status, body = call("POST", "/replan", {"event_id": "PSPS-DEMO-01", "instruction": "DaVita Folsom Dialysis can only take four more"})
+    assert status == 200 and body["plan"]["ai_sources"]["replan"] == "fallback"
+    assert [c["id"] for c in seen["clinics"]] == [c["id"] for c in store.load_seed()["clinics"]]
 
 
 def test_plan_timing_total_covers_every_reported_step():
