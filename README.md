@@ -24,8 +24,8 @@ The plan and the team rules live in the Linear project "Lumen". The repo holds n
 | Lambda | `lumen-api` (Python 3.12, arm64, 1024 MB, 120 s) |
 | IAM role | `lumen-api-role` (S3 on the bucket only, Bedrock on the two models only, Polly, route matrix, CloudWatch Logs) |
 | Bucket | `lumen-2e6e7e` (public access blocked; prefixes `seed/`, `plans/`, `audio/`) |
-| Strong model (re-plan) | `us.anthropic.claude-sonnet-5-5` |
-| Fast model (parse, messages) | `us.anthropic.claude-haiku-5-5` |
+| Strong model (re-plan) | `us.anthropic.claude-sonnet-4-6` (5.5 is not available to this account) |
+| Fast model (parse, messages) | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
 
 Every request needs the header `X-Demo-Key`. The demo key is in Discord only, never in the repo.
 Only Vi changes the Lambda's environment variables, IAM role or function URL settings.
