@@ -2,7 +2,7 @@
 
 from datetime import datetime, time, timedelta
 
-from lumen.affected import WEEKDAY, session_start
+from lumen.affected import LOCAL, WEEKDAY, session_start
 
 ORDER = {
     "early": ["early_session", "transfer", "hospital"],
@@ -35,7 +35,6 @@ def regular_dates(patient, around, step):
 def match(ranked, affected, patients, clinics, rules, drive, locked=None):
     now = datetime.fromisoformat(affected["now"])
     window_start = datetime.fromisoformat(affected["window"]["start"])
-    tz = now.tzinfo
     by_id = {p["id"]: p for p in patients}
     sessions = {s["patient_id"]: s for s in affected["sessions"]}
     home = next(c for c in clinics if c["home"])
@@ -47,13 +46,22 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
     locked = {r["patient_id"]: r for r in (locked or [])}
     for row in locked.values():
         if row["status"] != "declined" and row["slot"]:
-            open_now[(row["clinic_id"], row["slot"]["date"], row["slot"]["shift"])] -= 1
+            key = (row["clinic_id"], row["slot"]["date"], row["slot"]["shift"])
+            if key not in open_now:
+                raise ValueError(f"{row['patient_id']}: locked to {key}, which is not an open slot")
+            open_now[key] -= 1
+    overbooked = [k for k, v in open_now.items() if v < 0]
+    if overbooked:
+        raise ValueError(f"locked rows need more chairs than open at {overbooked}")
 
     def take(row, p, clinic, slot, s_date, action):
         d = drive[p["id"]][clinic["id"]]
-        start = session_start(datetime.fromisoformat(slot["date"]).date(), slot["shift"], tz)
+        start = session_start(datetime.fromisoformat(slot["date"]).date(), slot["shift"])
         pickup = start - timedelta(minutes=d["minutes"] + rules["pickup_buffer_minutes"])
-        if p["ride"] == "paratransit" and pickup.time() < PARATRANSIT_START:
+        if pickup <= now:
+            return False
+        # ADA paratransit is booked the day before and runs from 6:30 AM
+        if p["ride"] == "paratransit" and (start.date() <= now.astimezone(LOCAL).date() or pickup.time() < PARATRANSIT_START):
             return False
         open_now[(clinic["id"], slot["date"], slot["shift"])] -= 1
         row.update(action=action, clinic_id=clinic["id"], slot={"date": slot["date"], "shift": slot["shift"]},
@@ -66,7 +74,7 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
     def try_early(row, p, s_date):
         prev = next(regular_dates(p, s_date, -1))
         for slot in sorted(home["slots"], key=lambda s: (s["date"], s["shift"])):
-            start = session_start(datetime.fromisoformat(slot["date"]).date(), slot["shift"], tz)
+            start = session_start(datetime.fromisoformat(slot["date"]).date(), slot["shift"])
             if (open_now[(home["id"], slot["date"], slot["shift"])] > 0 and start > now
                     and start + timedelta(hours=p["hours"]) <= window_start and start.date() > prev
                     and take(row, p, home, slot, s_date, "early_session")):
@@ -86,7 +94,7 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
             for slot in c["slots"]:
                 d = datetime.fromisoformat(slot["date"]).date()
                 if (open_now[(c["id"], slot["date"], slot["shift"])] > 0 and d in (s_date, s_date - timedelta(days=1))
-                        and session_start(d, slot["shift"], tz) > now):
+                        and session_start(d, slot["shift"]) > now):
                     options.append(((minutes, slot["shift"] != p["shift"], d != s_date, slot["date"], slot["shift"]), c, slot))
         return any(take(row, p, c, slot, s_date, "transfer") for _, c, slot in sorted(options, key=lambda o: o[0]))
 
@@ -95,11 +103,13 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
         p = by_id[pid]
         if pid in locked and locked[pid]["status"] != "declined":
             rows.append(locked[pid])
+            if locked[pid]["action"] == "hospital":
+                overflow.append(pid)
             continue
         s = sessions.get(pid)
         row = blank_row(r, p, s["start"] if s else None)
         if pid in locked:  # declined: no chair, a staff call, overflow; the action stays
-            row.update(locked[pid], **{f: None for f in CHAIR_FIELDS}, book_today=False)
+            row.update(locked[pid], **{f: None for f in CHAIR_FIELDS}, book_today=False, messages={}, audio={})
             row["flags"] = sorted(set(row["flags"]) - {"long_gap_after"} | {"staff_call"})
             overflow.append(pid)
         elif s:
@@ -120,6 +130,11 @@ def match(ranked, affected, patients, clinics, rules, drive, locked=None):
     # Unaffected patients that rank_patients did not rank get a notify_only row at the end.
     ranked_ids = {r["patient_id"] for r in ranked}
     for p in patients:
-        if p["id"] not in ranked_ids and p["id"] not in sessions:
-            rows.append(blank_row({"patient_id": p["id"], "rank": len(rows) + 1, "urgency": 0, "difficulty": 0, "reasons": []}, p, None))
+        if p["id"] in ranked_ids:
+            continue
+        if p["id"] in sessions or p["id"] in locked:
+            raise ValueError(f"{p['id']} is affected or locked but not ranked")
+        rows.append(blank_row({"patient_id": p["id"], "rank": len(rows) + 1, "urgency": 0, "difficulty": 0, "reasons": []}, p, None))
+        if mode == "critical":
+            rows[-1]["flags"].append("staff_call")
     return {"patients": rows, "overflow": overflow}

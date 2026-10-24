@@ -115,3 +115,55 @@ def test_unranked_unaffected_patient_becomes_notify_only():
     result = match(RANKED, AFFECTED, patients, clinics, STATE["rules"], estimate(patients, clinics))
     last = result["patients"][-1]
     assert last["patient_id"] == "P999" and last["action"] == "notify_only" and last["rank"] == 6
+
+
+def at_now(iso, mode="early"):
+    return {**AFFECTED, "now": iso, "mode": mode}
+
+
+def test_no_pickup_in_the_past():
+    result = run(affected=at_now("2026-10-27T05:20:00-07:00", "transfer"))
+    assert rows(result)["P002"]["slot"] == {"date": "2026-10-27", "shift": 2}  # the 6:00 chair needs a 5:15 pickup
+    assert all(r["pickup_time"] > "2026-10-27T05:20:00-07:00" for r in result["patients"] if r["pickup_time"])
+
+
+def test_no_same_day_paratransit():
+    p1 = rows(run(affected=at_now("2026-10-27T06:00:00-07:00", "transfer")))["P001"]
+    assert p1["slot"] is None or p1["slot"]["date"] > "2026-10-27"
+
+
+def test_locked_hospital_row_stays_in_overflow():
+    pinned = {**rows(run())["P005"], "pinned": True}
+    assert "P005" in run(locked=[pinned])["overflow"]
+
+
+def test_declined_row_loses_its_message():
+    declined = {**rows(run())["P003"], "status": "declined", "messages": {"en": "old move"}}
+    assert rows(run(locked=[declined]))["P003"]["messages"] == {}
+
+
+def test_bad_locks_raise_a_readable_error():
+    p4 = rows(run())["P004"]
+    for locked in ([{**p4, "pinned": True, "slot": {"date": "2026-10-28", "shift": 4}}],
+                   [{**p4, "pinned": True}, {**rows(run())["P003"], "pinned": True}]):
+        clinics = clinics_with({"C02": [slot("2026-10-29", 1, 1)]})
+        try:
+            run(clinics, locked=locked)
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+
+def test_affected_patient_missing_from_ranked_raises():
+    try:
+        match(RANKED[:-1], AFFECTED, STATE["patients"], STATE["clinics"], STATE["rules"], estimate(STATE["patients"], STATE["clinics"]))
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
+def test_critical_mode_tail_rows_get_staff_call():
+    extra = {**STATE["patients"][0], "id": "P999"}
+    patients = STATE["patients"] + [extra]
+    result = match(RANKED, {**AFFECTED, "mode": "critical"}, patients, STATE["clinics"], STATE["rules"], estimate(patients, STATE["clinics"]))
+    assert "staff_call" in result["patients"][-1]["flags"]

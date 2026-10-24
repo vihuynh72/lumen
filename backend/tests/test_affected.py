@@ -56,3 +56,9 @@ def test_mode_thresholds():
     assert mode_for(5.9, DEFAULT_MODES) == "critical"
     rules = json.loads((SEED / "rules.json").read_text())
     assert DEFAULT_MODES == rules["modes"]
+
+
+def test_now_in_utc_gives_the_same_sessions():
+    utc_now = datetime.fromisoformat("2026-10-26T16:00:00+00:00")  # the demo clock in UTC
+    result = find_affected(EVENT, STATE["clinics"], STATE["patients"], STATE["outage_area"], utc_now)
+    assert result["sessions"] == json.loads((FIXTURES / "affected.json").read_text())["sessions"]
