@@ -23,8 +23,11 @@ REASONS = {
 }
 PROMPT = Path(__file__).with_name("prompts").joinpath("text.md").read_text()
 logger = logging.getLogger(__name__)
-CLOCK = re.compile(r"(?<!\d)\d{1,2}[:：.]\d{2}(?:\s*[ap]\.?m\.?)?|\b\d{1,2}\s*[ap]\.?m\.?|"
-                   r"[零一二三四五六七八九十两\d]+[点點时時](?:[零一二三四五六七八九十两\d分半刻]+)?", re.I)
+CLOCK = re.compile(
+    r"(?<![0-9])(?:[0-9]{1,2}[:：.][0-9]{2}(?:\s*(?:[ap]\.\s*m\.|[ap]m)(?![a-z]))?|"
+    r"[0-9]{1,2}\s*(?:[ap]\.\s*m\.|[ap]m)(?![a-z]))|"
+    r"[零一二三四五六七八九十两0-9]+[点點时時](?:[零一二三四五六七八九十两0-9分半刻]+)?", re.I)
+
 BANNED = re.compile(r"\b(?:death\w*|dead\w*|die|dies|died|dying|danger\w*|risk\w*|fatal\w*|lethal\w*|"
                     r"mortal\w*|muert\w*|muer\w*|murio|morir\w*|fallec\w*|pelig\w*|riesg\w*)\b|致命|丧命|[死亡危险險]", re.I)
 # A deliberately small vocabulary keeps ambiguous/mixed-language prose out.
@@ -47,7 +50,7 @@ def _plain(value):
 
 def _language_ok(message, facts, lang):
     remainder = message.replace("{name}", "").replace("555-0100", "")
-    for value in sorted({facts["day"], facts["clinic_name"], facts["clinic_address"],
+    for value in sorted({*facts["strings"][lang].values(), facts["clinic_name"], facts["clinic_address"],
                          facts["clinic_address"].split(",")[0]}, key=len, reverse=True):
         if value:
             remainder = remainder.replace(value, "")
@@ -73,10 +76,11 @@ def _message_error(message, facts, lang):
         return "unsupported_character"
     if BANNED.search(_plain(message)):
         return "banned_word"
-    times = [facts["time"], facts["pickup_time"]]
-    if CLOCK.findall(message) != times:
+    when, pickup = (facts["strings"][lang][key] for key in ("when", "pickup_time"))
+    remainder = message.replace(when, "", 1)
+    if when not in message or pickup not in remainder or CLOCK.search(remainder.replace(pickup, "", 1)):
         return "time_strings"
-    if not message.startswith(facts["day"] + " " + facts["time"]) or facts["clinic_name"] not in message:
+    if not message.startswith(when) or facts["clinic_name"] not in message:
         return "time_place_first"
     if message.index(facts["clinic_name"]) > message.index("{name}"):
         return "place_first"
@@ -88,11 +92,12 @@ def _message_error(message, facts, lang):
 
 
 def _ride_ok(message, facts, lang):
-    clocks = list(CLOCK.finditer(message))
-    if len(clocks) != 2:
+    when, pickup = (facts["strings"][lang][key] for key in ("when", "pickup_time"))
+    position = message.find(pickup, len(when))
+    if position < 0:
         return False
     own = facts["ride"] in ("self", "family")
-    before, after = message[:clocks[1].start()], message[clocks[1].end():]
+    before, after = message[:position], message[position + len(pickup):]
     if lang == "zh":
         return bool(re.match(r"(?:请)?(?:出发|离家)" if own else r"(?:接您|等候接送)", after))
     if lang == "en":
@@ -106,7 +111,7 @@ def _row_error(row, facts):
     if set(row) != {"patient_id", "reason_text", "messages"} or row.get("reason_text") != facts["reason_text"]:
         return "row_fields_or_reason"
     messages = row.get("messages")
-    langs = (["en"] if facts["language"] == "en" else ["en", facts["language"]]) if facts["time"] else []
+    langs = (["en"] if facts["language"] == "en" else ["en", facts["language"]]) if facts["strings"] else []
     if not isinstance(messages, dict) or set(messages) != set(langs):
         return "message_languages"
     return next((error for lang in langs if (error := _message_error(messages[lang], facts, lang))), None)
@@ -147,18 +152,23 @@ def _validated(response, facts):
 
 def _template(facts):
     messages = {}
-    if facts["time"]:
-        day, clock, clinic, pickup = (facts[k] for k in ("day", "time", "clinic_name", "pickup_time"))
-        own_ride = facts["ride"] in ("self", "family")
-        ride = f"Please leave home by {pickup}." if own_ride else f"A ride picks you up at {pickup}."
-        viaje = f"Salga de casa a las {pickup}." if own_ride else f"Un transporte le recoge a las {pickup}."
-        prefix = f"{day} {clock}, {clinic}"
-        messages["en"] = f"{prefix}. {{name}}, your treatment has moved. {ride} Questions? Call 555-0100."
-        if facts["language"] == "es":
-            messages["es"] = f"{prefix}. {{name}}, su tratamiento cambió. {viaje} ¿Preguntas? Llame al 555-0100."
-        if facts["language"] == "zh":
-            travel = "请出发" if own_ride else "接您"
-            messages["zh"] = f"{day} {clock}，{clinic}。{{name}}，治疗已调整；{pickup}{travel}。"
+    for lang, strings in facts["strings"].items():
+        when, pickup = strings["when"], strings["pickup_time"]
+        clinic = facts["clinic_name"]
+        own = facts["ride"] in ("self", "family")
+        if lang == "en":
+            ride = f"Please leave home by {pickup}." if own else f"A ride picks you up at {pickup}."
+            message = f"{when}, {clinic}. {{name}}, your treatment has moved. {ride}"
+            callback = " Questions? Call 555-0100."
+        elif lang == "es":
+            ride = f"Salga de casa a las {pickup}." if own else f"Un transporte le recoge a las {pickup}."
+            message = f"{when}, {clinic}. {{name}}, su tratamiento cambió. {ride}"
+            callback = " ¿Preguntas? Llame al 555-0100."
+        else:
+            ride = "请出发" if own else "接您"
+            message = f"{when}，{clinic}。{{name}}，治疗已调整；{pickup}{ride}。"
+            callback = ""
+        messages[lang] = message + callback if len((message + callback).split()) < 40 else message
     result = {"patient_id": facts["patient_id"], "reason_text": facts["reason_text"], "messages": messages}
     if _row_error(result, facts):
         raise ValueError("plan facts cannot fit message limits")
@@ -195,6 +205,43 @@ def _reason(codes):
     return ("; ".join(phrases).capitalize() if phrases else "No priority reasons recorded") + "."
 
 
+# Explicit names avoid process-global locale changes in worker threads.
+WEEKDAYS = {
+    "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+    "es": ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
+}
+MONTHS = {
+    "en": ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"),
+    "es": ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"),
+}
+
+
+def _clock(value, lang):
+    hour, minute = value.hour, value.minute
+    clock = f"{hour % 12 or 12}:{minute:02d}"
+    if lang == "en":
+        return clock + (" AM" if hour < 12 else " PM")
+    if lang == "es":
+        return clock + (" a. m." if hour < 12 else " p. m.")
+    period = "凌晨" if hour < 6 else "上午" if hour < 12 else "中午" if hour == 12 else "下午" if hour < 18 else "晚上"
+    return period + clock
+
+
+def _strings(slot, pickup, languages):
+    treatment = datetime.fromisoformat(slot["date"] + "T" + TIMES[slot["shift"]])
+    result = {}
+    for lang in languages:
+        clock = _clock(treatment, lang)
+        if lang == "zh":
+            when = f"{treatment.month}月{treatment.day}日 周{'一二三四五六日'[treatment.weekday()]} {clock}"
+        else:
+            day, month = WEEKDAYS[lang][treatment.weekday()], MONTHS[lang][treatment.month - 1]
+            when = (f"{day}, {month} {treatment.day} at {clock}" if lang == "en"
+                    else f"{day} {treatment.day} de {month} a las {clock}")
+        result[lang] = {"when": when, "pickup_time": _clock(pickup, lang)}
+    return result
+
+
 def _facts(row, clinics, language):
     if language not in ("en", "es", "zh"):
         raise ValueError("unsupported patient language")
@@ -204,8 +251,8 @@ def _facts(row, clinics, language):
         "patient_id": row["patient_id"], "rank": row["rank"], "action": row["action"],
         "reasons": list(row["reasons"]), "reason_text": _reason(row["reasons"]),
         "clinic_name": clinic.get("name", ""), "clinic_address": clinic.get("address", ""),
-        "day": slot["date"] if slot else "", "time": TIMES[slot["shift"]] if slot else "",
-        "pickup_time": datetime.fromisoformat(row["pickup_time"]).strftime("%H:%M") if slot else "",
+        "strings": _strings(slot, datetime.fromisoformat(row["pickup_time"]),
+                            ["en"] if language == "en" else ["en", language]) if slot else {},
         "ride": row["ride"], "language": language,
     }
 

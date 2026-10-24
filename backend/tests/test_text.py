@@ -24,10 +24,7 @@ def inputs(monkeypatch):
 
 def generated(facts):
     messages = {}
-    # Retain the old wire shape until the localization RED checkpoint is fixed.
-    strings = facts.get("strings", {lang: {"when": f"{facts.get('day', '')} {facts.get('time', '')}",
-                                         "pickup_time": facts.get("pickup_time", "")}
-                                  for lang in ("en", facts["language"])} if facts.get("time") else {})
+    strings = facts["strings"]
     for lang, values in strings.items():
         when, pickup, place = values["when"], values["pickup_time"], facts["clinic_name"]
         own_ride = facts["ride"] in ("self", "family")
@@ -409,7 +406,7 @@ def test_fallback_log_codes_and_per_call_counts(monkeypatch, inputs, caplog):
 @pytest.mark.parametrize("lang,when,pickup", [
     ("en", "Wednesday, October 28 at 6:00 AM", "5:15 AM"),
     ("es", "miércoles 28 de octubre a las 6:00 a. m.", "5:15 a. m."),
-    ("zh", "10月28日 周三 上午6:00", "上午5:15"),
+    ("zh", "10月28日 周三 上午6:00", "凌晨5:15"),
 ])
 def test_human_readable_strings_are_preformatted_by_language(monkeypatch, inputs, lang, when, pickup):
     row = inputs[0]["patients"][0]
@@ -487,7 +484,6 @@ ADV_FACTS = {
     "clinic_name": "SHC Folsom", "clinic_address": "210 Blue Ravine Rd Suite 100, Folsom, CA 95630",
     "action": "transfer", "rank": 1, "reasons": ["session_in_window"],
     "strings": {"en": {"when": "Wednesday, October 28 at 6:00 AM", "pickup_time": "5:06 AM"}},
-    "day": "2026-10-28", "time": "06:00", "pickup_time": "05:06",
 }
 F_EN = ADV_FACTS
 F_ES = {**F_EN, "language": "es", "ride": "self", "strings": {
