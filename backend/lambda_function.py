@@ -448,10 +448,16 @@ def lambda_handler(event, context):
         if not key or not hmac.compare_digest(headers.get("x-demo-key", "").encode(), key.encode()):
             raise ApiError(401, "bad demo key", "auth")
         # ?session= gives each browser its own events and plans, so one viewer's Reset or run never deletes another's plan.
-        session = (event.get("queryStringParameters") or {}).get("session", "")
+        query = event.get("queryStringParameters") or {}
+        session = query.get("session", "")
         if session and not re.fullmatch(r"[a-z0-9]{8,40}", session):
             raise ApiError(400, "session must be 8 to 40 lowercase letters or digits", "router")
-        store.ROOT = f"sessions/{session}/plans/" if session else "plans/"
+        # ?region= picks the seed; each region keeps its own events and plans, so the two never mix.
+        region = query.get("region") or "eldorado"
+        if region not in store.REGIONS:
+            raise ApiError(400, f"region must be one of {', '.join(store.REGIONS)}", "router")
+        store.REGION = region
+        store.ROOT = (f"sessions/{session}/" if session else "") + ("" if region == "eldorado" else f"{region}/") + "plans/"
         route = ROUTES.get((method, path))
         if route is None:
             raise ApiError(404, f"no route {method} {path}", "router")

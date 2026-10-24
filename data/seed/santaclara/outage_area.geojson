@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"event_area": "Evergreen and the east foothills of San Jose (Santa Clara County)"},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-121.8000, 37.2950],
+          [-121.7990, 37.3420],
+          [-121.7550, 37.3550],
+          [-121.7150, 37.3300],
+          [-121.7300, 37.2800],
+          [-121.7700, 37.2750],
+          [-121.8000, 37.2950]
+        ]]
+      }
+    }
+  ]
+}

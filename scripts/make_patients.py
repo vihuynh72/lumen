@@ -1,13 +1,18 @@
-"""Write data/seed/patients.json: 40 synthetic patients of the Cameron Park clinic.
+"""Write the synthetic patients of one region: 40 in-center hemodialysis patients of the home clinic.
 
-Usage: python scripts/make_patients.py
-The fixed random seed makes the file the same on every run. P001 to P005 are seed v0, unchanged,
-so the contract fixtures still describe real roster patients.
+Usage: python scripts/make_patients.py [eldorado|santaclara]   (default eldorado)
+El Dorado writes data/seed/patients.json (DaVita Cameron Park). P001 to P005 are seed v0, unchanged except for
+hbv_tested, so the contract fixtures still describe real roster patients; P006 to P040 are drawn.
+Santa Clara writes data/seed/santaclara/patients.json (SHC Evergreen), P101 to P140.
+Counts follow the patient research spec (US dialysis and county census figures); the fixed random seed makes each
+file the same on every run. Age is drawn only to keep fields consistent and is not saved.
 """
 
 import json
 import random
 import sys
+from collections import Counter
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,27 +20,69 @@ SEED = ROOT / "data" / "seed"
 sys.path.insert(0, str(ROOT / "backend"))
 from lumen.affected import outage_ring, point_in_polygon  # noqa: E402
 
-rng = random.Random(20261026)
-
-# Town centers (real towns near Cameron Park). Homes are random points within about 1.5 km.
-TOWNS_IN = {"Cameron Park": (38.6688, -120.9872), "Shingle Springs": (38.6657, -120.9241), "Placerville": (38.7296, -120.7985),
-            "Diamond Springs": (38.6946, -120.8149), "El Dorado": (38.6824, -120.8463)}
-TOWNS_OUT = {"El Dorado Hills": (38.6857, -121.0822), "Pollock Pines": (38.7613, -120.5861), "Cool": (38.8871, -121.0145),
-             "Lotus": (38.8030, -120.9080), "Coloma": (38.8000, -120.8894)}
-# Most outside homes are west or north of the outage area; a few far-east homes (Pollock Pines) are over an hour from any open clinic.
-OUT_WEIGHTS = ["El Dorado Hills"] * 4 + ["Cool"] * 2 + ["Lotus"] * 2 + ["Coloma"] * 2 + ["Pollock Pines"]
-NAMES = {
-    "en": ["Dorothy Keane", "Harold Briggs", "Patricia Lowell", "Gary Holcomb", "Sharon Pruitt", "Dennis Archer", "Carol Whitley",
-           "Ronald Fenwick", "Judith Sayer", "Larry Mendel", "Brenda Coyle", "Wayne Ostrander", "Glenda Tate", "Russell Dunbar",
-           "Marilyn Royce", "Eugene Pickard", "Bonnie Halvorsen", "Clifford Ames", "Joyce Marsh", "Vernon Stiles", "Frances Ludlow"],
-    "es": ["Guadalupe Ríos", "Ernesto Salazar", "Rosalinda Cortés", "Javier Montoya", "Esperanza Villalobos", "Rubén Ochoa",
-           "Leticia Barajas", "Arturo Medina", "Consuelo Ibarra"],
-    "zh": ["Li Mei", "Wang Jun", "Zhang Hua", "Liu Fang", "Huang Wen"],
+NOTICE_DAY = date(2026, 10, 26)
+SHIFT_START = {1: "06:00", 2: "10:30", 3: "15:00", 4: "19:30"}
+AGE_BANDS = [((22, 44), 11, 28), ((45, 64), 41, 39), ((65, 74), 26, 45), ((75, 89), 22, 48)]  # (ages, % of patients, % heart failure)
+V0_HBV_TESTED = {"P001": "2026-10-07", "P002": "2026-10-14", "P003": "2026-10-02", "P004": "2026-08-11", "P005": "2026-10-19"}
+COMMON = {  # counts out of 40, the same in both counties
+    "days": {"MWF": 22, "TTS": 18}, "hours": {3: 4, 3.25: 6, 3.5: 12, 3.75: 8, 4: 10},
+    "mobility": {"walks": 28, "walker": 8, "wheelchair": 4}, "heart_failure": 12, "missed_recently": 4,
+    "second_contact": 34, "hbv_old": 4,
 }
-SHIFT_START = {1: "06:00", 2: "10:30", 3: "15:00"}
+REGIONS = {
+    "eldorado": {
+        "dir": SEED, "first": 1, "kept": 5, "callback": 101, "rng": 20261026,
+        "shift": {1: 14, 2: 14, 3: 10, 4: 2},  # shift 4: Cameron Park runs a late shift
+        "ride": {"self": 10, "family": 19, "paratransit": 5, "medical_van": 5, "wheelchair_van": 1},
+        "lives_alone": 8, "hep_b": 1, "inside": 13,
+        # Real towns; homes are random points within about 1.5 km. Most outside homes are west or north of the area;
+        # a few far-east homes (Pollock Pines) are over an hour from any open clinic.
+        "towns_in": {"Cameron Park": (38.6688, -120.9872), "Shingle Springs": (38.6657, -120.9241), "Placerville": (38.7296, -120.7985),
+                     "Diamond Springs": (38.6946, -120.8149), "El Dorado": (38.6824, -120.8463)},
+        "towns_out": {"El Dorado Hills": (38.6857, -121.0822), "Pollock Pines": (38.7613, -120.5861), "Cool": (38.8871, -121.0145),
+                      "Lotus": (38.8030, -120.9080), "Coloma": (38.8000, -120.8894)},
+        "out_weights": ["El Dorado Hills"] * 4 + ["Cool"] * 2 + ["Lotus"] * 2 + ["Coloma"] * 2 + ["Pollock Pines"],
+        "names": [(n, "en") for n in (
+            "Dorothy Keane", "Harold Briggs", "Patricia Lowell", "Gary Holcomb", "Sharon Pruitt", "Dennis Archer", "Carol Whitley",
+            "Ronald Fenwick", "Judith Sayer", "Larry Mendel", "Brenda Coyle", "Wayne Ostrander", "Glenda Tate", "Russell Dunbar",
+            "Marilyn Royce", "Eugene Pickard", "Bonnie Halvorsen", "Clifford Ames", "Joyce Marsh", "Vernon Stiles", "Frances Ludlow",
+            "Donna Whitaker", "Kenneth Rourke", "Sandra Ellison", "Ernesto Salazar", "Rosalinda Cortés", "Javier Montoya",
+            "Rubén Ochoa", "Leticia Barajas", "Arturo Medina", "Rogelio Bautista", "Gloria Haynes", "Tanya Morrison", "Curtis Bell")]
+            + [("Guadalupe Ríos", "es")],
+    },
+    "santaclara": {
+        "dir": SEED / "santaclara", "first": 101, "kept": 0, "callback": 141, "rng": 20261027,
+        "shift": {1: 14, 2: 15, 3: 11},  # SHC Evergreen has no late shift
+        "ride": {"self": 10, "family": 18, "paratransit": 6, "medical_van": 5, "wheelchair_van": 1},
+        "lives_alone": 6, "hep_b": 1, "inside": 12,
+        # East San Jose neighborhoods; the shutoff zone covers Evergreen and the east foothills.
+        "towns_in": {"Evergreen": (37.3060, -121.7770), "East Foothills": (37.3320, -121.7650)},
+        "towns_out": {"East San Jose": (37.3356, -121.8303), "Alum Rock": (37.3730, -121.8451), "Seven Trees": (37.2794, -121.8217),
+                      "Fairgrounds": (37.3022, -121.8570), "Blossom Valley": (37.2527, -121.8411), "Santa Teresa": (37.2384, -121.7770),
+                      "Berryessa": (37.4014, -121.8621)},
+        "out_weights": ["East San Jose"] * 3 + ["Alum Rock"] * 2 + ["Seven Trees"] * 2 + ["Fairgrounds", "Blossom Valley", "Santa Teresa", "Berryessa"],
+        "names": [("María Hernández", "es"), ("José Ramírez", "es"), ("Guadalupe Torres", "es"), ("Jesús Mendoza", "es"),
+                  ("Thanh Nguyen", "vi"), ("Hoa Tran", "vi"), ("Minh Pham", "vi"), ("Liu Mei", "zh"), ("Zhou Jian", "zh"), ("Wu Hong", "zh")]
+                 + [(n, "en") for n in (
+                     "Carmen Gutiérrez", "Manuel Ortiz", "Rosa Navarro", "Alfredo Castillo", "Yolanda Ruiz", "Raúl Fuentes", "Teresa Aguilar",
+                     "Gilberto Cervantes", "Lan Le", "Tuan Huynh", "Kevin Lam", "Grace Wong", "Rogelio Santos", "Teresita Reyes", "Danilo Cruz",
+                     "Corazon Bautista", "Suresh Reddy", "Soon-ja Kim", "Barbara Kowalski", "Richard Lindgren", "Nancy Sorensen",
+                     "Michael Doherty", "Carol Brennan", "Steven Albright", "Diane Fischer", "Paul Mancini", "Darnell Brooks",
+                     "Loretta Simmons", "Sione Tupou", "Jordan Ellis")],
+    },
+}
 
 
-def home_point(town, center, ring, want_inside):
+def pick(rng, ids, k, weight=lambda i: 1):
+    """k ids drawn without replacement, each in proportion to weight(id)."""
+    return sorted(ids, key=lambda i: rng.random() ** (1 / weight(i)), reverse=True)[:k]
+
+
+def spread(counts):
+    return [value for value, n in counts.items() for _ in range(n)]
+
+
+def home_point(rng, town, center, ring, want_inside):
     for _ in range(200):
         lat = center[0] + rng.uniform(-0.013, 0.013)
         lng = center[1] + rng.uniform(-0.016, 0.016)
@@ -44,52 +91,111 @@ def home_point(town, center, ring, want_inside):
     raise RuntimeError(f"no point for {town}")
 
 
-def main():
-    v0 = json.loads((SEED / "patients.json").read_text())[:5]
-    ring = outage_ring(json.loads((SEED / "outage_area.geojson").read_text()))
+def make(region):
+    cfg = REGIONS[region]
+    rng = random.Random(cfg["rng"])
+    path = cfg["dir"] / "patients.json"
+    ring = outage_ring(json.loads((cfg["dir"] / "outage_area.geojson").read_text()))
+    kept = [{**p, "hbv_tested": V0_HBV_TESTED[p["id"]]} for p in json.loads(path.read_text())[:cfg["kept"]]] if cfg["kept"] else []
+    target = {**COMMON, **{k: cfg[k] for k in ("shift", "ride", "lives_alone", "hep_b", "inside")}}
 
-    n = 35
-    days = [["Mon", "Wed", "Fri"]] * 18 + [["Tue", "Thu", "Sat"]] * 17
-    langs = ["en"] * 21 + ["es"] * 9 + ["zh"] * 5
-    rides = ["paratransit"] * 6 + ["medical_van"] * 3 + ["wheelchair_van"] * 2 + ["family"] * 11 + ["self"] * 13
-    inside = [True] * 11 + [False] * 24
-    hep_b = [True] * 2 + [False] * 33
-    flags = [["heart_failure"]] * 3 + [["missed_recently"]] * 2 + [["heart_failure", "missed_recently"]] + [[]] * 29
-    for col in (langs, rides, inside, hep_b, flags):
+    def left(field, value_of):  # the target counts minus what the kept patients already have
+        have = Counter(value_of(p) for p in kept)
+        return {v: n - have[v] for v, n in target[field].items()}
+
+    def left_n(field, test):
+        return target[field] - sum(map(test, kept))
+
+    names = list(cfg["names"])
+    rng.shuffle(names)
+    ids = list(range(len(names)))
+    assert len(ids) + len(kept) == 40
+    age = {}
+    for i in ids:
+        (lo, hi), = rng.choices([b[0] for b in AGE_BANDS], weights=[b[1] for b in AGE_BANDS])
+        age[i] = rng.randint(lo, hi)
+        if names[i][1] != "en" and age[i] < 55:  # limited English is more common in older adults
+            age[i] = rng.randint(55, 79)
+    band = {i: next(b for b in AGE_BANDS if b[0][0] <= age[i] <= b[0][1]) for i in ids}
+    older = lambda i: 4 if age[i] >= 65 else 1  # noqa: E731
+
+    need = left("mobility", lambda p: p["mobility"])
+    mobility = dict.fromkeys(ids, "walks")
+    for i in pick(rng, ids, need["wheelchair"], older):
+        mobility[i] = "wheelchair"
+    for i in pick(rng, [i for i in ids if mobility[i] == "walks"], need["walker"], older):
+        mobility[i] = "walker"
+
+    need = left("ride", lambda p: p["ride"])
+    ride = {}
+    chairs = [i for i in ids if mobility[i] == "wheelchair"]
+    for i in pick(rng, chairs, need.pop("wheelchair_van")):
+        ride[i] = "wheelchair_van"
+    for i in pick(rng, [i for i in ids if mobility[i] == "walks" and age[i] < 75], need.pop("self")):  # self: under 75 and walks
+        ride[i] = "self"
+    rest = spread(need)
+    rng.shuffle(rest)
+    for i in chairs:  # a wheelchair user rides a wheelchair van, paratransit or with family
+        if i not in ride:
+            ride[i] = rest.pop(next(n for n, v in enumerate(rest) if v in ("paratransit", "family")))
+    for i in ids:
+        if i not in ride:
+            ride[i] = rest.pop()
+
+    alone = set(pick(rng, ids, left_n("lives_alone", lambda p: p["lives_alone"]),
+                     lambda i: 3 if ride[i] in ("paratransit", "medical_van", "self") else 1))
+    heart = set(pick(rng, ids, left_n("heart_failure", lambda p: "heart_failure" in p["flags"]), lambda i: band[i][2]))
+    missed = set(pick(rng, ids, left_n("missed_recently", lambda p: "missed_recently" in p["flags"])))
+    hep_b = set(pick(rng, ids, left_n("hep_b", lambda p: p["hep_b_positive"])))
+    second = set(pick(rng, ids, left_n("second_contact", lambda p: p["second_contact"])))
+    hbv_old = set(pick(rng, [i for i in ids if i not in hep_b],
+                       left_n("hbv_old", lambda p: p["hbv_tested"] < (NOTICE_DAY - timedelta(days=30)).isoformat())))
+    inside = set(pick(rng, ids, left_n("inside", lambda p: point_in_polygon(p["home"]["lng"], p["home"]["lat"], ring))))
+    days = spread(left("days", lambda p: "MWF" if p["days"][0] == "Mon" else "TTS"))
+    shifts = spread(left("shift", lambda p: p["shift"]))
+    hours = spread(left("hours", lambda p: p["hours"]))
+    for col in (days, shifts, hours):
         rng.shuffle(col)
-    names = {k: list(v) for k, v in NAMES.items()}
 
-    patients = list(v0)
-    for i in range(n):
-        pid = f"P{i + 6:03d}"
-        d = days[i]
-        shift = [1, 2, 3][i % 3]
-        hours = rng.choice([3.5, 4, 4])
-        towns = TOWNS_IN if inside[i] else TOWNS_OUT
-        town = rng.choice(sorted(TOWNS_IN) if inside[i] else OUT_WEIGHTS)
-        ride = rides[i]
-        mobility = "wheelchair" if ride == "wheelchair_van" else rng.choice(["walker", "wheelchair"]) if ride in ("paratransit", "medical_van") else rng.choice(["walks", "walks", "walker"])
-        last_day = "2026-10-26" if d[0] == "Mon" else "2026-10-24"
+    patients = list(kept)
+    for i in ids:
+        n = cfg["first"] + len(kept) + i
+        mwf = days[i] == "MWF"
+        town = rng.choice(sorted(cfg["towns_in"])) if i in inside else rng.choice(cfg["out_weights"])
+        towns = cfg["towns_in"] if i in inside else cfg["towns_out"]
+        tested = NOTICE_DAY - timedelta(days=rng.randint(45, 150) if i in hbv_old else rng.randint(3, 25))
         patients.append({
-            "id": pid,
-            "name": names[langs[i]].pop(0),
-            "days": d,
-            "shift": shift,
-            "hours": hours,
-            "last_session": f"{last_day}T{SHIFT_START[shift]}:00-07:00",
-            "home": home_point(town, towns[town], ring, inside[i]),
-            "ride": ride,
-            "lives_alone": rng.random() < 0.3,
-            "language": langs[i],
-            "mobility": mobility,
-            "hep_b_positive": hep_b[i],
-            "flags": flags[i],
-            "callback": f"555-01{i + 6:02d}",
-            "second_contact": rng.random() < 0.7,
+            "id": f"P{n:03d}",
+            "name": names[i][0],
+            "days": ["Mon", "Wed", "Fri"] if mwf else ["Tue", "Thu", "Sat"],
+            "shift": shifts[i],
+            "hours": hours[i],
+            "last_session": f"{'2026-10-26' if mwf else '2026-10-24'}T{SHIFT_START[shifts[i]]}:00-07:00",
+            "home": home_point(rng, town, towns[town], ring, i in inside),
+            "ride": ride[i],
+            "lives_alone": i in alone,
+            "language": names[i][1],
+            "mobility": mobility[i],
+            "hep_b_positive": i in hep_b,
+            "flags": [f for f, on in (("heart_failure", i in heart), ("missed_recently", i in missed)) if on],
+            "callback": f"555-0{cfg['callback'] + len(kept) + i}",
+            "second_contact": i in second,
+            "hbv_tested": tested.isoformat(),
         })
-    (SEED / "patients.json").write_text(json.dumps(patients, indent=2, ensure_ascii=False) + "\n")
-    print(f"{len(patients)} patients written")
+
+    # Self-check: every total hits the spec, and related fields agree.
+    count = lambda test: sum(map(test, patients))  # noqa: E731
+    assert Counter(p["ride"] for p in patients) == Counter(target["ride"])
+    assert Counter(p["mobility"] for p in patients) == Counter(target["mobility"])
+    assert Counter(p["shift"] for p in patients) == Counter(target["shift"]) and count(lambda p: p["days"][0] == "Mon") == 22
+    assert count(lambda p: p["lives_alone"]) == target["lives_alone"] and count(lambda p: p["hep_b_positive"]) == target["hep_b"]
+    assert count(lambda p: "heart_failure" in p["flags"]) == 12 and count(lambda p: "missed_recently" in p["flags"]) == 4
+    assert count(lambda p: point_in_polygon(p["home"]["lng"], p["home"]["lat"], ring)) == target["inside"]
+    assert not any(p["mobility"] == "wheelchair" and p["ride"] in ("self", "medical_van") for p in patients)
+    assert len({p["name"] for p in patients}) == 40 and len({p["callback"] for p in patients}) == 40
+    path.write_text(json.dumps(patients, indent=2, ensure_ascii=False) + "\n")
+    print(f"{region}: {len(patients)} patients written to {path.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
-    main()
+    make(sys.argv[1] if len(sys.argv) > 1 else "eldorado")

@@ -1,0 +1,330 @@
+[
+  {
+    "id": "C11",
+    "name": "SHC Evergreen",
+    "address": "3251 S White Rd Ste 10, San Jose, CA 95148",
+    "phone": "(408) 766-6500",
+    "lat": 37.315304,
+    "lng": -121.792465,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": true,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-26",
+        "shift": 2,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-26",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 1,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-27",
+        "shift": 2,
+        "open_chairs": 2
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C12",
+    "name": "SHC Silver Creek",
+    "address": "1620 E Capitol Expy, San Jose, CA 95121",
+    "phone": "(408) 754-3400",
+    "lat": 37.307471,
+    "lng": -121.810372,
+    "stations": 31,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 2
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C13",
+    "name": "SHC White Road",
+    "address": "1450 S White Rd #30, San Jose, CA 95127",
+    "phone": "(408) 272-9810",
+    "lat": 37.350921,
+    "lng": -121.814304,
+    "stations": 25,
+    "late_shift": false,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 1
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C14",
+    "name": "DaVita Eastridge Dialysis",
+    "address": "3501 E Capitol Expy, San Jose, CA 95122",
+    "phone": "(408) 929-2274",
+    "lat": 37.347118,
+    "lng": -121.82475,
+    "stations": 24,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": false,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C15",
+    "name": "DaVita Tully Dialysis",
+    "address": "614 Tully Rd Ste 30, San Jose, CA 95111",
+    "phone": "(669) 369-3425",
+    "lat": 37.308094,
+    "lng": -121.847339,
+    "stations": 48,
+    "late_shift": false,
+    "chain": "DaVita",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-27",
+        "shift": 3,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 4
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 2,
+        "open_chairs": 3
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C16",
+    "name": "SHC East San Jose",
+    "address": "2121 Alexian Dr, San Jose, CA 95116",
+    "phone": "(408) 258-8720",
+    "lat": 37.35984,
+    "lng": -121.84753,
+    "stations": 56,
+    "late_shift": true,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": true,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-27",
+        "shift": 4,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 2,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 4,
+        "open_chairs": 3
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 2
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "C17",
+    "name": "SHC Santa Teresa",
+    "address": "7019 Realm Dr, San Jose, CA 95119",
+    "phone": "(408) 229-1110",
+    "lat": 37.2282,
+    "lng": -121.77777,
+    "stations": 25,
+    "late_shift": true,
+    "chain": "US Renal Care, Inc.",
+    "home": false,
+    "kind": "dialysis",
+    "backup_power": "none",
+    "isolation_station": false,
+    "accepts_visiting": true,
+    "slots": [
+      {
+        "date": "2026-10-28",
+        "shift": 1,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 3,
+        "open_chairs": 1
+      },
+      {
+        "date": "2026-10-28",
+        "shift": 4,
+        "open_chairs": 2
+      },
+      {
+        "date": "2026-10-29",
+        "shift": 1,
+        "open_chairs": 1
+      }
+    ],
+    "simulated": [
+      "backup_power",
+      "isolation_station",
+      "accepts_visiting",
+      "slots"
+    ]
+  },
+  {
+    "id": "H11",
+    "name": "Regional Medical Center",
+    "address": "225 N Jackson Ave, San Jose, CA 95116",
+    "phone": "(408) 259-5000",
+    "lat": 37.363389,
+    "lng": -121.8484,
+    "stations": null,
+    "late_shift": false,
+    "chain": null,
+    "home": false,
+    "kind": "hospital",
+    "backup_power": "full",
+    "isolation_station": true,
+    "accepts_visiting": false,
+    "slots": [],
+    "simulated": [
+      "backup_power",
+      "isolation_station"
+    ]
+  }
+]

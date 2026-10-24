@@ -24,7 +24,8 @@
       "heart_failure"
     ],
     "callback": "555-0101",
-    "second_contact": true
+    "second_contact": true,
+    "hbv_tested": "2026-10-07"
   },
   {
     "id": "P002",
@@ -49,7 +50,8 @@
     "hep_b_positive": false,
     "flags": [],
     "callback": "555-0102",
-    "second_contact": true
+    "second_contact": true,
+    "hbv_tested": "2026-10-14"
   },
   {
     "id": "P003",
@@ -76,7 +78,8 @@
       "missed_recently"
     ],
     "callback": "555-0103",
-    "second_contact": true
+    "second_contact": true,
+    "hbv_tested": "2026-10-02"
   },
   {
     "id": "P004",
@@ -101,7 +104,8 @@
     "hep_b_positive": false,
     "flags": [],
     "callback": "555-0104",
-    "second_contact": false
+    "second_contact": false,
+    "hbv_tested": "2026-08-11"
   },
   {
     "id": "P005",
@@ -126,454 +130,851 @@
     "hep_b_positive": true,
     "flags": [],
     "callback": "555-0105",
-    "second_contact": true
+    "second_contact": true,
+    "hbv_tested": "2026-10-19"
   },
   {
     "id": "P006",
-    "name": "Dorothy Keane",
+    "name": "Sharon Pruitt",
     "days": [
-      "Mon",
-      "Wed",
-      "Fri"
+      "Tue",
+      "Thu",
+      "Sat"
     ],
     "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
+    "hours": 3.75,
+    "last_session": "2026-10-24T06:00:00-07:00",
     "home": {
-      "lat": 38.6978,
-      "lng": -121.0732,
-      "town": "El Dorado Hills"
+      "lat": 38.6607,
+      "lng": -120.9272,
+      "town": "Shingle Springs"
     },
-    "ride": "family",
+    "ride": "self",
     "lives_alone": false,
     "language": "en",
     "mobility": "walks",
     "hep_b_positive": false,
-    "flags": [
-      "heart_failure"
-    ],
+    "flags": [],
     "callback": "555-0106",
-    "second_contact": true
+    "second_contact": false,
+    "hbv_tested": "2026-10-18"
   },
   {
     "id": "P007",
     "name": "Harold Briggs",
     "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {
-      "lat": 38.6793,
-      "lng": -121.0706,
-      "town": "El Dorado Hills"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0107",
-    "second_contact": true
-  },
-  {
-    "id": "P008",
-    "name": "Li Mei",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-26T15:00:00-07:00",
-    "home": {
-      "lat": 38.754,
-      "lng": -120.597,
-      "town": "Pollock Pines"
-    },
-    "ride": "paratransit",
-    "lives_alone": false,
-    "language": "zh",
-    "mobility": "wheelchair",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0108",
-    "second_contact": true
-  },
-  {
-    "id": "P009",
-    "name": "Guadalupe Ríos",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
+      "Tue",
+      "Thu",
+      "Sat"
     ],
     "shift": 1,
     "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
+    "last_session": "2026-10-24T06:00:00-07:00",
     "home": {
-      "lat": 38.8917,
-      "lng": -121.0065,
+      "lat": 38.8813,
+      "lng": -121.0099,
       "town": "Cool"
     },
-    "ride": "self",
+    "ride": "family",
     "lives_alone": false,
-    "language": "es",
-    "mobility": "walks",
+    "language": "en",
+    "mobility": "walker",
     "hep_b_positive": false,
     "flags": [
       "heart_failure"
     ],
-    "callback": "555-0109",
-    "second_contact": true
+    "callback": "555-0107",
+    "second_contact": true,
+    "hbv_tested": "2026-10-14"
   },
   {
-    "id": "P010",
-    "name": "Ernesto Salazar",
+    "id": "P008",
+    "name": "Curtis Bell",
     "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {
-      "lat": 38.8078,
-      "lng": -120.8959,
-      "town": "Coloma"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "es",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0110",
-    "second_contact": false
-  },
-  {
-    "id": "P011",
-    "name": "Patricia Lowell",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
+      "Tue",
+      "Thu",
+      "Sat"
     ],
     "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-26T15:00:00-07:00",
-    "home": {
-      "lat": 38.801,
-      "lng": -120.8803,
-      "town": "Coloma"
-    },
-    "ride": "paratransit",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0111",
-    "second_contact": true
-  },
-  {
-    "id": "P012",
-    "name": "Gary Holcomb",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
+    "hours": 3.75,
+    "last_session": "2026-10-24T15:00:00-07:00",
     "home": {
       "lat": 38.8114,
-      "lng": -120.9197,
+      "lng": -120.9057,
       "town": "Lotus"
     },
     "ride": "family",
     "lives_alone": false,
     "language": "en",
-    "mobility": "walker",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0108",
+    "second_contact": true,
+    "hbv_tested": "2026-10-12"
+  },
+  {
+    "id": "P009",
+    "name": "Ernesto Salazar",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 3.25,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.6904,
+      "lng": -120.8456,
+      "town": "El Dorado"
+    },
+    "ride": "paratransit",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0109",
+    "second_contact": true,
+    "hbv_tested": "2026-10-05"
+  },
+  {
+    "id": "P010",
+    "name": "Rosalinda Cortés",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 3,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.8066,
+      "lng": -120.8931,
+      "town": "Lotus"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0110",
+    "second_contact": true,
+    "hbv_tested": "2026-10-15"
+  },
+  {
+    "id": "P011",
+    "name": "Bonnie Halvorsen",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 1,
+    "hours": 3.5,
+    "last_session": "2026-10-26T06:00:00-07:00",
+    "home": {
+      "lat": 38.6919,
+      "lng": -120.8021,
+      "town": "Diamond Springs"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0111",
+    "second_contact": true,
+    "hbv_tested": "2026-10-10"
+  },
+  {
+    "id": "P012",
+    "name": "Frances Ludlow",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 2,
+    "hours": 3.5,
+    "last_session": "2026-10-26T10:30:00-07:00",
+    "home": {
+      "lat": 38.8087,
+      "lng": -120.8963,
+      "town": "Lotus"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
     "hep_b_positive": false,
     "flags": [],
     "callback": "555-0112",
-    "second_contact": false
+    "second_contact": true,
+    "hbv_tested": "2026-10-23"
   },
   {
     "id": "P013",
-    "name": "Rosalinda Cortés",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 2,
-    "hours": 3.5,
-    "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {
-      "lat": 38.7498,
-      "lng": -120.5737,
-      "town": "Pollock Pines"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "es",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0113",
-    "second_contact": false
-  },
-  {
-    "id": "P014",
-    "name": "Javier Montoya",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-26T15:00:00-07:00",
-    "home": {
-      "lat": 38.6814,
-      "lng": -121.089,
-      "town": "El Dorado Hills"
-    },
-    "ride": "medical_van",
-    "lives_alone": true,
-    "language": "es",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [
-      "missed_recently"
-    ],
-    "callback": "555-0114",
-    "second_contact": true
-  },
-  {
-    "id": "P015",
-    "name": "Sharon Pruitt",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
-    "home": {
-      "lat": 38.6729,
-      "lng": -120.9218,
-      "town": "Shingle Springs"
-    },
-    "ride": "family",
-    "lives_alone": true,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0115",
-    "second_contact": true
-  },
-  {
-    "id": "P016",
-    "name": "Dennis Archer",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {
-      "lat": 38.8022,
-      "lng": -120.891,
-      "town": "Coloma"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0116",
-    "second_contact": false
-  },
-  {
-    "id": "P017",
-    "name": "Wang Jun",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 3,
-    "hours": 3.5,
-    "last_session": "2026-10-26T15:00:00-07:00",
-    "home": {
-      "lat": 38.7419,
-      "lng": -120.799,
-      "town": "Placerville"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "zh",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0117",
-    "second_contact": true
-  },
-  {
-    "id": "P018",
-    "name": "Carol Whitley",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
-    "home": {
-      "lat": 38.7292,
-      "lng": -120.7965,
-      "town": "Placerville"
-    },
-    "ride": "paratransit",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0118",
-    "second_contact": true
-  },
-  {
-    "id": "P019",
-    "name": "Ronald Fenwick",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-26T10:30:00-07:00",
-    "home": {
-      "lat": 38.6908,
-      "lng": -121.0663,
-      "town": "El Dorado Hills"
-    },
-    "ride": "medical_van",
-    "lives_alone": true,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0119",
-    "second_contact": true
-  },
-  {
-    "id": "P020",
-    "name": "Esperanza Villalobos",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-26T15:00:00-07:00",
-    "home": {
-      "lat": 38.6811,
-      "lng": -121.0713,
-      "town": "El Dorado Hills"
-    },
-    "ride": "paratransit",
-    "lives_alone": true,
-    "language": "es",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0120",
-    "second_contact": true
-  },
-  {
-    "id": "P021",
-    "name": "Rubén Ochoa",
-    "days": [
-      "Mon",
-      "Wed",
-      "Fri"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-26T06:00:00-07:00",
-    "home": {
-      "lat": 38.6969,
-      "lng": -120.8261,
-      "town": "Diamond Springs"
-    },
-    "ride": "paratransit",
-    "lives_alone": false,
-    "language": "es",
-    "mobility": "wheelchair",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0121",
-    "second_contact": true
-  },
-  {
-    "id": "P022",
     "name": "Leticia Barajas",
     "days": [
       "Mon",
       "Wed",
       "Fri"
     ],
-    "shift": 2,
+    "shift": 1,
     "hours": 4,
-    "last_session": "2026-10-26T10:30:00-07:00",
+    "last_session": "2026-10-26T06:00:00-07:00",
     "home": {
-      "lat": 38.8016,
-      "lng": -120.9047,
-      "town": "Lotus"
+      "lat": 38.8797,
+      "lng": -121.0046,
+      "town": "Cool"
     },
-    "ride": "medical_van",
+    "ride": "family",
     "lives_alone": false,
-    "language": "es",
-    "mobility": "walker",
+    "language": "en",
+    "mobility": "walks",
     "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0122",
-    "second_contact": false
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0113",
+    "second_contact": true,
+    "hbv_tested": "2026-10-09"
   },
   {
-    "id": "P023",
-    "name": "Judith Sayer",
+    "id": "P014",
+    "name": "Arturo Medina",
     "days": [
       "Mon",
       "Wed",
       "Fri"
     ],
     "shift": 3,
-    "hours": 4,
+    "hours": 3.75,
     "last_session": "2026-10-26T15:00:00-07:00",
     "home": {
-      "lat": 38.6908,
-      "lng": -121.0705,
+      "lat": 38.6706,
+      "lng": -120.8328,
+      "town": "El Dorado"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walker",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0114",
+    "second_contact": true,
+    "hbv_tested": "2026-10-14"
+  },
+  {
+    "id": "P015",
+    "name": "Russell Dunbar",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 1,
+    "hours": 3.5,
+    "last_session": "2026-10-26T06:00:00-07:00",
+    "home": {
+      "lat": 38.8905,
+      "lng": -121.0124,
+      "town": "Cool"
+    },
+    "ride": "wheelchair_van",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "wheelchair",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0115",
+    "second_contact": true,
+    "hbv_tested": "2026-10-20"
+  },
+  {
+    "id": "P016",
+    "name": "Larry Mendel",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 3,
+    "hours": 3.5,
+    "last_session": "2026-10-26T15:00:00-07:00",
+    "home": {
+      "lat": 38.7911,
+      "lng": -120.9106,
+      "town": "Lotus"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walker",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0116",
+    "second_contact": true,
+    "hbv_tested": "2026-10-15"
+  },
+  {
+    "id": "P017",
+    "name": "Guadalupe Ríos",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 1,
+    "hours": 4,
+    "last_session": "2026-10-24T06:00:00-07:00",
+    "home": {
+      "lat": 38.6765,
+      "lng": -121.086,
       "town": "El Dorado Hills"
+    },
+    "ride": "paratransit",
+    "lives_alone": false,
+    "language": "es",
+    "mobility": "wheelchair",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0117",
+    "second_contact": false,
+    "hbv_tested": "2026-07-28"
+  },
+  {
+    "id": "P018",
+    "name": "Dennis Archer",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 4,
+    "hours": 3.25,
+    "last_session": "2026-10-24T19:30:00-07:00",
+    "home": {
+      "lat": 38.8025,
+      "lng": -120.9184,
+      "town": "Lotus"
+    },
+    "ride": "medical_van",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0118",
+    "second_contact": true,
+    "hbv_tested": "2026-10-16"
+  },
+  {
+    "id": "P019",
+    "name": "Gary Holcomb",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 3.5,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.6786,
+      "lng": -121.0762,
+      "town": "El Dorado Hills"
+    },
+    "ride": "medical_van",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walker",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0119",
+    "second_contact": true,
+    "hbv_tested": "2026-10-19"
+  },
+  {
+    "id": "P020",
+    "name": "Rubén Ochoa",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 3,
+    "hours": 3.75,
+    "last_session": "2026-10-26T15:00:00-07:00",
+    "home": {
+      "lat": 38.6723,
+      "lng": -120.9304,
+      "town": "Shingle Springs"
+    },
+    "ride": "self",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0120",
+    "second_contact": true,
+    "hbv_tested": "2026-09-03"
+  },
+  {
+    "id": "P021",
+    "name": "Sandra Ellison",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 3,
+    "hours": 3.5,
+    "last_session": "2026-10-26T15:00:00-07:00",
+    "home": {
+      "lat": 38.8758,
+      "lng": -121.0039,
+      "town": "Cool"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "wheelchair",
+    "hep_b_positive": false,
+    "flags": [
+      "missed_recently"
+    ],
+    "callback": "555-0121",
+    "second_contact": true,
+    "hbv_tested": "2026-10-18"
+  },
+  {
+    "id": "P022",
+    "name": "Donna Whitaker",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 4,
+    "hours": 3.5,
+    "last_session": "2026-10-26T19:30:00-07:00",
+    "home": {
+      "lat": 38.6803,
+      "lng": -120.86,
+      "town": "El Dorado"
+    },
+    "ride": "family",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0122",
+    "second_contact": true,
+    "hbv_tested": "2026-10-12"
+  },
+  {
+    "id": "P023",
+    "name": "Eugene Pickard",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 3,
+    "hours": 3.5,
+    "last_session": "2026-10-26T15:00:00-07:00",
+    "home": {
+      "lat": 38.8776,
+      "lng": -121.012,
+      "town": "Cool"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure",
+      "missed_recently"
+    ],
+    "callback": "555-0123",
+    "second_contact": true,
+    "hbv_tested": "2026-10-17"
+  },
+  {
+    "id": "P024",
+    "name": "Tanya Morrison",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 1,
+    "hours": 3,
+    "last_session": "2026-10-26T06:00:00-07:00",
+    "home": {
+      "lat": 38.6852,
+      "lng": -121.0769,
+      "town": "El Dorado Hills"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0124",
+    "second_contact": true,
+    "hbv_tested": "2026-10-04"
+  },
+  {
+    "id": "P025",
+    "name": "Vernon Stiles",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 2,
+    "hours": 3.25,
+    "last_session": "2026-10-26T10:30:00-07:00",
+    "home": {
+      "lat": 38.8017,
+      "lng": -120.8921,
+      "town": "Coloma"
+    },
+    "ride": "medical_van",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0125",
+    "second_contact": false,
+    "hbv_tested": "2026-10-21"
+  },
+  {
+    "id": "P026",
+    "name": "Carol Whitley",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 3,
+    "hours": 4,
+    "last_session": "2026-10-24T15:00:00-07:00",
+    "home": {
+      "lat": 38.7218,
+      "lng": -120.7898,
+      "town": "Placerville"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0126",
+    "second_contact": true,
+    "hbv_tested": "2026-10-02"
+  },
+  {
+    "id": "P027",
+    "name": "Kenneth Rourke",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 1,
+    "hours": 3.25,
+    "last_session": "2026-10-24T06:00:00-07:00",
+    "home": {
+      "lat": 38.6851,
+      "lng": -121.0895,
+      "town": "El Dorado Hills"
+    },
+    "ride": "self",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0127",
+    "second_contact": true,
+    "hbv_tested": "2026-10-10"
+  },
+  {
+    "id": "P028",
+    "name": "Brenda Coyle",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 2,
+    "hours": 3.5,
+    "last_session": "2026-10-26T10:30:00-07:00",
+    "home": {
+      "lat": 38.6774,
+      "lng": -121.0002,
+      "town": "Cameron Park"
+    },
+    "ride": "medical_van",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walker",
+    "hep_b_positive": false,
+    "flags": [
+      "heart_failure"
+    ],
+    "callback": "555-0128",
+    "second_contact": true,
+    "hbv_tested": "2026-10-17"
+  },
+  {
+    "id": "P029",
+    "name": "Wayne Ostrander",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 3,
+    "hours": 3.75,
+    "last_session": "2026-10-26T15:00:00-07:00",
+    "home": {
+      "lat": 38.6852,
+      "lng": -120.8254,
+      "town": "Diamond Springs"
+    },
+    "ride": "paratransit",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0129",
+    "second_contact": true,
+    "hbv_tested": "2026-10-19"
+  },
+  {
+    "id": "P030",
+    "name": "Joyce Marsh",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 2,
+    "hours": 3.75,
+    "last_session": "2026-10-26T10:30:00-07:00",
+    "home": {
+      "lat": 38.8745,
+      "lng": -121.0187,
+      "town": "Cool"
+    },
+    "ride": "self",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0130",
+    "second_contact": false,
+    "hbv_tested": "2026-10-03"
+  },
+  {
+    "id": "P031",
+    "name": "Rogelio Bautista",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 1,
+    "hours": 3.75,
+    "last_session": "2026-10-26T06:00:00-07:00",
+    "home": {
+      "lat": 38.7491,
+      "lng": -120.5941,
+      "town": "Pollock Pines"
+    },
+    "ride": "family",
+    "lives_alone": true,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0131",
+    "second_contact": true,
+    "hbv_tested": "2026-10-22"
+  },
+  {
+    "id": "P032",
+    "name": "Javier Montoya",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 2,
+    "hours": 3.5,
+    "last_session": "2026-10-26T10:30:00-07:00",
+    "home": {
+      "lat": 38.6984,
+      "lng": -121.0751,
+      "town": "El Dorado Hills"
+    },
+    "ride": "self",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0132",
+    "second_contact": true,
+    "hbv_tested": "2026-10-17"
+  },
+  {
+    "id": "P033",
+    "name": "Dorothy Keane",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 3,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.7648,
+      "lng": -120.5928,
+      "town": "Pollock Pines"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walker",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0133",
+    "second_contact": true,
+    "hbv_tested": "2026-10-13"
+  },
+  {
+    "id": "P034",
+    "name": "Patricia Lowell",
+    "days": [
+      "Mon",
+      "Wed",
+      "Fri"
+    ],
+    "shift": 1,
+    "hours": 3.5,
+    "last_session": "2026-10-26T06:00:00-07:00",
+    "home": {
+      "lat": 38.6928,
+      "lng": -121.087,
+      "town": "El Dorado Hills"
+    },
+    "ride": "paratransit",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0134",
+    "second_contact": true,
+    "hbv_tested": "2026-06-11"
+  },
+  {
+    "id": "P035",
+    "name": "Clifford Ames",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 1,
+    "hours": 3,
+    "last_session": "2026-10-24T06:00:00-07:00",
+    "home": {
+      "lat": 38.8095,
+      "lng": -120.9043,
+      "town": "Coloma"
+    },
+    "ride": "family",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0135",
+    "second_contact": true,
+    "hbv_tested": "2026-10-02"
+  },
+  {
+    "id": "P036",
+    "name": "Glenda Tate",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 4,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.7911,
+      "lng": -120.9071,
+      "town": "Lotus"
+    },
+    "ride": "self",
+    "lives_alone": false,
+    "language": "en",
+    "mobility": "walks",
+    "hep_b_positive": false,
+    "flags": [],
+    "callback": "555-0136",
+    "second_contact": true,
+    "hbv_tested": "2026-10-15"
+  },
+  {
+    "id": "P037",
+    "name": "Gloria Haynes",
+    "days": [
+      "Tue",
+      "Thu",
+      "Sat"
+    ],
+    "shift": 2,
+    "hours": 3.75,
+    "last_session": "2026-10-24T10:30:00-07:00",
+    "home": {
+      "lat": 38.7529,
+      "lng": -120.5973,
+      "town": "Pollock Pines"
     },
     "ride": "self",
     "lives_alone": false,
@@ -584,62 +985,13 @@
       "heart_failure",
       "missed_recently"
     ],
-    "callback": "555-0123",
-    "second_contact": true
+    "callback": "555-0137",
+    "second_contact": true,
+    "hbv_tested": "2026-10-04"
   },
   {
-    "id": "P024",
-    "name": "Zhang Hua",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.689,
-      "lng": -121.0828,
-      "town": "El Dorado Hills"
-    },
-    "ride": "family",
-    "lives_alone": true,
-    "language": "zh",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0124",
-    "second_contact": true
-  },
-  {
-    "id": "P025",
-    "name": "Larry Mendel",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 2,
-    "hours": 3.5,
-    "last_session": "2026-10-24T10:30:00-07:00",
-    "home": {
-      "lat": 38.7343,
-      "lng": -120.7839,
-      "town": "Placerville"
-    },
-    "ride": "self",
-    "lives_alone": true,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0125",
-    "second_contact": true
-  },
-  {
-    "id": "P026",
-    "name": "Brenda Coyle",
+    "id": "P038",
+    "name": "Judith Sayer",
     "days": [
       "Tue",
       "Thu",
@@ -649,371 +1001,72 @@
     "hours": 4,
     "last_session": "2026-10-24T15:00:00-07:00",
     "home": {
-      "lat": 38.7982,
-      "lng": -120.9172,
-      "town": "Lotus"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": true,
-    "flags": [],
-    "callback": "555-0126",
-    "second_contact": true
-  },
-  {
-    "id": "P027",
-    "name": "Arturo Medina",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.6898,
-      "lng": -121.0667,
-      "town": "El Dorado Hills"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "es",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0127",
-    "second_contact": true
-  },
-  {
-    "id": "P028",
-    "name": "Wayne Ostrander",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-24T10:30:00-07:00",
-    "home": {
-      "lat": 38.8007,
-      "lng": -120.9006,
-      "town": "Lotus"
-    },
-    "ride": "wheelchair_van",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "wheelchair",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0128",
-    "second_contact": true
-  },
-  {
-    "id": "P029",
-    "name": "Glenda Tate",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 3,
-    "hours": 3.5,
-    "last_session": "2026-10-24T15:00:00-07:00",
-    "home": {
-      "lat": 38.6959,
-      "lng": -120.8032,
-      "town": "Diamond Springs"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0129",
-    "second_contact": false
-  },
-  {
-    "id": "P030",
-    "name": "Russell Dunbar",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.6746,
-      "lng": -120.9389,
-      "town": "Shingle Springs"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0130",
-    "second_contact": true
-  },
-  {
-    "id": "P031",
-    "name": "Liu Fang",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-24T10:30:00-07:00",
-    "home": {
-      "lat": 38.6651,
-      "lng": -120.9978,
+      "lat": 38.6571,
+      "lng": -120.9755,
       "town": "Cameron Park"
     },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "zh",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0131",
-    "second_contact": false
-  },
-  {
-    "id": "P032",
-    "name": "Consuelo Ibarra",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-24T15:00:00-07:00",
-    "home": {
-      "lat": 38.6927,
-      "lng": -121.0972,
-      "town": "El Dorado Hills"
-    },
     "ride": "family",
     "lives_alone": false,
-    "language": "es",
+    "language": "en",
     "mobility": "walks",
     "hep_b_positive": false,
     "flags": [],
-    "callback": "555-0132",
-    "second_contact": false
+    "callback": "555-0138",
+    "second_contact": false,
+    "hbv_tested": "2026-10-08"
   },
   {
-    "id": "P033",
+    "id": "P039",
     "name": "Marilyn Royce",
     "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.6532,
-      "lng": -120.9274,
-      "town": "Shingle Springs"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0133",
-    "second_contact": false
-  },
-  {
-    "id": "P034",
-    "name": "Eugene Pickard",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
+      "Mon",
+      "Wed",
+      "Fri"
     ],
     "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-24T10:30:00-07:00",
+    "hours": 3.25,
+    "last_session": "2026-10-26T10:30:00-07:00",
     "home": {
-      "lat": 38.682,
-      "lng": -121.0745,
+      "lat": 38.678,
+      "lng": -121.0909,
       "town": "El Dorado Hills"
     },
     "ride": "self",
     "lives_alone": false,
     "language": "en",
-    "mobility": "walker",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0134",
-    "second_contact": true
-  },
-  {
-    "id": "P035",
-    "name": "Bonnie Halvorsen",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-24T15:00:00-07:00",
-    "home": {
-      "lat": 38.8017,
-      "lng": -120.8961,
-      "town": "Coloma"
-    },
-    "ride": "self",
-    "lives_alone": false,
-    "language": "en",
     "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0135",
-    "second_contact": false
-  },
-  {
-    "id": "P036",
-    "name": "Clifford Ames",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 3.5,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.6672,
-      "lng": -120.916,
-      "town": "Shingle Springs"
-    },
-    "ride": "wheelchair_van",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "wheelchair",
-    "hep_b_positive": false,
-    "flags": [],
-    "callback": "555-0136",
-    "second_contact": true
-  },
-  {
-    "id": "P037",
-    "name": "Huang Wen",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-24T10:30:00-07:00",
-    "home": {
-      "lat": 38.676,
-      "lng": -121.0953,
-      "town": "El Dorado Hills"
-    },
-    "ride": "paratransit",
-    "lives_alone": false,
-    "language": "zh",
-    "mobility": "wheelchair",
     "hep_b_positive": false,
     "flags": [
       "heart_failure"
     ],
-    "callback": "555-0137",
-    "second_contact": true
-  },
-  {
-    "id": "P038",
-    "name": "Joyce Marsh",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 3,
-    "hours": 4,
-    "last_session": "2026-10-24T15:00:00-07:00",
-    "home": {
-      "lat": 38.7885,
-      "lng": -120.8967,
-      "town": "Coloma"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walks",
-    "hep_b_positive": false,
-    "flags": [
-      "missed_recently"
-    ],
-    "callback": "555-0138",
-    "second_contact": false
-  },
-  {
-    "id": "P039",
-    "name": "Vernon Stiles",
-    "days": [
-      "Tue",
-      "Thu",
-      "Sat"
-    ],
-    "shift": 1,
-    "hours": 4,
-    "last_session": "2026-10-24T06:00:00-07:00",
-    "home": {
-      "lat": 38.682,
-      "lng": -120.8272,
-      "town": "Diamond Springs"
-    },
-    "ride": "family",
-    "lives_alone": false,
-    "language": "en",
-    "mobility": "walks",
-    "hep_b_positive": true,
-    "flags": [],
     "callback": "555-0139",
-    "second_contact": false
+    "second_contact": true,
+    "hbv_tested": "2026-10-20"
   },
   {
     "id": "P040",
-    "name": "Frances Ludlow",
+    "name": "Ronald Fenwick",
     "days": [
-      "Tue",
-      "Thu",
-      "Sat"
+      "Mon",
+      "Wed",
+      "Fri"
     ],
     "shift": 2,
-    "hours": 4,
-    "last_session": "2026-10-24T10:30:00-07:00",
+    "hours": 3.25,
+    "last_session": "2026-10-26T10:30:00-07:00",
     "home": {
-      "lat": 38.6893,
-      "lng": -121.0801,
-      "town": "El Dorado Hills"
+      "lat": 38.6746,
+      "lng": -120.8535,
+      "town": "El Dorado"
     },
-    "ride": "self",
-    "lives_alone": true,
+    "ride": "family",
+    "lives_alone": false,
     "language": "en",
-    "mobility": "walker",
+    "mobility": "walks",
     "hep_b_positive": false,
     "flags": [],
     "callback": "555-0140",
-    "second_contact": false
+    "second_contact": true,
+    "hbv_tested": "2026-10-08"
   }
 ]

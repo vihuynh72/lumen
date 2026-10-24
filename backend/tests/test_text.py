@@ -774,6 +774,23 @@ def test_template_messages_pass_the_model_output_validator(monkeypatch, inputs):
         assert all(message.count("{name}") == 1 for message in row["messages"].values())
 
 
+@pytest.mark.parametrize("ride,line", [("family", "Vui lòng rời nhà trước 5:04 sáng."),
+                                       ("paratransit", "Xe đưa đón sẽ đến đón quý vị lúc 5:04 sáng.")])
+def test_vietnamese_rows_get_the_code_template_and_never_reach_the_model(monkeypatch, inputs, ride, line):
+    plan, clinics, langs = inputs
+    row = next(r for r in plan["patients"] if r["patient_id"] == "P003")  # a transfer to DaVita Folsom Dialysis
+    row.update(ride=ride, slot={"date": "2026-10-28", "shift": 1}, pickup_time="2026-10-28T05:04:00-07:00")
+    langs["P003"] = "vi"
+    write, calls = install(monkeypatch)
+    written = next(r for r in write(plan, clinics, langs)["patients"] if r["patient_id"] == "P003")
+    assert calls and all(f["patient_id"] != "P003" for call in calls for f in call["patients"])
+    templated = next(r for r in template_module(monkeypatch).template_plan_text(plan, clinics, langs)["patients"]
+                     if r["patient_id"] == "P003")
+    assert written["messages"] == templated["messages"] and list(written["messages"]) == ["en", "vi"]
+    vi = written["messages"]["vi"]
+    assert vi == f"6:00 sáng thứ Tư, ngày 28 tháng 10, DaVita Folsom Dialysis. {{name}}, buổi lọc máu của quý vị được dời. {line} Có thắc mắc, xin gọi 555-0100."
+
+
 def test_template_does_not_mutate_the_input(monkeypatch, inputs):
     module = template_module(monkeypatch)
     before = deepcopy(inputs)

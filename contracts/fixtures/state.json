@@ -152,7 +152,8 @@
         "heart_failure"
       ],
       "callback": "555-0101",
-      "second_contact": true
+      "second_contact": true,
+      "hbv_tested": "2026-10-07"
     },
     {
       "id": "P002",
@@ -177,7 +178,8 @@
       "hep_b_positive": false,
       "flags": [],
       "callback": "555-0102",
-      "second_contact": true
+      "second_contact": true,
+      "hbv_tested": "2026-10-14"
     },
     {
       "id": "P003",
@@ -204,7 +206,8 @@
         "missed_recently"
       ],
       "callback": "555-0103",
-      "second_contact": true
+      "second_contact": true,
+      "hbv_tested": "2026-10-02"
     },
     {
       "id": "P004",
@@ -229,7 +232,8 @@
       "hep_b_positive": false,
       "flags": [],
       "callback": "555-0104",
-      "second_contact": false
+      "second_contact": false,
+      "hbv_tested": "2026-08-11"
     },
     {
       "id": "P005",
@@ -254,7 +258,8 @@
       "hep_b_positive": true,
       "flags": [],
       "callback": "555-0105",
-      "second_contact": true
+      "second_contact": true,
+      "hbv_tested": "2026-10-19"
     }
   ],
   "outage_area": {
