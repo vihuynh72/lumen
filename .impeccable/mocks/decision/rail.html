@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lumen - Run rail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@500&family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap">
+<style>
+:root{--ground:#E6EBE8;--paper:#FBFCFB;--paper-2:#F1F4F2;--ink:#13201C;--ink-2:#3A4843;--mute:#5B6863;--line:#D4DBD7;--rail:#15211D;--rail-2:#1E2C27;--rail-ink:#EAF0ED;--rail-mute:#9DAFA8;--rail-line:#2C3A35;--amber:#E39A1E;--red:#C2362F;--red-bg:#FAE7E4;--blue:#2457C5;--blue-bg:#E7EDFA;--green:#23784A;--green-bg:#E2F1E8}
+*{box-sizing:border-box}html,body{margin:0}
+body{width:1440px;height:900px;overflow:hidden;display:grid;grid-template-rows:56px 844px;background:var(--ground);color:var(--ink);font:400 14px/20px "Atkinson Hyperlegible Next",system-ui,sans-serif}
+.m{font:500 12px/20px "Atkinson Hyperlegible Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+button{font:inherit;font-weight:700;border:0;cursor:pointer;height:36px;padding:0 16px;border-radius:8px;display:inline-flex;align-items:center;gap:8px}
+.pri{background:var(--amber);color:#1B1204}.q{background:none;color:var(--ink-2);font-weight:600}
+header{display:flex;align-items:center;gap:16px;padding:0 20px;background:var(--paper);border-bottom:1px solid var(--line)}
+.logo{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;letter-spacing:-.01em}
+.logo i{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--amber)}.logo i::after{content:"";width:6px;height:6px;border-radius:50%;background:#1B1204}
+.sep{width:1px;height:24px;background:var(--line)}.mute{color:var(--mute)}
+.home{display:flex;align-items:center;gap:8px;font-weight:600}
+.tag{font-size:11px;line-height:20px;padding:0 8px;border-radius:10px;font-weight:700;white-space:nowrap}
+.e{background:var(--green-bg);color:var(--green)}.tr{background:var(--blue-bg);color:var(--blue)}.sc{background:var(--red-bg);color:var(--red)}
+.run{margin-left:auto;display:flex;align-items:center;gap:12px;color:var(--ink-2)}.run .dot{width:8px;height:8px;border-radius:50%;background:var(--red)}
+main{display:grid;grid-template-columns:336px 1fr 380px;min-height:0}
+aside{background:var(--rail);color:var(--rail-ink);padding:24px 20px 20px;display:flex;flex-direction:column}
+aside h2{margin:0;font-size:18px;line-height:24px}aside .sub{margin:0 0 16px;color:var(--rail-mute);font-size:13px}
+ol{list-style:none;margin:0;padding:0}
+.ph{position:relative;display:grid;grid-template-columns:20px 1fr;gap:12px;padding:12px;border-radius:8px}
+.ph:not(:last-child)::after{content:"";position:absolute;left:21px;top:36px;bottom:-8px;width:2px;background:var(--rail-line)}
+.act{background:var(--rail-2)}
+.d{position:relative;z-index:1;display:grid;place-items:center;width:20px;height:20px;border-radius:50%}
+.done .d{background:#57C98C;color:#0E2A1C}.done .d .i{width:12px;height:12px;stroke-width:2.5}
+.act .d{border:2px solid var(--amber)}.act .d::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber)}
+.pen .d{border:2px solid #3A4B45}.pen .nm{color:var(--rail-mute)}
+.top{display:flex;justify-content:space-between;font-weight:600}.top .m{color:var(--rail-mute)}.act .top .m{color:var(--amber)}
+.meta{display:flex;align-items:center;gap:8px;margin-top:2px;color:var(--rail-mute);font-size:12px}
+.svc{border:1px solid var(--rail-line);border-radius:4px;padding:0 6px;font-size:11px;font-weight:600;line-height:18px}
+.res{margin:6px 0 0;font-size:13px;line-height:18px}
+.cmd{margin-top:auto;display:flex;align-items:center;gap:8px;height:48px;padding:0 8px 0 16px;background:var(--rail-2);border:1px solid var(--rail-line);border-radius:10px}
+.cmd input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--rail-ink);font:inherit}.cmd input::placeholder{color:var(--rail-mute);opacity:1}
+.cmd button{width:32px;height:32px;padding:0;justify-content:center;background:var(--rail-line);color:var(--rail-ink)}
+.map{position:relative;overflow:hidden;background:#EEF1EE}.map>svg{position:absolute;inset:0}
+.pin{position:absolute;transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--paper);border:1px solid var(--line);border-radius:6px;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;box-shadow:0 1px 3px #13201C22}
+.pin i{width:8px;height:8px;border-radius:50%;background:var(--c)}.pin b{padding:0 4px;border-radius:3px;background:var(--red-bg);color:var(--red);font-size:10px;letter-spacing:.06em}
+.hx{display:grid;place-items:center;width:16px;height:16px;border-radius:4px;background:var(--blue);color:#fff}.hx .i{width:12px;height:12px;stroke-width:3}
+.fl,.zone{position:absolute;padding:2px 8px;border-radius:10px;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap}
+.fl{transform:translate(-50%,-50%);background:var(--paper);border:1px solid var(--blue);color:var(--blue)}
+.zone{transform:translateX(-50%);background:var(--red-bg);border:1px solid #E3A9A4;color:var(--red)}
+.leg{position:absolute;left:16px;bottom:16px;display:grid;gap:4px;padding:12px;background:var(--paper);border:1px solid var(--line);border-radius:8px;font-size:12px;line-height:16px;color:var(--ink-2)}
+.leg p{margin:0;display:flex;align-items:center;gap:8px}.leg i{width:24px;height:0;border-top:2px solid var(--c)}
+.leg .z{height:10px;border:1px dashed var(--red);background:#C2362F22;border-radius:2px}
+.ctl{position:absolute;right:16px;bottom:16px;display:grid;gap:8px}
+.ctl div{display:grid;background:var(--paper);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.ctl button{width:36px;height:36px;padding:0;justify-content:center;background:none;color:var(--ink-2);border-radius:0;font-size:12px}.ctl button+button{border-top:1px solid var(--line)}
+.plan{background:var(--paper);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.plan header{border:0;padding:16px 20px 12px;justify-content:space-between;background:none;gap:8px}.plan h3{margin:0;font-size:16px;line-height:24px}
+.cnt{display:grid;grid-template-columns:repeat(3,1fr);margin:0 20px;border:1px solid var(--line);border-radius:10px;background:var(--paper-2)}
+.cnt div{padding:12px}.cnt div+div{border-left:1px solid var(--line)}
+.cnt span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute);white-space:nowrap}.cnt span::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
+.cnt b{display:block;margin-top:4px;font:500 24px/28px "Atkinson Hyperlegible Mono",monospace}
+.sum{margin:16px 20px 0;color:var(--ink-2)}.btns{display:flex;gap:8px;margin:12px 20px 16px}
+.btns button{height:40px;justify-content:center}.btns .pri{flex:1}.btns .q{border:1px solid var(--line);background:var(--paper)}
+.pts{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.pts li{display:grid;grid-template-columns:20px 1fr;gap:0 12px;padding:14px 20px;border-bottom:1px solid var(--line)}
+.pts .n{color:var(--mute)}.pts .r{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.pts p{margin:2px 0 0;font-size:13px;line-height:18px;color:var(--ink-2);display:flex;justify-content:space-between}.pts p+p{color:var(--mute)}.pts .no{color:var(--red)}
+.more{display:flex;align-items:center;gap:4px;padding:12px 20px;color:var(--mute);font-weight:600;font-size:13px}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="ck" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></symbol><symbol id="plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol><symbol id="minus" viewBox="0 0 16 16"><path d="M3 8h10"/></symbol>
+<symbol id="send" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol><symbol id="play" viewBox="0 0 16 16"><path d="M5 3.5l8 4.5-8 4.5z"/></symbol><symbol id="filt" viewBox="0 0 16 16"><path d="M2.5 4h11M5 8h6M7 12h2"/></symbol>
+<symbol id="nav" viewBox="0 0 16 16"><path d="M8 2l4 12-4-2.5L4 14z"/></symbol><symbol id="chev" viewBox="0 0 16 16"><path d="M6 3.5l4.5 4.5L6 12.5"/></symbol>
+</defs></svg>
+<header>
+  <div class="logo"><i></i>Lumen</div><span class="sep"></span>
+  <div class="home">DaVita Cameron Park Dialysis<span class="tag sc">Home</span></div><span class="sep"></span><span class="mute">El Dorado County</span>
+  <div class="run"><span class="dot"></span><span class="m">PSPS-DEMO-01 · starts in 33 h 30 m</span><button class="pri"><svg class="i" style="fill:currentColor"><use href="#play"/></svg>Run demo</button><button class="q">Reset</button></div>
+</header>
+<main>
+<aside>
+  <h2>AI run</h2><p class="sub m" style="font-family:inherit">Plan v1 · 4.2 s total</p>
+  <ol>
+  <li class="ph done"><i class="d"><svg class="i"><use href="#ck"/></svg></i><div><div class="top"><span>Read notice</span><span class="m">1.4 s</span></div><div class="meta"><span class="svc">Amazon Bedrock</span>Claude Haiku 4.5</div><p class="res">Shutoff Tue Oct 27 6:00 PM to Thu Oct 29 12:00 PM, Cameron Park, Shingle Springs, Placerville</p></div></li>
+  <li class="ph done"><i class="d"><svg class="i"><use href="#ck"/></svg></i><div><div class="top"><span>Find affected</span><span class="m">0.3 s</span></div><div class="meta"><span class="svc">AWS Lambda</span>Rules fallback</div><p class="res">1 clinic loses power · 40 sessions in the window</p></div></li>
+  <li class="ph done"><i class="d"><svg class="i"><use href="#ck"/></svg></i><div><div class="top"><span>Rank patients</span><span class="m">2.1 s</span></div><div class="meta"><span class="svc">Amazon Bedrock</span>Claude Haiku 4.5</div><p class="res">Heart failure, paratransit and living alone rank first</p></div></li>
+  <li class="ph done"><i class="d"><svg class="i"><use href="#ck"/></svg></i><div><div class="top"><span>Assign chairs</span><span class="m">0.4 s</span></div><div class="meta"><span class="svc">AWS Lambda</span>Rules fallback</div><p class="res">8 early · 28 transfer · 4 staff call</p></div></li>
+  <li class="ph act"><i class="d"></i><div><div class="top"><span>Write messages</span><span class="m">running</span></div><div class="meta"><span class="svc">Amazon Bedrock</span>Claude Haiku 4.5</div><p class="res">Writing 36 texts in English, Spanish, Chinese</p></div></li>
+  <li class="ph pen"><i class="d"></i><div><div class="top nm"><span>Approve</span></div><div class="meta"><span class="svc">Staff</span></div></div></li>
+  <li class="ph pen"><i class="d"></i><div><div class="top nm"><span>Voice notes</span></div><div class="meta"><span class="svc">Amazon Polly</span></div></div></li>
+  </ol>
+  <label class="cmd"><input placeholder="Tell Lumen what changed…"><button aria-label="Send"><svg class="i"><use href="#send"/></svg></button></label>
+</aside>
+<div class="map">
+<svg viewBox="0 0 724 844" width="724" height="844">
+<defs>
+  <pattern id="bl" width="24" height="20" patternUnits="userSpaceOnUse"><rect x="3" y="3" width="15" height="12" rx="1.5" fill="#E2E7E3"/></pattern>
+  <path id="us" d="M-10 520C120 500 250 540 380 580S600 650 740 700"/><path id="t1" d="M-10 740L110 690 250 650 340 625 455 530 575 450 735 400"/>
+  <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1L9 5 0 9z" fill="#2457C5"/></marker>
+  <g id="blk" fill="currentColor" stroke="#FBFCFB" stroke-width=".8" stroke-linejoin="round"><ellipse cy="3" rx="20" ry="9" fill="#13201C" opacity=".1" stroke="none"/><polygon points="-14,-16 0,-9 0,7 -14,0" opacity=".8"/><polygon points="0,-9 14,-16 14,0 0,7"/><polygon points="0,-23 14,-16 0,-9 -14,-16" opacity=".5"/></g>
+</defs>
+<path d="M-10 270L150 250 330 340 372 480 330 700-10 740Z M470 560L650 590 660 690 500 700Z" fill="url(#bl)"/>
+<g fill="none" stroke-linecap="round"><g stroke="#D3D9D5" stroke-width="2.5"><path d="M180-10C220 200 330 300 372 560"/><path d="M-10 300C120 330 260 280 420 330S600 300 740 250"/><path d="M440-10C470 150 500 330 520 560"/><path d="M-10 640C100 600 200 650 300 700S400 800 420 860"/></g>
+<g stroke="#DDE2DE" stroke-width="1.5"><path d="M-10 200L120 240M60 420L330 470M600 400C640 500 660 560 700 640M250-10L330 250L400 330"/></g></g>
+<path d="M-10-10H300C292 50 268 76 250 118 236 156 214 176 196 220 176 262 124 232 92 196 62 164 40 118-10 140Z" fill="#CAD8E3" stroke="#B7C8D6"/>
+<text x="64" y="92" fill="#7C93A6" font-size="12" font-weight="600" letter-spacing=".08em">Folsom Lake</text>
+<use href="#us" fill="none" stroke="#AEB9B3" stroke-width="8"/><use href="#us" fill="none" stroke="#F6F8F6" stroke-width="5"/>
+<rect x="78" y="498" width="30" height="16" rx="8" fill="#3A4843"/><text x="93" y="510" fill="#fff" font-size="10" font-weight="700" text-anchor="middle">US 50</text>
+<polygon points="440,300 580,270 724,300 724,844 500,844 430,740 405,620 420,520" fill="#C2362F" fill-opacity=".1" stroke="#C2362F" stroke-width="1.5" stroke-dasharray="6 4"/>
+<g fill="#85928C" font-size="11" font-weight="600" letter-spacing=".05em"><text x="40" y="560">Folsom</text><text x="390" y="700">El Dorado Hills</text><text x="520" y="745">Shingle Springs</text><text x="560" y="800">Placerville</text></g>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"><path d="M340 625 300 540 205 478M300 540 288 396 210 410 122 424 100 330" stroke="#23784A" stroke-opacity=".6"/><path d="M455 530 500 570 545 593M500 570 610 600 640 650M455 530 440 420 470 330" stroke="#A5645F" stroke-dasharray="5 4"/></g>
+<use href="#t1" fill="none" stroke="#3A4843" stroke-width="3.5" stroke-linejoin="round"/><use href="#t1" fill="none" stroke="#FBFCFB" stroke-width="2" stroke-dasharray="1 14" stroke-linecap="round"/>
+<rect x="334" y="619" width="12" height="12" rx="2" fill="#3A4843"/>
+<g fill="none" stroke="#2457C5" stroke-width="2" marker-end="url(#ar)"><path d="M530 572Q400 500 228 466"/><path d="M540 568Q470 380 306 388" stroke-dasharray="6 4"/></g>
+<use href="#blk" transform="translate(545 593) scale(1.25)" style="color:#C2362F"/><use href="#blk" x="205" y="478" style="color:#23784A"/><use href="#blk" x="100" y="330" style="color:#23784A"/>
+<use href="#blk" x="288" y="396" style="color:#2457C5"/><use href="#blk" x="122" y="424" style="color:#2457C5"/>
+</svg>
+<div class="zone" style="left:590px;top:316px">Shutoff area (illustrative)</div>
+<div class="pin" style="left:545px;top:558px;--c:var(--red)"><i></i>DaVita Cameron Park<b>HOME</b></div>
+<div class="pin" style="left:205px;top:451px;--c:var(--green)"><i></i>DaVita Folsom</div>
+<div class="pin" style="left:288px;top:368px"><span class="hx"><svg class="i"><use href="#plus"/></svg></span>Mercy Hospital of Folsom</div>
+<div class="pin" style="left:122px;top:397px;--c:var(--blue)"><i></i>SHC Folsom</div>
+<div class="pin" style="left:100px;top:303px;--c:var(--green)"><i></i>DaVita Orangevale</div>
+<div class="fl" style="left:390px;top:510px">Transfers</div><div class="fl" style="left:447px;top:429px">Staff calls</div>
+<div class="leg"><p><i style="--c:#3A4843;border-width:3px"></i>Transmission line</p><p><i style="--c:#23784A"></i>Feeder, powered</p><p><i style="--c:#A5645F;border-top-style:dashed"></i>Feeder, de-energized</p><p><i class="z"></i>Shutoff area</p></div>
+<div class="ctl"><div><button aria-label="Zoom in"><svg class="i"><use href="#plus"/></svg></button><button aria-label="Zoom out"><svg class="i"><use href="#minus"/></svg></button></div><div><button aria-label="Reset north"><svg class="i"><use href="#nav"/></svg></button></div><div><button class="m">3D</button></div></div>
+</div>
+<section class="plan">
+  <header><h3>Plan v1 · draft</h3><span class="mute m" style="font-family:inherit;font-size:13px">40 patients</span></header>
+  <div class="cnt"><div style="--c:var(--green)"><span>Early session</span><b>8</b></div><div style="--c:var(--blue)"><span>Transfer</span><b>28</b></div><div style="--c:var(--red)"><span>Staff call</span><b>4</b></div></div>
+  <p class="sum">Book 11 paratransit rides today.</p>
+  <div class="btns"><button class="pri">Approve all</button><button class="q"><svg class="i"><use href="#filt"/></svg>Filter</button></div>
+  <ul class="pts">
+  <li><span class="n m">1</span><div><div class="r">James Whitfield<span class="tag e">Early session</span></div><p>Cameron Park<span class="m">Tue 6:00 AM</span></p><p>Drives self</p></div></li>
+  <li><span class="n m">2</span><div><div class="r">Maria Delgado<span class="tag e">Early session</span></div><p>Cameron Park<span class="m">Tue 10:30 AM</span></p><p><span>Paratransit pickup <span class="m">10:04 AM</span></span>Spanish</p></div></li>
+  <li><span class="n m">3</span><div><div class="r">Chen Wei<span class="tag tr">Transfer</span></div><p>DaVita Folsom<span class="m">Thu 6:00 AM</span></p><p><span>Family</span>Chinese</p></div></li>
+  <li><span class="n m">4</span><div><div class="r">Robert Haines<span class="tag sc">Staff call</span></div><p>Mercy Hospital of Folsom</p><p class="no">No chair fits</p></div></li>
+  <li><span class="n m">5</span><div><div class="r">Linda Park<span class="tag tr">Transfer</span></div><p>DaVita Folsom<span class="m">Thu 6:00 AM</span></p><p>Drives self</p></div></li>
+  <li><span class="n m">6</span><div><div class="r">Ana Ruiz<span class="tag tr">Transfer</span></div><p>DaVita Sunset<span class="m">Wed 10:30 AM</span></p><p>Paratransit</p></div></li>
+  </ul>
+  <div class="more">34 more patients<svg class="i"><use href="#chev"/></svg></div>
+</section>
+</main>
+</body></html>

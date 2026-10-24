@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumen</title>
+<link rel="icon" href="data:,">
+<meta name="description" content="Lumen turns a PG&amp;E power shutoff notice into a patient-by-patient dialysis plan that staff approve.">
+<!-- first visit follows the system theme; the toggle saves a choice that wins after that -->
+<script>(function(){var t;try{t=localStorage.getItem('lumenTheme')}catch(e){}if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})()</script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;600&family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="review.css">
+<link rel="stylesheet" href="timeline.css">
+<!-- mapKey: Amazon Location API key, public by design: tiles only, referrer-restricted to localhost:5173 and the Amplify URL -->
+<script>window.LUMEN_CONFIG={api:'https://7nkmh6ezx4unlwxzfjh3gy5lci0brirr.lambda-url.us-east-2.on.aws/', mapKey:'v1.public.eyJqdGkiOiIxZDMwMTg3Ny00OGZiLTQzMjItOTUyZS1lYWVlYzM4YWM2MWEifRQn7mCoI7ZUKDIw21KFAof_ct3Gtf_T9BEDaxxk0KbBtz8iE9S2uhjC28mENWcWBKfK85wLZIWnOSbwdOC8XAOGoN6NzQ2UEaWOYWY-Kj5o4Y68Gsh6YEjKCa1eg2y36_YqqyOWuSUYrqqlrn0Gbc0ObMiy27nCSXfmxO9uH1f1UJDLROpKSC9vK6JXNletxiDeFqQHy51FUPzBxrScCkprbVZ734GDmcOd_x4yNeRJrtY_hZtWXVicMlMGSbiv44KdHeQrJ23SFbqEWOxfExvUeyupfgwzsc6T8-plvC0WTP6oXdvL17hS7917kVn9ZQVaLvYdxdrf2g60M712e0k.NjAyMWJkZWUtMGMyOS00NmRkLThjZTMtODEyOTkzZTUyMTBi'}</script>
+<script src="map.js" defer></script>
+<script src="review.js" defer></script>
+<script src="timeline.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<svg width="0" height="0" class="sprite" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M5 3.5l8 4.5-8 4.5z"/></symbol>
+  <symbol id="i-ck" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></symbol>
+  <symbol id="i-send" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="M4.5 6.5L8 10l3.5-3.5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13.5 9.6A5.75 5.75 0 1 1 6.4 2.5a4.6 4.6 0 0 0 7.1 7.1z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.75"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></symbol>
+  <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.25" cy="10.75" r="2.75"/><path d="M7.2 8.8L13.5 2.5M11.25 4.75l1.75 1.75M9.5 6.5l1.5 1.5"/></symbol>
+  <symbol id="i-home" viewBox="0 0 16 16"><path d="M2.5 7.5L8 3l5.5 4.5M4 6.5V13h8V6.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.75 4h.01M2.75 8h.01M2.75 12h.01"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 16 16"><path d="M8 2.2C6.2 4.6 4.2 7.1 4.2 9.6a3.8 3.8 0 0 0 7.6 0C11.8 7.1 9.8 4.6 8 2.2z" fill="currentColor" fill-opacity=".18"/></symbol>
+  <symbol id="i-h" viewBox="0 0 16 16"><path d="M5 3.8v8.4M11 3.8v8.4M5 8h6"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></symbol>
+  <symbol id="i-print" viewBox="0 0 16 16"><path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2M4.5 9.5h7v4h-7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></symbol>
+</svg>
+
+<header class="top">
+  <h1 class="logo"><a href="./" title="Back to the Lumen home page"><i aria-hidden="true"></i>Lumen</a></h1>
+  <span class="sep" aria-hidden="true"></span>
+  <p class="home"><span class="nm" id="homeName"></span></p>
+  <label class="selw"><span class="vh">County</span>
+    <select id="region">
+      <option value="santaclara">Santa Clara County</option>
+      <option value="eldorado">El Dorado County</option>
+    </select><svg class="i"><use href="#i-chev"/></svg></label>
+  <span class="spacer"></span>
+  <p class="chip" id="chip"><span class="dot" aria-hidden="true"></span><span id="chipT">No shutoff notice</span></p>
+  <button class="btn sec planbtn" id="planTog" type="button" aria-expanded="false" aria-controls="panel"><svg class="i"><use href="#i-list"/></svg>Plan</button>
+  <button class="btn q demobtn" id="demoBtn" type="button" popovertarget="demoMenu" aria-expanded="false">Demo<svg class="i"><use href="#i-chev"/></svg></button>
+  <button class="btn pri" id="run" type="button"><svg class="i fill"><use href="#i-play"/></svg>Run demo</button>
+</header>
+
+<div class="app">
+  <aside class="rail" id="rail" aria-labelledby="railH">
+    <div class="rail-h">
+      <div><h2 id="railH" tabindex="-1">Shutoff response</h2><p class="sub" id="railSub">Not started</p></div>
+      <button class="btn pausebtn" id="pause" type="button" hidden>Pause</button>
+      <button class="btn railtog" id="railTog" type="button" aria-expanded="false" aria-controls="railBody">Steps<svg class="i"><use href="#i-chev"/></svg></button>
+    </div>
+    <div class="rail-body" id="railBody">
+      <!-- every step stays on screen with its result line, during and after the run (v6) -->
+      <ol class="phases steps" id="phases" aria-label="Steps"></ol>
+      <div class="chg" id="chg" hidden>
+        <button class="btn chgbtn" id="chgBtn" type="button" aria-expanded="false" aria-controls="replan">Something changed?</button>
+        <form class="cmd" id="replan" hidden>
+          <div class="cmd-h"><label for="instr">Tell Lumen what changed</label><button type="button" class="cmd-x" id="chgX" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+          <textarea id="instr" rows="2" placeholder="Type it in plain words"></textarea>
+          <div class="cmd-r">
+            <div class="suggs" id="suggs" role="group" aria-label="Examples"><button type="button" class="sugg">DaVita Folsom can only take 4 more</button><button type="button" class="sugg">Maria Delgado declined</button></div>
+            <button type="submit" class="send" id="send" aria-label="Change the plan"><svg class="i"><use href="#i-send"/></svg></button>
+          </div>
+          <p class="err" id="chgErr" role="alert" hidden></p>
+        </form>
+      </div>
+    </div>
+    <p class="vh" id="live" aria-live="polite"></p>
+  </aside>
+
+  <div class="rsz" data-side="rail" role="separator" aria-orientation="vertical" aria-label="Resize steps panel" aria-controls="rail" aria-valuemin="280" aria-valuemax="480" aria-valuenow="336" tabindex="0"></div>
+  <div class="rsz" data-side="panel" role="separator" aria-orientation="vertical" aria-label="Resize plan panel" aria-controls="panel" aria-valuemin="340" aria-valuemax="640" aria-valuenow="380" tabindex="0"></div>
+  <main class="map" id="main" aria-label="Map of the home clinic and its power grid">
+    <div id="map"></div>
+    <div class="banner" id="banner" role="alert" hidden><span id="bannerT"></span><button class="btn q ico sm" id="bannerX" type="button" aria-label="Dismiss the message"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="ncard" id="notice" role="status" hidden>
+      <p class="ncard-t" id="noticeT"></p>
+      <p class="ncard-a" id="noticeA"></p>
+      <p class="ncard-s"><span class="tag n" id="noticeS">Simulated PG&amp;E notice</span></p>
+    </div>
+    <!-- data-s: the first run stage that draws it; data-x: the stage that replaces it; data-w: shown only when that is on the map (app.js legend()) -->
+    <details class="legend" id="legend">
+      <summary>Legend<svg class="i"><use href="#i-chev"/></svg></summary>
+      <dl>
+        <dt>Power</dt>
+        <dd><span><i class="sw feed"></i>Live feeder (illustrative)</span><span data-s="2"><i class="sw ln dead"></i>No power (simulated)</span><span><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line</span><span><i class="sw sub"></i>Substation</span></dd>
+        <dt data-s="1">Area</dt>
+        <dd data-s="1"><span><i class="sw zone"></i>Shutoff area (illustrative)</span><span data-s="2"><i class="sw zone off"></i>Darker while the power is off</span></dd>
+        <dt>Places</dt>
+        <dd><span><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic</span><span><i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic</span><span><i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</span><span data-s="2"><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>No power</span><span data-s="4"><i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Takes patients</span><span data-s="0" data-w="county"><i class="sw ln county"></i>County line</span></dd>
+        <dt data-s="3">Patients</dt>
+        <dd data-s="3"><span data-s="3" data-x="4"><i class="sw dot" style="--c:var(--map-affected)"></i>Treatment in the shutoff</span><span data-s="4"><i class="sw dot" style="--c:var(--map-transfer)"></i>Moves</span><span data-s="4"><i class="sw dot" style="--c:var(--map-early)"></i>Comes in early</span><span data-s="4"><i class="sw dot" style="--c:var(--map-staff)"></i>Needs a phone call</span><span data-s="4" data-w="notice"><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span></dd>
+        <dt data-s="4">Routes</dt>
+        <dd data-s="4"><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>To a clinic with open slots</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Phone call, no slot</span><span data-s="4" data-w="changed"><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed</span><span data-s="4" data-w="straight"><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Road route not available</span></dd>
+      </dl>
+      <p class="lgnote">Lines and substations: OpenStreetMap. Patient homes: synthetic.</p>
+      <button class="lgbtn" id="animTog" type="button">Pause animation</button>
+    </details>
+    <div class="tlbar" id="timeline"></div>
+    <div class="ctl">
+      <button class="btn sec" id="wholeBtn" type="button" title="All clinics" hidden><svg class="i"><use href="#i-fit"/></svg><span class="lb">All clinics</span></button>
+      <button class="btn sec" id="homeBtn" type="button" title="My clinic"><svg class="i"><use href="#i-home"/></svg><span class="lb">My clinic</span></button>
+    </div>
+  </main>
+
+  <aside class="panel" id="panel" aria-label="Plan"></aside>
+</div>
+
+<div id="demoMenu" class="pop menu" popover aria-label="Demo">
+  <button class="mi" id="reset" type="button" popovertarget="resetPop">Reset the demo</button>
+  <button class="mi" id="keyTog" type="button"><svg class="i"><use href="#i-key"/></svg>Demo key</button>
+  <button class="mi" id="themeTog" type="button"><svg class="i"><use href="#i-moon"/></svg>Dark theme</button>
+  <p class="small">Demo data. Synthetic patients. The notice and the replies are simulated.</p>
+</div>
+
+<div id="keyPop" class="pop" popover role="dialog" aria-labelledby="keyH">
+  <h2 id="keyH">Demo key</h2>
+  <p class="err" id="keyMsg" hidden></p>
+  <form id="keyForm">
+    <label for="keyInput">Key for the live API</label>
+    <div class="keyrow">
+      <input id="keyInput" type="password" autocomplete="off" spellcheck="false" aria-describedby="keyMsg">
+      <button class="btn sec ico" id="keyShow" type="button" aria-pressed="false" aria-label="Show the key"><svg class="i"><use href="#i-eye"/></svg></button>
+    </div>
+    <button class="btn pri" type="submit">Save</button>
+  </form>
+  <p class="small">Ask the team for the demo key. It never goes in the repo.</p>
+</div>
+
+<div id="resetPop" class="pop" popover role="dialog" aria-label="Reset the demo" aria-describedby="resetQ">
+  <p id="resetQ">Reset the demo? This deletes the notice and the patient plan.</p>
+  <div class="pop-b">
+    <button class="btn danger" id="resetGo" type="button">Reset</button>
+    <button class="btn sec" type="button" popovertarget="resetPop" popovertargetaction="hide" autofocus>Cancel</button>
+  </div>
+</div>
+
+<div id="runPop" class="pop" popover role="dialog" aria-label="Start over" aria-describedby="runQ">
+  <p id="runQ">Start over? This deletes the patient plan, its approvals and voice notes.</p>
+  <div class="pop-b">
+    <button class="btn danger" id="runGo" type="button">Start over</button>
+    <button class="btn sec" type="button" popovertarget="runPop" popovertargetaction="hide" autofocus>Cancel</button>
+  </div>
+</div>
+</body>
+</html>

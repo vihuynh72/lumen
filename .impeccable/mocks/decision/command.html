@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lumen command bar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@500&family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ground:#E6EBE8;--paper:#FBFCFB;--paper2:#F1F4F2;--ink:#13201C;--ink2:#3A4843;--mute:#5B6863;--line:#D4DBD7;--rail:#15211D;--amber:#E39A1E;--onamber:#1B1204;--red:#C2362F;--redbg:#FAE7E4;--blue:#2457C5;--green:#23784A;--greenbg:#E2F1E8;--sh:0 1px 2px rgba(19,32,28,.06),0 8px 24px rgba(19,32,28,.10)}
+*{box-sizing:border-box;margin:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{position:relative;background:var(--ground);color:var(--ink);font:400 14px/1.35 "Atkinson Hyperlegible Next",system-ui,sans-serif}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.m{font-family:"Atkinson Hyperlegible Mono",ui-monospace,monospace;font-weight:500;font-variant-numeric:tabular-nums}
+.i{width:16px;height:16px;flex:none}.s{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.map{position:absolute;left:0;top:56px}.map text{fill:var(--ink);font-size:12px;font-weight:600}
+.hl{paint-order:stroke;stroke:#EEF1EE;stroke-width:4px;stroke-linejoin:round}
+.bt{fill:var(--t)}.bl{fill:var(--l)}.br{fill:var(--r)}
+.pl{filter:drop-shadow(0 1px 2px rgba(19,32,28,.2))}.pl rect,.pl path{fill:#FBFCFB}.pl rect{stroke:#D4DBD7}
+.fp,.fd{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fp{stroke:#4E9A6E}.fd{stroke:#9C6D69;stroke-dasharray:5 4}
+header{position:absolute;inset:0 0 auto 0;height:56px;background:var(--paper);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;padding:0 20px;z-index:5}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px;letter-spacing:-.01em}
+.dot{width:20px;height:20px;border-radius:50%;background:var(--amber);position:relative}.dot::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--paper)}
+.vr{width:1px;height:24px;background:var(--line)}.sp{flex:1}
+.tag{font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;background:var(--paper2);border:1px solid var(--line);color:var(--ink2);margin-left:-8px}
+.sel{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px 0 12px;border:1px solid var(--line);border-radius:8px;font-weight:600;font-size:13px}
+.ev{font-size:13px;color:var(--ink2)}.ev b{color:var(--ink);font-weight:600}.ev .m{font-size:12px}
+.cd{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:8px;background:var(--redbg);color:#A22B25;font-size:14px}
+.rst{display:flex;align-items:center;gap:6px;height:32px;padding:0 6px;color:var(--mute);font-size:13px;font-weight:600}
+.cmd{position:absolute;left:330px;top:72px;width:780px;height:52px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);display:flex;align-items:center;gap:10px;padding:0 7px 0 16px;z-index:4;color:var(--mute);font-size:13.5px}
+.cmd span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{height:36px;padding:0 14px;border-radius:9px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.pri{background:var(--amber);color:var(--onamber)}.quiet{background:var(--paper2);border:1px solid var(--line);color:var(--ink2);font-weight:600}
+.steps{position:absolute;top:132px;left:0;width:1440px;display:flex;justify-content:center;gap:6px;z-index:4}
+.st{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:10px;background:var(--paper);border:1px solid var(--line);line-height:1.25}
+.st b{display:block;font-weight:600;font-size:12px}.st small{display:block;font-size:11px;color:var(--mute)}
+.st.act{border:1.5px solid var(--amber);padding:0 11.5px}.st.pend{background:var(--paper2);color:var(--mute)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid #F2D8A4;border-top-color:var(--amber);animation:sp 1s linear infinite;flex:none}@keyframes sp{to{transform:rotate(360deg)}}
+.ring{width:14px;height:14px;border-radius:50%;border:1.5px solid #B9C3BE;flex:none}
+aside{position:absolute;right:24px;top:180px;bottom:24px;width:360px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh);display:flex;flex-direction:column;overflow:hidden;z-index:4}
+.ph{padding:16px;border-bottom:1px solid var(--line)}.ph h2{font-size:16px;font-weight:700}.ph h2 span{color:var(--mute);font-weight:400}
+.cnt{display:flex;gap:14px;margin-top:6px;font-size:12px;color:var(--ink2)}.cnt i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.acts{display:flex;gap:8px;margin-top:12px}.acts .pri{flex:1}
+.row{display:grid;grid-template-columns:20px 1fr;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.n{width:20px;height:20px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:11px;color:var(--ink2);margin-top:1px}
+.r1{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600}.r2,.r3{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.r3{color:var(--mute);display:flex;gap:6px;align-items:center}.r2 .m{font-size:12px}
+.t{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}.e{background:var(--greenbg);color:#175A36}.x{background:#E4EBFA;color:#1D44A0}.c{background:var(--redbg);color:#A22B25}
+.lg{font-size:11px;font-weight:600;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--ink2)}
+.chg{background:#FBEFD8}.chg .n{background:#F3D9A4}.cg{margin-left:auto;background:var(--amber);color:var(--onamber);font-size:11px;font-weight:700;padding:1px 7px;border-radius:5px}
+.pf{margin-top:auto;padding:10px 16px;background:var(--paper2);border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
+.leg{position:absolute;left:24px;bottom:24px;width:268px;padding:10px 14px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);font-size:12px;color:var(--ink2);z-index:4}
+.leg div{display:flex;align-items:center;gap:10px;height:22px}.leg svg{width:24px;height:18px;flex:none}
+.ctl{position:absolute;right:400px;bottom:24px;display:flex;flex-direction:column;gap:8px;z-index:4}
+.ctl div{border:1px solid var(--line);border-radius:10px;background:var(--paper);box-shadow:var(--sh);overflow:hidden}
+.ctl button{display:grid;place-items:center;width:36px;height:34px;font-size:12px;font-weight:700}.ctl button+button{border-top:1px solid var(--line)}.ctl .on{background:var(--rail);color:var(--paper)}
+</style></head><body>
+<svg class="map" width="1440" height="844" viewBox="0 0 1440 844">
+<defs>
+<pattern id="blk" width="72" height="56" patternUnits="userSpaceOnUse"><path fill="#E4E9E5" d="M6 6h26v18H6zM40 8h22v30H40zM8 32h20v16H8z"/></pattern>
+<path id="rd" d="M120 844L180 600 250 470 330 300 420 190M470 844L500 640 540 470 600 330M760 844L735 650 700 480M980 844L960 700 900 520 850 340 830 124M0 330C200 320 400 300 560 280S860 250 1056 230M0 700C300 690 600 680 1056 640M0 580L320 560 470 600 760 590 1040 560M300 150L560 330 640 430"/>
+<path id="us" d="M0 470C240 450 440 440 660 425S1000 380 1440 330"/>
+<path id="t" d="M0 610C180 590 330 540 460 500S700 400 860 340S1180 250 1440 215"/>
+<marker id="ab" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5 1 9z" fill="#2457C5"/></marker>
+<marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5 1 9z" fill="#C2362F"/></marker>
+<g id="bx"><polygon class="bl" points="-16,0 0,8 0,-10 -16,-18"/><polygon class="br" points="0,8 16,0 16,-18 0,-10"/><polygon class="bt" points="0,-26 16,-18 0,-10 -16,-18"/></g>
+<g id="bh"><polygon class="bl" points="-16,0 0,8 0,-22 -16,-30"/><polygon class="br" points="0,8 16,0 16,-30 0,-22"/><polygon class="bt" points="0,-38 16,-30 0,-22 -16,-30"/><polygon fill="#fff" points="7.4,-28.1 3.6,-30 7.4,-31.9 3.8,-33.7 0,-31.8 -3.8,-33.7 -7.4,-31.9 -3.6,-30 -7.4,-28.1 -3.8,-26.3 0,-28.2 3.8,-26.3"/></g>
+<symbol id="ck" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="#23784A"/><path d="M4.5 8.3l2.4 2.4 4.6-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="chev" viewBox="0 0 16 16"><path class="s" d="M4 6l4 4 4-4"/></symbol>
+<symbol id="clk" viewBox="0 0 16 16"><circle class="s" cx="8" cy="8" r="6.2"/><path class="s" d="M8 4.5V8l2.2 1.4"/></symbol>
+<symbol id="rs" viewBox="0 0 16 16"><path class="s" d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v3h3"/></symbol>
+<symbol id="sp" viewBox="0 0 16 16"><path d="M8 1.5l1.6 4.4 4.4 1.6-4.4 1.6L8 13.5 6.4 9.1 2 7.5l4.4-1.6z" fill="currentColor"/></symbol>
+</defs>
+<rect width="1440" height="844" fill="#EEF1EE"/><rect width="1440" height="844" fill="url(#blk)"/>
+<ellipse cx="640" cy="730" rx="150" ry="58" fill="#E2EBE3"/><ellipse cx="1000" cy="120" rx="110" ry="40" fill="#E2EBE3"/>
+<path d="M0 0H370C350 44 318 62 292 104C262 152 206 176 160 152C112 128 54 150 0 196Z" fill="#C9D7DF" stroke="#B7C9D3"/><text x="52" y="100" style="fill:#5F7B8A;font-weight:400;letter-spacing:.08em">Folsom Lake</text>
+<use href="#rd" fill="none" stroke="#D3D9D5" stroke-width="7"/><use href="#rd" fill="none" stroke="#fff" stroke-width="5"/>
+<use href="#us" fill="none" stroke="#BCC4BF" stroke-width="12"/><use href="#us" fill="none" stroke="#FAFBFA" stroke-width="9"/>
+<rect x="315" y="435" width="44" height="20" rx="6" fill="#fff" stroke="#8C9892"/><text x="337" y="449.500" text-anchor="middle" style="font-size:11px">US 50</text>
+<polygon points="790,170 880,140 1100,150 1440,130 1440,844 1000,844 860,760 760,640 730,540 750,400 770,260" fill="#C2362F" fill-opacity=".11" stroke="#C2362F" stroke-opacity=".55" stroke-width="1.5" stroke-linejoin="round"/>
+<g transform="translate(786 168)"><rect width="196" height="24" rx="12" fill="#FAE7E4" stroke="#C2362F" stroke-opacity=".45"/><text x="12" y="16" style="fill:#A22B25">Shutoff area (illustrative)</text></g>
+<use href="#t" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="7"/><use href="#t" fill="none" stroke="#13201C" stroke-width="3.500"/><use href="#t" fill="none" stroke="#13201C" stroke-width="8" stroke-linecap="round" stroke-dasharray="0 96"/>
+<path class="fp" d="M170 404L170 480 249 563M430 602L400 570 380 525M400 292L420 400 460 500M650 332L620 380 649 428M249 563L280 700 300 760M460 500L520 640 540 760"/>
+<path class="fd" d="M870 514L884 430 860 340M884 430L1010 450 1100 520M860 340L960 300 1040 230"/>
+<path d="M846 532C730 660 560 670 458 618" fill="none" stroke="#2457C5" stroke-width="2.200" marker-end="url(#ab)"/><text class="hl" x="647" y="664" text-anchor="middle" style="fill:#2457C5">28 transfers</text>
+<path d="M852 506C790 440 720 380 678 346" fill="none" stroke="#C2362F" stroke-width="2.200" marker-end="url(#ar)"/><text class="hl" x="772" y="430" style="fill:#A22B25">4 staff calls</text>
+<g transform="translate(400 292)"><ellipse cx="4" cy="4" rx="26" ry="10" fill="#13201C" fill-opacity=".12"/><use href="#bx" style="--t:#58B07F;--l:#1D6540;--r:#23784A"/><g class="pl"><rect x="-50" y="-62" width="100" height="24" rx="12"/><path d="M-4-38.500h8l-4 6z"/><circle cx="-37" cy="-50" r="3.500" fill="#23784A"/><text x="-27" y="-46">SHC Folsom</text></g></g>
+<g transform="translate(650 332)"><ellipse cx="4" cy="4" rx="26" ry="10" fill="#13201C" fill-opacity=".12"/><use href="#bh" style="--t:#9AABB6;--l:#51636F;--r:#64767F"/><g class="pl" transform="translate(0 -12)"><rect x="-98" y="-62" width="196" height="24" rx="12"/><path d="M-4-38.500h8l-4 6z"/><path style="fill:#51636F" d="M-86-54.500h3v3h3v3h-3v3h-3v-3h-3v-3h3z"/><text x="-72" y="-46">Mercy Hospital of Folsom</text></g></g>
+<g transform="translate(170 402)"><ellipse cx="4" cy="4" rx="26" ry="10" fill="#13201C" fill-opacity=".12"/><use href="#bx" style="--t:#58B07F;--l:#1D6540;--r:#23784A"/><g class="pl"><rect x="-74" y="-62" width="148" height="24" rx="12"/><path d="M-4-38.500h8l-4 6z"/><circle cx="-61" cy="-50" r="3.500" fill="#23784A"/><text x="-51" y="-46">DaVita Orangevale</text></g></g>
+<g transform="translate(870 520)"><ellipse cx="0" cy="2" rx="34" ry="15" fill="#C2362F" fill-opacity=".16" stroke="#C2362F" stroke-opacity=".5"/><use href="#bx" style="--t:#E5736B;--l:#9E2B25;--r:#C2362F"/><g class="pl"><rect x="-102" y="-62" width="204" height="24" rx="12"/><path d="M-4-38.500h8l-4 6z"/><circle cx="-90" cy="-50" r="3.500" fill="#C2362F"/><text x="-80" y="-46">DaVita Cameron Park</text><rect x="46" y="-56" width="46" height="12" rx="6" style="fill:#FAE7E4;stroke:none"/><text x="69" y="-47" text-anchor="middle" style="fill:#A22B25;font-size:9.500px;font-weight:700">HOME</text></g></g>
+<g transform="translate(430 602)"><ellipse cx="4" cy="4" rx="26" ry="10" fill="#13201C" fill-opacity=".12"/><use href="#bx" style="--t:#58B07F;--l:#1D6540;--r:#23784A"/><g class="pl"><rect x="-61" y="-62" width="122" height="24" rx="12"/><path d="M-4-38.500h8l-4 6z"/><circle cx="-48" cy="-50" r="3.500" fill="#23784A"/><text x="-38" y="-46">DaVita Folsom</text></g></g>
+</svg>
+<header>
+<div class="brand"><span class="dot"></span>Lumen</div><span class="vr"></span>
+<div style="font-weight:600">DaVita Cameron Park Dialysis</div><span class="tag">Home</span><span class="vr"></span>
+<div class="sel">El Dorado County <svg class="i"><use href="#chev"/></svg></div><span class="sp"></span>
+<div class="ev"><b class="m">PSPS-DEMO-01</b> · Shutoff starts <b>Tue Oct 27, 6:00 PM</b></div>
+<div class="cd m"><svg class="i"><use href="#clk"/></svg>33 h 30 m</div>
+<button class="rst"><svg class="i"><use href="#rs"/></svg>Reset</button>
+</header>
+<div class="cmd"><svg class="i" style="color:var(--amber)"><use href="#sp"/></svg><span>Paste a PG&amp;E notice, or tell Lumen what changed — e.g. DaVita Folsom can only take four more</span><button class="btn pri"><svg class="i" viewBox="0 0 16 16"><path d="M4.500 3l9 5-9 5z" fill="currentColor"/></svg>Run demo</button></div>
+<div class="steps">
+<div class="st"><svg class="i"><use href="#ck"/></svg><div><b>Read notice</b><small class="m">Bedrock · 1.4 s</small></div></div>
+<div class="st"><svg class="i"><use href="#ck"/></svg><div><b>Find affected</b><small class="m">Lambda · 0.3 s</small></div></div>
+<div class="st"><svg class="i"><use href="#ck"/></svg><div><b>Rank patients</b><small class="m">Bedrock · 2.1 s</small></div></div>
+<div class="st"><svg class="i"><use href="#ck"/></svg><div><b>Assign chairs</b><small class="m">Lambda · 0.4 s</small></div></div>
+<div class="st act"><i class="spin"></i><div><b>Write messages</b><small class="m">Bedrock</small></div></div>
+<div class="st pend"><i class="ring"></i><b>Approve</b></div>
+<div class="st pend"><i class="ring"></i><div><b>Voice notes</b><small class="m">Polly</small></div></div>
+</div>
+<aside>
+<div class="ph"><h2>Plan v1 <span>· draft</span></h2>
+<div class="cnt"><span><i style="background:var(--green)"></i><b class="m">8</b> early</span><span><i style="background:var(--blue)"></i><b class="m">28</b> transfer</span><span><i style="background:var(--red)"></i><b class="m">4</b> staff call</span></div>
+<div class="acts"><button class="btn pri">Approve all</button><button class="btn quiet">Expand</button></div></div>
+<div class="row"><span class="n m">1</span><div><div class="r1">James Whitfield<span class="t e">Early session</span></div><div class="r2">Cameron Park · <span class="m">Tue 6:00 AM</span></div><div class="r3">Drives self</div></div></div>
+<div class="row"><span class="n m">2</span><div><div class="r1">Maria Delgado<span class="t e">Early session</span></div><div class="r2">Cameron Park · <span class="m">Tue 10:30 AM</span></div><div class="r3">Paratransit <span class="m">10:04 AM</span><span class="lg">Spanish</span></div></div></div>
+<div class="row"><span class="n m">3</span><div><div class="r1">Chen Wei<span class="t x">Transfer</span></div><div class="r2">DaVita Folsom · <span class="m">Thu 6:00 AM</span></div><div class="r3">Family<span class="lg">Chinese</span></div></div></div>
+<div class="row"><span class="n m">4</span><div><div class="r1">Robert Haines<span class="t c">Staff call</span></div><div class="r2">Mercy Hospital of Folsom</div><div class="r3" style="color:#A22B25;font-weight:600">No chair fits</div></div></div>
+<div class="row chg"><span class="n m">5</span><div><div class="r1">Linda Park<span class="t x">Transfer</span></div><div class="r2">DaVita Folsom · <span class="m">Thu 6:00 AM</span></div><div class="r3">Drives self<span class="cg">Changed</span></div></div></div>
+<div class="row"><span class="n m">6</span><div><div class="r1">Ana Ruiz<span class="t x">Transfer</span></div><div class="r2">DaVita Sunset · <span class="m">Wed 10:30 AM</span></div><div class="r3">Paratransit</div></div></div>
+<div class="pf">Showing 6 of 40 · nothing sends until approved</div>
+</aside>
+<div class="leg">
+<div><svg viewBox="0 0 24 18"><path d="M1 9h22" stroke="#4E9A6E" stroke-width="2.500"/></svg>Powered feeder</div>
+<div><svg viewBox="0 0 24 18"><path d="M1 9h22" stroke="#9C6D69" stroke-width="2.500" stroke-dasharray="5 3"/></svg>De-energized feeder</div>
+<div><svg viewBox="0 0 24 18"><path d="M1 9h22" stroke="#13201C" stroke-width="4"/></svg>Transmission line (OpenStreetMap)</div>
+<div><svg viewBox="-17 -27 34 36"><use href="#bx" style="--t:#58B07F;--l:#1D6540;--r:#23784A"/></svg>Dialysis clinic</div>
+<div><svg viewBox="-17 -39 34 48"><use href="#bh" style="--t:#9AABB6;--l:#51636F;--r:#64767F"/></svg>Hospital</div>
+<div><svg viewBox="0 0 24 18"><rect x="2" y="2" width="20" height="14" rx="3" fill="#C2362F" fill-opacity=".15" stroke="#C2362F" stroke-opacity=".6"/></svg>Shutoff area</div>
+</div>
+<div class="ctl">
+<div><button>2D</button><button class="on">3D</button></div>
+<div><button aria-label="Reset north"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#D4DBD7"/><path d="M8 2.500l2.400 5.500H5.600z" fill="#C2362F"/><path d="M8 13.500L5.600 8h4.800z" fill="#5B6863"/></svg></button></div>
+<div><button aria-label="Zoom in"><svg class="i" viewBox="0 0 16 16"><path class="s" d="M3 8h10M8 3v10"/></svg></button><button aria-label="Zoom out"><svg class="i" viewBox="0 0 16 16"><path class="s" d="M3 8h10"/></svg></button></div>
+</div>
+</body></html>

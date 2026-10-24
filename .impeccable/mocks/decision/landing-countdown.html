@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;font-family:"Atkinson Hyperlegible Next",system-ui,sans-serif;color:#13201C;background:#FBFCFB;position:relative}
+nav{height:72px;display:flex;align-items:center;padding:0 56px;gap:36px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:22px}
+.logo i{width:22px;height:22px;border-radius:50%;background:#E39A1E;box-shadow:inset 0 0 0 6px #FBFCFB;outline:2px solid #13201C}
+nav a{font-size:16px;color:#3A4843;text-decoration:none}
+nav .r{margin-left:auto;display:flex;gap:28px;align-items:center}
+.signin{border:1.5px solid #13201C;border-radius:8px;padding:9px 16px;color:#13201C!important;font-weight:700}
+.top{display:grid;grid-template-columns:1fr 380px;gap:56px;padding:28px 56px 0}
+.k{font-size:18px;color:#A12A24;font-weight:700;display:flex;align-items:center;gap:10px}
+.k i{width:10px;height:10px;border-radius:50%;background:#C2362F;box-shadow:0 0 0 6px #FAE7E4}
+.clock{font-family:"Atkinson Hyperlegible Mono",monospace;font-size:132px;font-weight:500;letter-spacing:-.04em;line-height:1;margin:10px 0 18px;font-variant-numeric:tabular-nums}
+.clock span{color:#5B6863}
+h1{font-size:46px;line-height:1.08;font-weight:800;letter-spacing:-.015em;max-width:760px}
+.side{padding-top:38px}
+.side p{font-size:19px;line-height:1.5;color:#3A4843;margin-bottom:24px}
+.side b{color:#13201C}
+.btn{display:block;text-align:center;font-size:17px;font-weight:700;padding:15px 22px;border-radius:10px;margin-bottom:12px}
+.pri{background:#E39A1E;color:#1B1204}
+.sec{border:1.5px solid #13201C}
+.map{position:absolute;left:0;right:0;top:560px;height:220px;background:#E6EBE8;border-top:1px solid #D4DBD7;overflow:hidden}
+.beat{position:absolute;left:56px;top:24px;font-size:16px;font-weight:700;background:#FBFCFB;padding:8px 14px;border-radius:8px;box-shadow:0 1px 2px rgba(19,32,28,.06),0 10px 30px rgba(19,32,28,.13)}
+.beat em{font-style:normal;color:#2457C5}
+.strip{position:absolute;left:0;right:0;bottom:0;height:120px;display:grid;grid-template-columns:repeat(5,1fr);padding:22px 56px;gap:14px;border-top:1px solid #D4DBD7;background:#FBFCFB}
+.st{display:flex;flex-direction:column;gap:10px}
+.bar{height:10px;border-radius:5px}
+.st b{font-size:17px}.st small{font-size:14px;color:#5B6863}
+.tag{position:absolute;right:56px;top:532px;font-size:13px;color:#5B6863}
+</style></head><body>
+<nav><span class="logo"><i></i>Lumen</span><a href="#">How it works</a><a href="#">For clinics</a>
+<div class="r"><a href="#">Request a demo</a><a class="signin" href="#">Sign in</a></div></nav>
+<div class="top">
+<div><p class="k"><i></i>Power off at DaVita Cameron Park in</p>
+<p class="clock">33:12<span>:08</span></p>
+<h1>When the power goes out, dialysis can't wait.</h1></div>
+<div class="side"><p>Miss a treatment and fluid builds in the lungs. After Hurricane Sandy, patients who got dialysis early had <b>28% lower odds of dying</b> within 30 days.</p>
+<span class="btn pri">Try the live demo</span><span class="btn sec">Request a demo</span></div>
+</div>
+<div class="map">
+<svg width="1440" height="220" viewBox="0 0 1440 220" aria-hidden="true">
+<g stroke="#D4DBD7" stroke-width="1.5" fill="none"><path d="M0 60 H1440"/><path d="M0 150 C400 120 900 190 1440 140"/><path d="M300 0 V220"/><path d="M820 0 C840 80 800 150 860 220"/></g>
+<path d="M980 20 L1300 10 L1360 170 L1060 210 L940 120Z" fill="#C2362F" fill-opacity=".12" stroke="#C2362F" stroke-dasharray="6 6"/>
+<g fill="none" stroke="#2457C5" stroke-width="4" stroke-linecap="round" stroke-dasharray="16 10">
+<path d="M1130 110 C960 70 760 60 560 70"/><path d="M1130 110 C900 140 640 170 420 160"/><path d="M1130 110 C1000 190 860 200 740 196"/></g>
+<g fill="#E39A1E"><circle cx="1060" cy="80" r="4"/><circle cx="1200" cy="60" r="4"/><circle cx="1240" cy="140" r="4"/><circle cx="1090" cy="170" r="4"/><circle cx="1290" cy="100" r="4"/><circle cx="1010" cy="130" r="4"/></g>
+<circle cx="1130" cy="110" r="14" fill="#C2362F" stroke="#FBFCFB" stroke-width="4"/>
+<g fill="#23784A" stroke="#FBFCFB" stroke-width="4"><circle cx="560" cy="70" r="12"/><circle cx="420" cy="160" r="12"/><circle cx="740" cy="196" r="12"/></g>
+<g font-family="Atkinson Hyperlegible Next" font-size="15" font-weight="700" fill="#13201C"><text x="500" y="46">Folsom · 9</text><text x="300" y="196">Orangevale · 16</text><text x="760" y="180">Sunset · 3</text></g>
+</svg>
+<p class="beat">Tue 6:00 PM · <em>the lights go out, the routes light up</em></p>
+</div>
+<p class="tag">Demo data. Synthetic patients.</p>
+<div class="strip">
+<div class="st"><span class="bar" style="background:#C2362F"></span><b>PG&amp;E notice arrives</b><small>Tue 6 PM to Thu noon</small></div>
+<div class="st"><span class="bar" style="background:#E39A1E"></span><b>Lumen finds every patient</b><small>40 have treatment then</small></div>
+<div class="st"><span class="bar" style="background:#2457C5"></span><b>Nearest open chair</b><small>36 placed, 4 to call</small></div>
+<div class="st"><span class="bar" style="background:#13201C"></span><b>You approve once</b><small>nothing goes out before</small></div>
+<div class="st"><span class="bar" style="background:#23784A"></span><b>Everyone is told</b><small>patients and clinics</small></div>
+</div>
+</body></html>

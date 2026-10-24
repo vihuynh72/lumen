@@ -1,0 +1,98 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/rail.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.492Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/rail.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.511Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/split.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.528Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/command.html"
+        ],
+        "createdAt": "2026-10-24T03:41:22.544Z",
+        "reason": "Claude: closed decision-round sketch, not shipped; the round ended with the Run rail choice"
+      },
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T03:50:58.443Z",
+        "reason": "Claude: the dot pulses only on the rail phase whose API request is in flight (.ph.running), next to a text status; off under prefers-reduced-motion"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T05:34:04.702Z",
+        "reason": "Claude: legend line swatches (app.css .sw.dead/.sw.wide/.sw.feed) are zero-height lines that mirror the map's dead line, route width and dashed live feeder (design decision D8), not card accents"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T05:34:04.717Z",
+        "reason": "Claude: legend line swatches (app.css .sw.dead/.sw.wide/.sw.feed) are zero-height lines that mirror the map's dead line, route width and dashed live feeder (design decision D8), not card accents"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/landing-seam.html"
+        ],
+        "createdAt": "2026-10-24T10:30:41.549Z",
+        "reason": "false positive: the flagged text sits on the #15211D night panel (6:1 to 14:1); the detector measures it against the body ground; decision sketch only, not shipped"
+      },
+      {
+        "rule": "oversized-h1",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/landing-seam.html"
+        ],
+        "createdAt": "2026-10-24T10:57:16.723Z",
+        "reason": "decision sketch from a closed round, not shipped; the built landing page is checked on its own"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/landing-board.html"
+        ],
+        "createdAt": "2026-10-24T10:57:16.819Z",
+        "reason": "unchosen decision sketch from a closed round, not shipped"
+      }
+    ]
+  }
+}

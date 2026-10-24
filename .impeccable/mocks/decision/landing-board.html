@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;font-family:"Atkinson Hyperlegible Next",system-ui,sans-serif;color:#13201C;background:#E6EBE8;position:relative}
+nav{height:72px;display:flex;align-items:center;padding:0 56px;gap:36px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:22px}
+.logo i{width:22px;height:22px;border-radius:50%;background:#E39A1E;box-shadow:inset 0 0 0 6px #E6EBE8;outline:2px solid #13201C}
+nav a{font-size:16px;color:#3A4843;text-decoration:none}
+nav .r{margin-left:auto;display:flex;gap:28px;align-items:center}
+.signin{border:1.5px solid #13201C;border-radius:8px;padding:9px 16px;color:#13201C!important;font-weight:700}
+.left{position:absolute;left:56px;top:136px;width:500px}
+h1{font-size:62px;line-height:1.04;font-weight:800;letter-spacing:-.02em}
+.left p{font-size:20px;line-height:1.5;color:#3A4843;margin:24px 0 30px}
+.left b{color:#13201C}
+.btn{display:inline-block;font-size:17px;font-weight:700;padding:15px 24px;border-radius:10px;margin-right:10px}
+.pri{background:#E39A1E;color:#1B1204}
+.sec{border:1.5px solid #13201C}
+.board{position:absolute;left:620px;top:112px;width:764px;background:#15211D;border-radius:14px;padding:18px 0 8px;color:#EAF0ED;box-shadow:0 1px 2px rgba(19,32,28,.06),0 10px 30px rgba(19,32,28,.13)}
+.bh{display:grid;grid-template-columns:1.5fr .9fr 1.4fr .9fr;padding:0 24px 12px;font-size:13px;color:#9DAFA8;letter-spacing:.04em;border-bottom:1px solid #2C3A35}
+.row{display:grid;grid-template-columns:1.5fr .9fr 1.4fr .9fr;align-items:center;padding:0 24px;height:52px;border-bottom:1px solid #22302B;font-size:17px}
+.t{font-family:"Atkinson Hyperlegible Mono",monospace;font-size:15px;color:#C7D3CE}
+.c{font-weight:700}
+.c.new{color:#1B1204;background:#F2AE3D;border-radius:6px;padding:4px 10px;justify-self:start}
+.c.old{color:#9DAFA8;text-decoration:line-through;text-decoration-color:#FF8A7D}
+.s{font-size:14px;color:#57C98C;font-weight:700}
+.s.w{color:#9DAFA8}
+.inset{position:absolute;right:56px;top:560px;width:400px;height:200px;background:#FBFCFB;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(19,32,28,.06),0 10px 30px rgba(19,32,28,.13)}
+.strip{position:absolute;left:0;right:0;bottom:0;height:120px;display:grid;grid-template-columns:repeat(5,1fr);padding:22px 56px;gap:14px;background:#FBFCFB;border-top:1px solid #D4DBD7}
+.st{display:flex;flex-direction:column;gap:10px}
+.bar{height:10px;border-radius:5px}
+.st b{font-size:17px}.st small{font-size:14px;color:#5B6863}
+.tag{position:absolute;left:56px;bottom:136px;font-size:13px;color:#5B6863}
+</style></head><body>
+<nav><span class="logo"><i></i>Lumen</span><a href="#">How it works</a><a href="#">For clinics</a>
+<div class="r"><a href="#">Request a demo</a><a class="signin" href="#">Sign in</a></div></nav>
+<div class="left">
+<h1>Forty people. One shutoff. Every one rerouted.</h1>
+<p>When PG&amp;E cuts power to a dialysis clinic, each patient still needs a chair within days. Lumen finds it and <b>tells them in their language</b> the moment you approve.</p>
+<span class="btn pri">Try the live demo</span><span class="btn sec">Request a demo</span>
+</div>
+<div class="board">
+<div class="bh"><span>PATIENT</span><span>TREATMENT</span><span>CLINIC</span><span>STATUS</span></div>
+<div class="row"><span>Joyce Marsh</span><span class="t">Mon 10:30</span><span class="c">Cameron Park · early</span><span class="s">Told</span></div>
+<div class="row"><span>Guadalupe Ríos</span><span class="t">Wed 6:00</span><span class="c new">DaVita Folsom</span><span class="s">Told</span></div>
+<div class="row"><span>Huang Wen</span><span class="t">Wed 10:30</span><span class="c new">DaVita Folsom</span><span class="s w">Telling…</span></div>
+<div class="row"><span>Dorothy Keane</span><span class="t">Wed 6:00</span><span class="c new">DaVita Orangevale</span><span class="s">Told</span></div>
+<div class="row"><span>Rubén Ochoa</span><span class="t">Tue 3:00</span><span class="c new">DaVita Orangevale</span><span class="s w">Telling…</span></div>
+<div class="row"><span>Chen Wei</span><span class="t">Wed 6:00</span><span class="c old">Cameron Park</span><span class="s w">Finding chair</span></div>
+<div class="row"><span>Carol Whitley</span><span class="t">Wed 6:00</span><span class="c">Staff will call</span><span class="s w">Call</span></div>
+</div>
+<div class="inset">
+<svg width="400" height="200" viewBox="0 0 400 200" aria-hidden="true">
+<path d="M270 20 L390 10 L390 150 L300 180 L250 110Z" fill="#C2362F" fill-opacity=".12" stroke="#C2362F" stroke-dasharray="5 5"/>
+<g fill="none" stroke="#2457C5" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="12 8"><path d="M320 95 C250 70 170 50 100 50"/><path d="M320 95 C240 120 160 140 70 130"/><path d="M320 95 C260 160 200 175 150 180"/></g>
+<circle cx="320" cy="95" r="10" fill="#C2362F" stroke="#FBFCFB" stroke-width="3"/>
+<g fill="#23784A" stroke="#FBFCFB" stroke-width="3"><circle cx="100" cy="50" r="9"/><circle cx="70" cy="130" r="9"/><circle cx="150" cy="180" r="9"/></g>
+</svg></div>
+<p class="tag">Demo data. Synthetic patients.</p>
+<div class="strip">
+<div class="st"><span class="bar" style="background:#C2362F"></span><b>PG&amp;E notice arrives</b><small>Tue 6 PM to Thu noon</small></div>
+<div class="st"><span class="bar" style="background:#E39A1E"></span><b>Lumen finds every patient</b><small>40 have treatment then</small></div>
+<div class="st"><span class="bar" style="background:#2457C5"></span><b>Nearest open chair</b><small>36 placed, 4 to call</small></div>
+<div class="st"><span class="bar" style="background:#13201C"></span><b>You approve once</b><small>nothing goes out before</small></div>
+<div class="st"><span class="bar" style="background:#23784A"></span><b>Everyone is told</b><small>patients and clinics</small></div>
+</div>
+</body></html>

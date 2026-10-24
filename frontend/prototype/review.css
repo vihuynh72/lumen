@@ -1,0 +1,160 @@
+/* "Approve and tell everyone" list (CONTRACT-v5 section 5; card: CONTRACT-v3 R5 and CONTRACT-v6 section 4). app.css tokens only; reuses .btn, .langs, .msgt, .racts, .small, .err, .m, .vh, .i. */
+.rv{--rv-max:1040px;--rv-vcol:132px;--rv-pad:max(24px,calc((100% - var(--rv-max)) / 2 + 24px));--rv-colh:40px;--rv-sheet:440px;--rv-ease:cubic-bezier(.16,1,.3,1);
+  --rv-cols:minmax(200px,1.4fr) minmax(170px,1fr) minmax(120px,.7fr) var(--rv-vcol);
+  position:fixed;inset:24px;width:auto;height:auto;max-width:none;max-height:none;margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);overflow:hidden}
+.rv[open]{display:flex;flex-direction:column;animation:rv-in .24s var(--rv-ease)}
+.rv::backdrop{background:color-mix(in srgb,var(--rail) 86%,transparent)}
+:root:has(.rv[open]){overflow:hidden}
+@keyframes rv-in{from{opacity:.4;transform:translateY(8px)}}
+.rv :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.rv [tabindex="-1"]:focus{outline:0}  /* headings take focus only to move the reading point */
+.rv .btn[aria-disabled="true"]{opacity:.55;cursor:progress}
+
+/* header: title, one line of help, search, close */
+.rv-h{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:18px var(--rv-pad) 16px;border-bottom:1px solid var(--line)}
+.rv-hd{flex:1 1 320px;min-width:0}
+.rv-h h2{font-size:22px;line-height:28px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.rv-sum{margin-top:2px;color:var(--ink-2)}
+.rv-q{position:relative;display:flex;align-items:center;flex:0 1 260px;min-width:180px}
+.rv-q .i{position:absolute;left:10px;color:var(--mute);pointer-events:none}
+.rv-q input{width:100%;height:40px;padding:0 10px 0 32px;border:1px solid var(--mute);border-radius:8px;background:var(--paper);color:var(--ink)}
+.rv-q input::placeholder{color:var(--mute);opacity:1}
+.rv-q input:focus-visible{outline-offset:0}
+
+/* the list: one scroll region, centered, grouped by where each patient goes */
+.rv-body{position:relative;flex:1 1 0;min-height:0}
+.rv-tw{height:100%;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth;scrollbar-gutter:stable;background:var(--paper);transition:padding-right .3s var(--rv-ease)}
+.rv-in{max-width:var(--rv-max);margin:0 auto;padding:0 24px 40px}
+.rv-colh{position:sticky;top:0;z-index:3;display:grid;grid-template-columns:var(--rv-cols);column-gap:16px;align-items:end;height:var(--rv-colh);padding:0 0 8px;background:var(--paper);color:var(--mute);font-size:12px;line-height:16px;font-weight:700}
+.rv-g{margin-top:12px}
+.rv-gh{position:sticky;top:var(--rv-colh);z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;min-height:60px;padding:8px 0;border-bottom:1px solid var(--line-2);background:var(--paper)}
+.rv-gh h3{min-width:0;font-size:17px;line-height:24px;font-weight:700;text-wrap:balance}
+.rv-gn{color:var(--mute);font-variant-numeric:tabular-nums}
+.rv-gh .rv-sw{width:var(--rv-vcol);margin-left:auto}  /* lines up with the voice note column */
+.rv-gdot{position:relative;flex:none;width:10px;height:10px;border-radius:50%;background:var(--c)}
+.rv-gdot::after{content:"";position:absolute;inset:-1px;border:2px solid var(--c);border-radius:50%;opacity:0}
+.rv-gs{padding:10px 0 2px;color:var(--ink-2)}
+.rv-rows{margin:0;padding:0;list-style:none}
+.rv-r{display:grid;grid-template-columns:var(--rv-cols);column-gap:16px;align-items:center;min-height:60px;margin:0 -12px;padding:8px 12px;border-radius:8px;cursor:pointer;transition:background-color .15s ease-out}
+.rv-r+.rv-r{background-image:linear-gradient(var(--line),var(--line));background-size:calc(100% - 24px) 1px;background-position:12px 0;background-repeat:no-repeat}
+.rv-r:hover{background-color:var(--paper-2)}
+.rv-r.rv-selr{background-color:var(--paper-3)}
+.rv-who{display:flex;flex-direction:column;min-width:0}
+.rv-nm{position:relative;overflow:hidden;max-width:100%;padding:0;border:0;background:none;color:var(--ink);font-size:15px;line-height:22px;font-weight:700;text-align:left;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.rv-nm:hover{text-decoration:underline;text-underline-offset:3px}
+.rv-l2{overflow:hidden;color:var(--mute);font-size:13px;line-height:18px;text-overflow:ellipsis;white-space:nowrap}
+.rv-chg{color:var(--amber-ink);font-weight:700}
+.rv-when,.rv-lv{color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
+.rv-lv{position:relative;white-space:nowrap}  /* holds .rv-k, so the hidden word never stretches the dialog into a scroller */
+.rv-k{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}  /* the column header says it on wide screens */
+.rv-pk{color:var(--mute);font-size:13px}
+.rv-why{grid-column:1/-1;margin:2px 0 0;font-size:13px;line-height:18px}
+.rv-f-b{color:var(--red-ink)}
+.rv-f-w{color:var(--amber-ink)}
+.rv-empty{display:grid;justify-items:start;gap:12px;padding:32px 0;color:var(--mute)}
+
+/* switch: a real checkbox with role="switch"; the knob position and the color both say on or off */
+.rv-sw{position:relative;display:inline-flex;align-items:center;gap:10px;min-height:44px;color:var(--ink-2);font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer;user-select:none}
+.rv-sw input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.rv-trk{position:relative;flex:none;width:40px;height:24px;border-radius:12px;background:var(--mute);transition:background-color .2s ease-out}
+.rv-trk::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--paper);box-shadow:0 1px 3px color-mix(in srgb,var(--ink) 35%,transparent);transition:transform .28s var(--rv-ease)}
+.rv-sw input:checked+.rv-trk{background:var(--green)}
+.rv-sw input:checked+.rv-trk::after{transform:translateX(16px)}
+.rv-sw input:focus-visible+.rv-trk{outline:2px solid var(--focus);outline-offset:2px}
+.rv-sw:hover input:not(:checked)+.rv-trk{background:var(--ink-2)}
+.rv-r .rv-swl{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}  /* the column header names it; the switch has its own label */
+/* a word instead of a switch when there is nothing to switch */
+.rv-w{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;font-size:12px;font-weight:700;white-space:nowrap}
+.rv-w-told{background:var(--green-bg);color:var(--green-ink)}
+.rv-w-hold{background:var(--amber-bg);color:var(--amber-ink)}
+.rv-w-fix{background:var(--red-bg);color:var(--red-ink)}
+.rv-w-none{padding:0;color:var(--mute)}
+
+/* footer: one sentence, one button; it lines up with the list */
+.rv-foot{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 32px;min-height:84px;padding:16px var(--rv-pad);border-top:1px solid var(--line);background:var(--paper);box-shadow:0 -10px 28px -20px color-mix(in srgb,var(--ink) 55%,transparent)}
+.rv-say{flex:1 1 360px;max-width:64ch;color:var(--ink-2);font-size:15px;line-height:22px;text-wrap:pretty}
+.rv-say b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.rv-ferr{flex-basis:100%;order:-1}
+.rv-go{flex:none;height:48px;margin-left:auto;padding:0 24px;font-size:16px}
+.rv-fin{display:flex;align-items:center;gap:10px;min-height:48px;color:var(--green-ink);font-size:17px;line-height:24px;font-weight:700;animation:rv-fade .3s ease-out}
+.rv-fin .i{width:26px;height:26px;stroke-width:2.25}
+.rv-draw path{stroke-dasharray:1;stroke-dashoffset:1;animation:rv-draw .5s var(--rv-ease) .08s forwards}
+@keyframes rv-draw{to{stroke-dashoffset:0}}
+@keyframes rv-fade{from{opacity:0}}
+/* the press: each destination pings once, top to bottom, as Lumen tells it */
+.rv-told .rv-gdot::after{animation:rv-ping .9s var(--rv-ease) calc(var(--i) * 90ms) both}
+@keyframes rv-ping{0%{opacity:0;transform:scale(1)}12%{opacity:.9}100%{opacity:0;transform:scale(3.4)}}
+
+/* status pill in the card: the text says the stage, the color only repeats it */
+.rv-pill{display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid transparent;border-radius:12px;font-size:12px;line-height:16px;font-weight:700;white-space:nowrap;vertical-align:1px}
+.rv-p-draft{border-color:var(--line-2);color:var(--ink-2)}
+.rv-p-approved{border-color:var(--line-2);background:var(--paper-3);color:var(--ink)}
+.rv-p-told{background:var(--green-bg);color:var(--green-ink)}
+.rv-p-held,.rv-p-no_answer{border-color:color-mix(in srgb,var(--amber) 55%,transparent);background:var(--amber-bg);color:var(--amber-ink)}
+.rv-p-confirmed{background:var(--green);color:var(--paper)}
+.rv-p-declined{background:var(--red-bg);color:var(--red-ink)}
+.rv-p-call{border-color:var(--ink-2);color:var(--ink)}
+
+/* the patient card: a sheet from the right; on wide screens the list moves over so nothing hides under it */
+.rv-det{position:absolute;z-index:4;inset:0 0 0 auto;display:flex;flex-direction:column;gap:16px;width:min(var(--rv-sheet),100%);padding:16px 24px 24px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border-left:1px solid var(--line);background:var(--paper);box-shadow:var(--shadow);transform:translateX(100%);visibility:hidden;transition:transform .22s cubic-bezier(.4,0,1,1),visibility 0s linear .22s}
+.rv-body.rv-sheet .rv-det{transform:none;visibility:visible;transition:transform .32s var(--rv-ease)}
+@media (min-width:1280px){.rv-body.rv-sheet .rv-tw{padding-right:var(--rv-sheet)}}
+.rv-det h3{font-size:20px;line-height:28px;font-weight:700}
+.rv-sub{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:2px;color:var(--ink-2)}
+.rv-card{display:grid;gap:6px;color:var(--ink-2)}
+.rv-big{margin-bottom:2px;color:var(--ink);font-size:17px;line-height:24px;font-weight:700}
+.rv-dot{display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:var(--c);vertical-align:1px}
+.rv-chgn{color:var(--amber-ink);font-weight:600}
+/* "What Maria gets": the text message as one bubble, then a receipt line; a dashed bubble has not gone out yet */
+.rv-gets{display:grid;gap:8px;padding-top:16px;border-top:1px solid var(--line)}
+.rv-gets h4{margin:0 0 2px;color:var(--ink);font-size:15px;line-height:22px;font-weight:700}
+.rv-bub{justify-self:start;max-width:min(86%,40ch);margin:0;padding:10px 14px;border:1px solid transparent;border-radius:18px 18px 18px 6px;background:var(--paper-3);color:var(--ink);font-size:15px;line-height:22px;overflow-wrap:anywhere;white-space:pre-line}
+.rv-bub.rv-unsent{border:1px dashed var(--line-2);background:var(--paper)}
+.rv-rc{display:flex;align-items:center;gap:6px;margin:-2px 0 0 6px;color:var(--mute);font-size:13px;line-height:18px;font-variant-numeric:tabular-nums}
+.rv-rc .i{width:14px;height:14px;stroke-width:2.25}
+.rv-rc-told{color:var(--ink-2)}
+.rv-rc-yes{color:var(--green-ink);font-weight:700}
+.rv-rc-wait{color:var(--amber-ink);font-weight:700}
+.rv-rc-no{color:var(--red-ink);font-weight:700}
+.rv-do{display:grid;gap:4px}
+.rv-voice{display:grid;gap:8px}
+.rv-det audio{width:100%;height:36px}
+.rv-back{align-self:flex-start;margin-left:-10px}
+.rv-back .i{transform:rotate(90deg)}
+
+@media (prefers-reduced-motion:reduce){
+  .rv[open],.rv-fin{animation:none}
+  .rv-draw path{animation:none;stroke-dashoffset:0}
+  .rv-told .rv-gdot::after{animation:none}
+  .rv-tw,.rv-det,.rv-body.rv-sheet .rv-det,.rv-trk,.rv-trk::after{transition:none}
+}
+
+/* phones: groups stack, each patient is a short card, switches are 44 px, nothing scrolls sideways */
+@media (max-width:760px){
+  .rv{inset:0;border:0;border-radius:0}
+  .rv{--rv-pad:16px}
+  .rv-h{padding:12px 16px}
+  .rv-hd{flex-basis:calc(100% - 120px)}
+  .rv-h h2{font-size:20px;line-height:26px}
+  .rv-q{order:3;flex:1 1 100%}
+  .rv .btn,.rv-q input,.rv .langs button{height:44px}
+  .rv-in{padding:0 16px 32px}
+  .rv-colh{display:none}
+  .rv-gh{top:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:10px;row-gap:0}
+  .rv-gdot{align-self:start;margin-top:7px}
+  .rv-gn{grid-area:2/2;font-size:13px}
+  .rv-gh .rv-sw{grid-area:1/3/3/4;width:auto}
+  .rv-who{flex-flow:row wrap;align-items:baseline;column-gap:8px}
+  .rv-r{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"who v" "when v" "lv v" "why why";align-items:start;row-gap:2px;margin:0 -8px;padding:12px 8px}
+  .rv-who{grid-area:who}.rv-when{grid-area:when}.rv-lv{grid-area:lv}.rv-v{grid-area:v;align-self:center}.rv-why{grid-area:why}
+  .rv-lv:empty,.rv-when:empty{display:none}
+  .rv-r .rv-swl,.rv-k{position:static;width:auto;height:auto;overflow:visible;clip-path:none}
+  .rv-k{color:var(--mute)}
+  .rv-pk{display:none}
+  .rv-nm::after{content:"";position:absolute;inset:-10px -8px}
+  .rv-foot{flex-direction:column;align-items:stretch;gap:10px;min-height:0;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .rv-say{flex:none;font-size:14px;line-height:20px}
+  .rv-go{width:100%;margin:0}
+  .rv-body{position:static}  /* the card covers the whole list */
+  .rv-det{width:100%;padding:12px 16px 24px}
+}

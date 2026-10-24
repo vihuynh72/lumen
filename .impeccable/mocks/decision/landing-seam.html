@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;font-family:"Atkinson Hyperlegible Next",system-ui,sans-serif;color:#13201C;background:#FBFCFB;position:relative}
+.night{position:absolute;inset:0 720px 0 0;background:#15211D;color:#EAF0ED}
+.day{position:absolute;inset:0 0 0 720px;background:#F1F4F2}
+nav{position:absolute;top:0;left:0;right:0;height:72px;display:flex;align-items:center;padding:0 48px;gap:36px;z-index:3}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:22px;color:#EAF0ED}
+.logo i{width:22px;height:22px;border-radius:50%;background:#E39A1E;box-shadow:inset 0 0 0 6px #15211D}
+nav a{font-size:16px;color:#C7D3CE;text-decoration:none}
+nav .r{margin-left:auto;display:flex;gap:28px;align-items:center}
+nav .r a{color:#3A4843}
+.signin{border:1.5px solid #13201C;border-radius:8px;padding:9px 16px;color:#13201C!important;font-weight:700}
+h1{position:absolute;top:128px;left:0;right:0;text-align:center;font-size:76px;line-height:1.02;font-weight:800;letter-spacing:-.02em;z-index:3;pointer-events:none}
+h1 .a{color:#EAF0ED}h1 .b{color:#13201C}
+.lede{position:absolute;top:310px;font-size:21px;line-height:1.45;width:520px}
+.l1{left:64px;color:#C7D3CE}.l2{left:784px;color:#3A4843}
+.lede b{font-weight:700}
+.l1 b{color:#FF8A7D}.l2 b{color:#2457C5}
+.calls{position:absolute;left:64px;top:430px;width:560px;font-family:"Atkinson Hyperlegible Mono",monospace;font-size:15px;color:#9DAFA8;line-height:2}
+.calls span{display:block;border-bottom:1px solid #2C3A35;opacity:var(--o)}
+.calls em{float:right;font-style:normal;color:#FF8A7D}
+svg{position:absolute;left:720px;top:400px}
+.seam{position:absolute;left:719px;top:72px;bottom:120px;width:2px;background:#E39A1E;z-index:2}
+.knob{position:absolute;left:696px;top:540px;width:48px;height:48px;border-radius:50%;background:#E39A1E;z-index:3;display:flex;align-items:center;justify-content:center;font-size:20px;color:#1B1204;font-weight:800;box-shadow:0 0 0 6px rgba(227,154,30,.25)}
+.acts{position:absolute;top:258px;left:0;right:0;display:flex;justify-content:center;gap:14px;z-index:3}
+.btn{font-size:17px;font-weight:700;padding:14px 24px;border-radius:10px}
+.pri{background:#E39A1E;color:#1B1204}
+.sec{background:#FBFCFB;color:#13201C;border:1.5px solid #13201C}
+.strip{position:absolute;left:0;right:0;bottom:0;height:120px;background:#FBFCFB;border-top:1px solid #D4DBD7;display:grid;grid-template-columns:repeat(5,1fr);padding:22px 48px;gap:14px;z-index:3}
+.st{display:flex;flex-direction:column;gap:10px}
+.bar{height:10px;border-radius:5px;background:#D4DBD7}
+.st:nth-child(1) .bar{background:#C2362F}.st:nth-child(2) .bar{background:#E39A1E}.st:nth-child(3) .bar{background:#2457C5}.st:nth-child(4) .bar{background:#13201C}.st:nth-child(5) .bar{background:#23784A}
+.st b{font-size:17px}.st small{font-size:14px;color:#5B6863}
+.tag{position:absolute;right:48px;bottom:132px;font-size:13px;color:#5B6863;z-index:3}
+</style></head><body>
+<div class="night"></div><div class="day"></div>
+<nav><span class="logo"><i></i>Lumen</span><a href="#">How it works</a><a href="#">For clinics</a>
+<div class="r"><a href="#">Request a demo</a><a class="signin" href="#">Sign in</a></div></nav>
+<h1><span class="a">When the power goes out,</span><br><span class="b" style="display:inline-block;margin-left:720px;transform:translateX(-50%)">dialysis can't wait.</span></h1>
+<div class="acts"><span class="btn pri">Try the live demo</span><span class="btn sec">Request a demo</span></div>
+<p class="lede l1">Tuesday, 6 PM. DaVita Cameron Park goes dark for 42 hours. <b>40 patients</b> have treatment in that window. Without a plan, that is 40 phone calls in one evening.</p>
+<p class="lede l2">Lumen reads the shutoff notice, finds each patient the nearest open chair, and <b>tells patients and clinics</b> the moment you approve.</p>
+<div class="calls">
+<span style="--o:1">Joyce Marsh · lives alone, no car <em>not reached</em></span>
+<span style="--o:.85">Maria Delgado · Spanish, paratransit <em>not reached</em></span>
+<span style="--o:.7">Huang Wen · Chinese, wheelchair <em>voicemail</em></span>
+<span style="--o:.55">Guadalupe Ríos · heart failure <em>not reached</em></span>
+<span style="--o:.4">Dorothy Keane · treatment Wed 6 AM <em>busy</em></span>
+<span style="--o:.25">James Whitfield · drives self <em>not reached</em></span>
+</div>
+<svg width="720" height="380" viewBox="0 0 720 380" aria-hidden="true">
+<path d="M520 60 L700 40 L700 260 L560 300 L500 200Z" fill="#C2362F" fill-opacity=".1" stroke="#C2362F" stroke-dasharray="6 6"/>
+<g fill="none" stroke="#2457C5" stroke-width="4" stroke-linecap="round">
+<path d="M600 170 C520 150 400 120 250 90" stroke-dasharray="14 10"/>
+<path d="M600 170 C500 200 380 230 170 220" stroke-dasharray="14 10"/>
+<path d="M600 170 C520 260 420 300 300 320" stroke-dasharray="14 10"/>
+</g>
+<g fill="#E39A1E"><circle cx="560" cy="120" r="4"/><circle cx="640" cy="210" r="4"/><circle cx="580" cy="240" r="4"/><circle cx="660" cy="130" r="4"/><circle cx="530" cy="180" r="4"/></g>
+<circle cx="600" cy="170" r="14" fill="#C2362F" stroke="#FBFCFB" stroke-width="4"/>
+<g fill="#23784A" stroke="#FBFCFB" stroke-width="4"><circle cx="250" cy="90" r="12"/><circle cx="170" cy="220" r="12"/><circle cx="300" cy="320" r="12"/></g>
+<g font-family="Atkinson Hyperlegible Next" font-size="16" font-weight="700" fill="#13201C">
+<text x="200" y="68">Folsom · 9 coming</text><text x="40" y="250">Orangevale · 16</text><text x="320" y="345">Sunset · 3</text><text x="580" y="200">Cameron Park · no power</text></g>
+</svg>
+<div class="seam"></div><div class="knob">⇆</div>
+<div class="tag">Demo data. Synthetic patients.</div>
+<div class="strip">
+<div class="st"><span class="bar"></span><b>PG&amp;E notice arrives</b><small>Tue 6 PM to Thu noon</small></div>
+<div class="st"><span class="bar"></span><b>Lumen finds every patient</b><small>40 have treatment then</small></div>
+<div class="st"><span class="bar"></span><b>Nearest open chair</b><small>36 placed, 4 to call</small></div>
+<div class="st"><span class="bar"></span><b>You approve once</b><small>nothing goes out before</small></div>
+<div class="st"><span class="bar"></span><b>Everyone is told</b><small>patients and clinics</small></div>
+</div>
+</body></html>

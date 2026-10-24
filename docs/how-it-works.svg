@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="300" viewBox="0 0 1040 300" role="img" aria-labelledby="hw-title hw-desc">
+  <title id="hw-title">How Lumen works</title>
+  <desc id="hw-desc">Five steps on one line, all before the power goes off. 1. Shutoff notice arrives: PG&amp;E, Tuesday 6 PM to Thursday noon. 2. Lumen finds who is at risk: 96 dialysis patients. 3. A plan for each person: 92 slots, 4 calls. 4. You approve once: nothing is sent until then. 5. Everyone is told: patients, clinics, hospital.</desc>
+  <style>
+    .card { fill: #FBFCFB; stroke: #E1E7E3; }
+    .track { fill: #E6ECE8; }
+    .red { fill: #C2362F; } .amber { fill: #E39A1E; } .blue { fill: #2457C5; } .ink { fill: #13201C; } .green { fill: #23784A; }
+    .stem { stroke-width: 1.5; }
+    .n { font: 500 12px 'Atkinson Hyperlegible Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; fill: #5E6D67; }
+    .t { font: 700 20px 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #13201C; }
+    .s { font: 400 14.5px 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #4E5D57; }
+    .off { font: 700 13px 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #C2362F; }
+  </style>
+
+  <rect class="card" x="0.5" y="0.5" width="1039" height="299" rx="18"/>
+
+  <!-- the time line, running out to the shutoff -->
+  <rect class="track" x="48" y="148" width="944" height="4" rx="2"/>
+  <line x1="992" y1="126" x2="992" y2="174" stroke="#C2362F" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <text class="off" x="992" y="196" text-anchor="end">Power off</text>
+
+  <!-- 1 -->
+  <rect class="red" x="48" y="143" width="174" height="14" rx="7"/>
+  <line class="stem" x1="55" y1="143" x2="55" y2="46" stroke="#C2362F"/>
+  <circle class="red" cx="55" cy="46" r="3"/>
+  <text class="n" x="69" y="58">01</text>
+  <text class="t" x="69" y="86">Shutoff notice arrives</text>
+  <text class="s" x="69" y="108">PG&amp;E: Tue 6 PM to Thu noon</text>
+
+  <!-- 2 -->
+  <rect class="ink" x="230" y="143" width="174" height="14" rx="7"/>
+  <line class="stem" x1="237" y1="157" x2="237" y2="254" stroke="#13201C"/>
+  <circle class="ink" cx="237" cy="254" r="3"/>
+  <text class="n" x="251" y="190">02</text>
+  <text class="t" x="251" y="218">Lumen finds who is at risk</text>
+  <text class="s" x="251" y="240">96 dialysis patients</text>
+
+  <!-- 3 -->
+  <rect class="blue" x="412" y="143" width="174" height="14" rx="7"/>
+  <line class="stem" x1="419" y1="143" x2="419" y2="46" stroke="#2457C5"/>
+  <circle class="blue" cx="419" cy="46" r="3"/>
+  <text class="n" x="433" y="58">03</text>
+  <text class="t" x="433" y="86">A plan for each person</text>
+  <text class="s" x="433" y="108">92 slots, 4 calls</text>
+
+  <!-- 4: the one human step, in amber, the primary-action color -->
+  <rect class="amber" x="594" y="143" width="174" height="14" rx="7"/>
+  <line class="stem" x1="601" y1="157" x2="601" y2="254" stroke="#E39A1E"/>
+  <circle class="amber" cx="601" cy="254" r="3"/>
+  <text class="n" x="615" y="190">04</text>
+  <text class="t" x="615" y="218">You approve once</text>
+  <text class="s" x="615" y="240">nothing is sent until then</text>
+
+  <!-- 5 -->
+  <rect class="green" x="776" y="143" width="174" height="14" rx="7"/>
+  <line class="stem" x1="783" y1="143" x2="783" y2="46" stroke="#23784A"/>
+  <circle class="green" cx="783" cy="46" r="3"/>
+  <text class="n" x="797" y="58">05</text>
+  <text class="t" x="797" y="86">Everyone is told</text>
+  <text class="s" x="797" y="108">patients, clinics, hospital</text>
+</svg>

@@ -1,0 +1,504 @@
+/* Lumen console (console.html): tokens and layout. Map tokens are read by map.js. CONTRACT-v5 section 4, CONTRACT-v6. */
+:root{
+  --f-ui:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",system-ui,sans-serif;
+  --f-mono:"Atkinson Hyperlegible Mono",ui-monospace,Menlo,monospace;
+  --ground:#E6EBE8;--paper:#FBFCFB;--paper-2:#F1F4F2;--paper-3:#E6EBE8;
+  --ink:#13201C;--ink-2:#3A4843;--mute:#5B6863;--line:#D4DBD7;--line-2:#B7C1BC;
+  --rail:#15211D;--rail-2:#1E2C27;--rail-ink:#EAF0ED;--rail-ink-2:#C7D3CE;--rail-mute:#9DAFA8;--rail-line:#2C3A35;
+  --amber:#E39A1E;--amber-2:#CC860F;--amber-ink:#8A5300;--on-amber:#1B1204;--amber-bg:#FBEFD8;
+  --red:#C2362F;--red-ink:#A12A24;--red-bg:#FAE7E4;
+  --blue:#2457C5;--blue-ink:#1F4BAA;--blue-bg:#E7EDFA;
+  --green:#23784A;--green-ink:#1D6940;--green-bg:#E2F1E8;
+  --focus:#2457C5;
+  /* the rail is dark in both themes, so its state colors come from the dark set */
+  --rail-ok:#57C98C;--rail-ok-ink:#0E2A1C;--rail-err:#FF8A7D;--rail-err-ink:#2A0B08;--rail-amber:#F2AE3D;--rail-focus:#9DBBFF;
+  --map-power:#2F8F5B;--map-dead:#B5544C;--map-trans:#4A5953;--map-outage:#C2362F;
+  --map-early:#23784A;--map-transfer:#2457C5;--map-hospital:#C2362F;--map-affected:#E39A1E;
+  --map-staff:#3A4843;--map-fac:#CDC7BD;--map-bldg:#DDDBD5;
+  --map-ink:#13201C;--map-halo:rgba(251,252,251,.92);
+  --shadow:0 1px 2px rgba(19,32,28,.06),0 10px 30px rgba(19,32,28,.13);
+  --top-h:56px;--rail-w:336px;--panel-w:380px;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --ground:#0A100E;--paper:#111917;--paper-2:#17211E;--paper-3:#1D2925;
+  --ink:#E6EDEA;--ink-2:#C2CEC9;--mute:#93A39C;--line:#24312C;--line-2:#35453F;
+  --rail:#0D1412;--rail-2:#16201D;--rail-ink:#E6EDEA;--rail-ink-2:#BCC9C3;--rail-mute:#8FA39B;--rail-line:#22302B;
+  --amber:#F2AE3D;--amber-2:#F7BE5C;--amber-ink:#F5BE63;--on-amber:#1B1204;--amber-bg:#33270F;
+  --red:#FF6B5B;--red-ink:#FF8A7D;--red-bg:#3A1714;
+  --blue:#7FA6FF;--blue-ink:#9DBBFF;--blue-bg:#17233F;
+  --green:#57C98C;--green-ink:#7ED8A8;--green-bg:#122E1F;
+  --focus:#9DBBFF;
+  --map-power:#57C98C;--map-dead:#FF8A7D;--map-trans:#A9B8B1;--map-outage:#FF6B5B;
+  --map-early:#57C98C;--map-transfer:#7FA6FF;--map-hospital:#FF6B5B;--map-affected:#F2AE3D;
+  --map-staff:#C2CEC9;--map-fac:#5E5A53;--map-bldg:#2A302D;
+  --map-ink:#E6EDEA;--map-halo:rgba(10,16,14,.85);
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+@media (min-width:1600px){:root{--rail-w:352px;--panel-w:412px}}
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{display:grid;grid-template-rows:var(--top-h) minmax(0,1fr);height:100dvh;overflow:hidden;background:var(--ground);color:var(--ink);font:400 14px/20px var(--f-ui);caret-color:var(--amber);-webkit-font-smoothing:antialiased}
+::selection{background:var(--amber-bg);color:var(--ink)}
+*{scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+h1,h2,h3,p,dl,dd,ol,ul{margin:0}
+a{color:var(--blue-ink);text-underline-offset:3px}
+.sprite{position:absolute}
+.m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}  /* counts and times in the UI face: the mono zero has a slash (v5) */
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.i.fill{fill:currentColor}
+[hidden]{display:none!important}
+
+/* buttons and controls */
+button,select,input,textarea{font:inherit;color:inherit}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid transparent;border-radius:8px;background:none;font-weight:700;white-space:nowrap;cursor:pointer;transition:background-color .15s ease-out,border-color .15s ease-out,color .15s ease-out}
+.btn:disabled{cursor:not-allowed;opacity:.55}
+.btn.pri{background:var(--amber);color:var(--on-amber)}
+.btn.pri:hover:not(:disabled){background:var(--amber-2)}
+.btn.sec{background:var(--paper);border-color:var(--line);color:var(--ink)}
+.btn.sec:hover:not(:disabled){background:var(--paper-2);border-color:var(--line-2)}
+.btn.q{color:var(--ink-2);font-weight:600}
+.btn.q:hover:not(:disabled){background:var(--paper-2);color:var(--ink)}
+.btn.danger{background:var(--red-bg);color:var(--red-ink);border-color:color-mix(in srgb,var(--red) 35%,transparent)}
+.btn.danger:hover:not(:disabled){border-color:var(--red)}
+.btn.ico{width:36px;padding:0}
+.btn.sm{height:32px;padding:0 12px;font-size:13px}
+.btn.ico.sm{width:32px;padding:0}
+.selw{position:relative;display:inline-flex;align-items:center;min-width:0}
+.selw select{appearance:none;field-sizing:content;height:36px;max-width:100%;padding:0 32px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-weight:600;text-overflow:ellipsis;cursor:pointer}
+.selw select:hover:not(:disabled){border-color:var(--line-2)}
+.selw select:disabled{opacity:.55;cursor:not-allowed}
+.selw .i{position:absolute;right:10px;pointer-events:none;color:var(--mute)}
+.selw.sm select{height:32px;font-size:13px}
+.tag{display:inline-block;padding:0 8px;border-radius:10px;font-size:11px;line-height:20px;font-weight:700;white-space:nowrap}
+.tag.n{background:var(--paper-3);color:var(--ink-2)}
+.tag.e{background:var(--green-bg);color:var(--green-ink)}
+.tag.tr{background:var(--blue-bg);color:var(--blue-ink)}
+.tag.sc{background:var(--paper-3);color:var(--ink);box-shadow:inset 0 0 0 1px var(--map-staff)}
+.tag.am{background:var(--amber-bg);color:var(--amber-ink)}
+.mute{color:var(--mute)}
+.small{font-size:12px;line-height:16px;color:var(--mute)}
+.err{color:var(--red-ink);font-size:13px;line-height:18px}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:12px;min-width:0;padding:0 16px 0 20px;background:var(--paper);border-bottom:1px solid var(--line);position:relative;z-index:30}
+.logo{display:flex;align-items:center;gap:8px;flex:none;font-size:18px;font-weight:700;letter-spacing:-.01em}
+.logo a{display:inherit;align-items:inherit;gap:inherit;color:inherit;text-decoration:none;border-radius:6px}
+.logo i{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--amber)}
+.logo i::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--on-amber)}
+.sep{flex:none;width:1px;height:24px;background:var(--line)}
+.home{display:flex;align-items:center;gap:8px;min-width:0;margin:0;font-weight:600}
+.home .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spacer{flex:1}
+/* "Power off in 33 hours" is the biggest text in the bar */
+.chip{display:flex;align-items:center;gap:10px;min-width:0;margin:0 8px 0 0;color:var(--mute);font-size:14px;white-space:nowrap;overflow:hidden}
+.chip .dot{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--line-2)}
+.chip.on{color:var(--ink);font-size:20px;line-height:24px;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.chip.on .dot{width:10px;height:10px;background:var(--red);border-color:var(--red)}
+.chip #chipT{overflow:hidden;text-overflow:ellipsis}
+.planbtn{display:none}
+.demobtn{anchor-name:--demo}
+.demobtn .i{transition:transform .15s ease-out}
+.demobtn[aria-expanded="true"]{background:var(--paper-2);color:var(--ink)}
+.demobtn[aria-expanded="true"] .i{transform:rotate(180deg)}
+
+/* layout: --rail-user / --panel-user are the widths the manager dragged (app.js, wide layout only) */
+.app{position:relative;display:grid;grid-template-columns:var(--rail-user,var(--rail-w)) minmax(0,1fr) var(--panel-user,var(--panel-w));min-height:0}
+.rsz{position:absolute;z-index:6;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none}
+.rsz[data-side="rail"]{left:calc(var(--rail-user,var(--rail-w)) - 6px)}
+.rsz[data-side="panel"]{right:calc(var(--panel-user,var(--panel-w)) - 6px)}
+.rsz::after{content:"";position:absolute;top:0;bottom:0;left:5px;width:2px;background:transparent;transition:background-color .15s ease-out}
+.rsz:hover::after{background:var(--line-2)}
+.rsz:focus-visible{outline:0}
+.rsz:focus-visible::after,.rsz:active::after{background:var(--focus)}
+body.resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+body.resizing #map{pointer-events:none}
+/* smooth, contained scrolling (reduced motion turns smooth off below) */
+.phases,.panel{scroll-behavior:smooth;scrollbar-gutter:stable}
+
+/* rail */
+.rail{display:flex;flex-direction:column;min-height:0;padding:16px;background:var(--rail);color:var(--rail-ink)}
+.rail :focus-visible{outline-color:var(--rail-focus)}
+.rail ::selection{background:var(--rail-line);color:var(--rail-ink)}
+.rail *{scrollbar-color:var(--rail-line) transparent}
+.rail-h{display:flex;align-items:flex-start;gap:12px;padding:0 4px}
+.rail-h>div{flex:1;min-width:0}
+.pausebtn{flex:none;height:32px;padding:0 12px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
+.pausebtn:hover{background:var(--rail-line)}
+.rail-h h2{font-size:18px;line-height:24px;font-weight:700}
+.rail-h .sub{margin-top:2px;color:var(--rail-mute);font-size:13px}
+.railtog{display:none}
+.rail-body{display:flex;flex-direction:column;flex:1;min-height:0}
+.phases{flex:1;min-height:0;margin-top:12px;padding:0;list-style:none;overflow:auto;overscroll-behavior:contain}
+.ph{position:relative;display:grid;grid-template-columns:20px minmax(0,1fr);gap:12px;padding:6px 12px;border-radius:8px;transition:background-color .2s ease-out}
+.ph:not(:last-child)::after{content:"";position:absolute;left:21px;top:30px;bottom:-2px;width:2px;background:var(--rail-line)}
+.ph.running,.ph.waiting,.ph.error{background:var(--rail-2)}
+.ph .d{position:relative;z-index:1;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:2px solid color-mix(in srgb,var(--rail-mute) 55%,transparent);background:var(--rail)}
+.ph.running .d,.ph.waiting .d,.ph.error .d{background:var(--rail-2)}
+.ph.done .d{border:0;background:var(--rail-ok);color:var(--rail-ok-ink)}
+.ph.done .d .i,.ph.error .d .i{width:12px;height:12px;stroke-width:2.5}
+.ph.running .d,.ph.waiting .d{border-color:var(--rail-amber)}
+.ph.running .d::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--rail-amber);animation:beat 1.4s ease-in-out infinite}
+.ph.error .d{border:0;background:var(--rail-err);color:var(--rail-err-ink)}
+@keyframes beat{50%{opacity:.35;transform:scale(.7)}}
+.ph-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:0 8px;font-weight:600}  /* a long name keeps its line; the state word wraps under it */
+.ph-h .st{flex:none;margin-left:auto;color:var(--rail-mute);font-size:12px}
+.ph.pending .nm{color:var(--rail-ink-2)}
+.ph.running .st,.ph.waiting .st{color:var(--rail-amber)}
+.ph.error .st{color:var(--rail-err)}
+.res{margin-top:2px;font-size:13px;line-height:18px;color:var(--rail-ink-2);white-space:pre-line}  /* a re-plan: "Read as: …", then its summary */
+.ph.running .res,.ph.waiting .res{color:var(--rail-ink)}
+.ph .err{margin-top:6px;color:var(--rail-err)}
+.ph .retry{margin-top:8px;height:28px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:12px}
+.ph .retry:hover{background:var(--rail-line)}
+.cmd{display:grid;gap:8px;margin-top:12px;padding:12px;border:1px solid var(--rail-mute);border-radius:12px;background:var(--rail-2)}
+.cmd label{color:var(--rail-ink-2);font-size:12px;font-weight:600}
+.cmd textarea{width:100%;min-height:36px;padding:0;border:0;outline:0;resize:none;background:none;color:var(--rail-ink);caret-color:var(--rail-amber)}
+.cmd textarea::placeholder{color:var(--rail-mute);opacity:1}
+.cmd textarea:disabled{cursor:not-allowed}
+.cmd:focus-within{border-color:var(--rail-ink);box-shadow:0 0 0 1px var(--rail-ink)}
+.cmd-r{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
+.suggs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.sugg{min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:4px 8px;border:1px solid var(--rail-line);border-radius:8px;background:none;color:var(--rail-ink-2);font-size:12px;line-height:16px;text-align:left;cursor:pointer}
+.sugg:hover:not(:disabled){border-color:var(--rail-mute);color:var(--rail-ink)}
+.send{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;border-radius:8px;background:var(--rail-line);color:var(--rail-ink);cursor:pointer}
+.send:hover:not(:disabled){background:var(--rail-amber);color:var(--on-amber)}
+.cmd :disabled{opacity:.5;cursor:not-allowed}
+/* "Something changed?" waits at the bottom of the rail once there is a plan */
+.chg{display:grid;gap:8px;margin-top:auto;padding-top:12px}
+.chgbtn{justify-content:flex-start;width:100%;height:40px;border-color:var(--rail-line);color:var(--rail-ink)}
+.chgbtn:hover:not(:disabled){background:var(--rail-2);border-color:var(--rail-mute)}
+.chgbtn[aria-expanded="true"]{justify-content:center;color:var(--rail-ink-2)}
+.chg .cmd{margin-top:0}
+.cmd-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-4px -4px 0 0}
+.cmd-x{display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:8px;background:none;color:var(--rail-ink-2);cursor:pointer}
+.cmd-x:hover{background:var(--rail-line);color:var(--rail-ink)}
+.cmd .err{color:var(--rail-err)}
+
+/* map */
+.map{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--paper-3)}
+#map{position:absolute;inset:0}
+.banner{position:absolute;z-index:5;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:6px 6px 6px 14px;border:1px solid color-mix(in srgb,var(--red) 30%,transparent);border-radius:12px;background:var(--red-bg);color:var(--red-ink);font-weight:600;box-shadow:var(--shadow)}
+.banner .btn{color:var(--red-ink)}
+.legend{position:absolute;z-index:2;left:10px;bottom:calc(42px + var(--tl-h,0px));max-width:calc(100% - 32px);border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink-2);font-size:12px;line-height:16px;box-shadow:var(--shadow)}
+.legend summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;font-weight:700;color:var(--ink);cursor:pointer;list-style:none;border-radius:12px}
+.legend summary::-webkit-details-marker{display:none}
+.legend summary .i{transition:transform .15s ease-out;transform:rotate(180deg)}
+.legend:not([open]) summary .i{transform:none}
+/* compact: one line per kind of thing, a muted name on the left (D8) */
+.legend[open]{width:min(470px,calc(100% - 32px))}
+.legend dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 10px;padding:0 12px 6px}
+.legend dt{color:var(--mute);font-weight:600}
+.legend dd{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin:0}
+.legend dd>span{display:inline-flex;align-items:center;gap:6px}
+.legend dd>span[hidden]{display:none}
+.legend .lgnote{padding:0 12px 6px;color:var(--mute)}
+.lgbtn{margin:0 12px 10px;padding:0;border:0;background:none;color:var(--ink-2);font-size:12px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.lgbtn:hover{color:var(--ink)}
+/* swatches copy the shapes and colors map.js draws */
+.sw{flex:none;display:inline-block}
+.sw.ln{width:20px;height:0;border-top:2px solid var(--c)}
+.sw.dash{border-top-style:dashed}
+.sw.thick{border-top-width:3px}
+.sw.wide{border-top-width:4px}
+.sw.dead{border-top:2.5px solid var(--map-dead)}
+.sw.feed{width:20px;height:3px;border-radius:2px;background:repeating-linear-gradient(90deg,var(--map-power) 0 6px,transparent 6px 10px),color-mix(in srgb,var(--map-power) 32%,transparent)}
+.sw.sub{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:50%;background:var(--map-halo);box-shadow:0 0 0 1px var(--line)}
+.sw.sub::after{content:"";width:6px;height:6px;border:1.5px solid var(--map-trans);background:color-mix(in srgb,var(--map-trans) 28%,transparent)}
+.sw.zone{width:20px;height:10px;border:1.5px solid var(--map-outage);border-radius:2px;background:color-mix(in srgb,var(--map-outage) 10%,transparent)}
+.sw.pin{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:50%;background:var(--paper);border:1.5px solid var(--line-2);color:var(--ink-2)}
+.sw.pin .i{width:9px;height:9px}
+.sw.pin.home{border:2px solid var(--map-ink);color:var(--map-ink)}
+.sw.pin.off{background:var(--map-outage);border-color:var(--map-outage);color:var(--map-halo)}
+.sw.pin.rcv{background:var(--map-early);border-color:var(--map-early);color:var(--map-halo)}
+.sw.hosp{display:grid;place-items:center;width:14px;height:14px;margin:0 3px;border-radius:4px;background:var(--map-transfer);color:var(--map-halo)}
+.sw.hosp .i{width:10px;height:10px;stroke-width:2.5}
+.sw.dot{width:8px;height:8px;margin:0 6px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1.5px var(--map-halo)}
+.sw.zone.off{--a:22%;background:linear-gradient(color-mix(in srgb,var(--rail) var(--a),transparent) 0 0),color-mix(in srgb,var(--map-outage) 10%,transparent)}
+:root[data-theme="dark"] .sw.zone.off{--a:50%}
+.sw.county{border-top:1.5px dashed color-mix(in srgb,var(--map-ink) 45%,transparent)}
+/* scene 1 of the run: the simulated notice slides in over the map */
+.ncard{position:absolute;z-index:4;top:16px;left:50%;display:grid;gap:4px;width:max-content;max-width:min(460px,calc(100% - 32px));padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:var(--shadow);transform:translateX(-50%);animation:slidein .25s ease-out}
+.ncard-t{font-size:18px;line-height:24px;font-weight:700;color:var(--ink)}
+.ncard-a{color:var(--ink-2)}
+.ncard-s{margin-top:4px}
+@keyframes slidein{from{opacity:0;transform:translate(-50%,-12px)}}
+/* the outage timeline (timeline.js) sits along the bottom of the map; --tl-h lifts what would sit under it */
+.tlbar{position:absolute;z-index:3;left:12px;right:12px;bottom:12px}
+.tlbar:empty{display:none}
+.map .maplibregl-ctrl-bottom-left,.map .maplibregl-ctrl-bottom-right{bottom:var(--tl-h,0px)}
+.ctl{position:absolute;z-index:2;right:10px;bottom:calc(152px + var(--tl-h,0px));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.ctl .btn{box-shadow:var(--shadow)}
+/* a narrow map keeps its width for the plan: the controls go icon-only (their names stay for screen readers and tooltips) */
+.map{container-type:inline-size}
+@container (max-width:799px){
+  .ctl .btn{width:36px;padding:0}
+  .ctl .lb{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
+
+/* panel */
+.panel{min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--paper);border-left:1px solid var(--line)}
+section.sec{padding:20px}
+section.sec+section.sec{border-top:1px solid var(--line)}
+.sec h2{margin-bottom:12px;font-size:16px;line-height:24px;font-weight:700}
+.sec h2 .tag{margin-left:6px;vertical-align:2px}
+.hname{font-weight:700}
+.addr{margin-top:2px;color:var(--mute);font-size:13px}
+.facts{display:grid;grid-template-columns:minmax(96px,auto) minmax(0,1fr);gap:8px 16px;margin-top:12px;font-size:13px;line-height:18px}
+.facts dt{color:var(--mute)}
+.facts dd{color:var(--ink)}
+.pw{display:inline-flex;align-items:flex-start;gap:6px;font-weight:600}
+.pw::before{content:"";flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:currentColor}
+.pw.ok{color:var(--green-ink)}
+.pw.off{color:var(--red-ink)}
+.pw.wait{color:var(--mute)}
+.keycard{display:grid;gap:12px;margin:20px 20px 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
+.keycard p{color:var(--ink-2)}
+.keycard .btn{justify-self:start}
+.hint{margin-top:16px}
+.notice{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.notice summary{width:max-content;cursor:pointer;font-weight:600;color:var(--ink-2)}
+.notice pre{margin:8px 0 0;padding:12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);font:400 12px/18px var(--f-ui);white-space:pre-wrap}
+
+/* v5 plan: one sentence, the check verdict, one button, where they go */
+.plan,.doneb{padding:24px 20px 28px}
+.lead{font-size:22px;line-height:28px;font-weight:700;letter-spacing:-.01em;text-wrap:balance;font-variant-numeric:tabular-nums}
+.lead span{display:block;font-weight:500;color:var(--ink-2)}
+.lead:focus{outline:0}
+.lead:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:4px}
+.verdict{margin-top:18px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2);font-size:14px;line-height:20px}
+.verdict h3{display:flex;align-items:center;gap:8px;font-size:15px;line-height:22px;font-weight:700;color:var(--ink-2)}
+.verdict h3 .i{width:18px;height:18px;stroke-width:2.5}
+.verdict.ok{border-color:color-mix(in srgb,var(--green) 28%,transparent);background:var(--green-bg)}
+.verdict.ok h3{color:var(--green-ink)}
+.verdict.bad{border-color:color-mix(in srgb,var(--red) 28%,transparent);background:var(--red-bg)}
+.verdict.bad h3,.verdict.bad b{color:var(--red-ink)}
+.verdict ul{display:grid;gap:6px;margin-top:8px;padding:0;list-style:none;max-width:65ch;color:var(--ink)}
+.verdict li{position:relative;padding-left:14px}
+.verdict li::before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.45}
+.vd-n{margin-top:4px;color:var(--ink)}
+.verdict .btn{margin-top:10px}
+.spin{flex:none;width:14px;height:14px;margin:0 2px;border:2px solid var(--line-2);border-top-color:var(--ink-2);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+.acts{display:flex;margin-top:20px}
+.btn.big{flex:1;height:52px;font-size:17px}
+.note{margin-top:8px;color:var(--mute);font-size:13px;line-height:18px}
+/* End of the run: three calm pulses on "Review and approve" (none under reduced motion) */
+.btn.ring{animation:ring 1.6s ease-out 3}
+@keyframes ring{from{box-shadow:0 0 0 0 color-mix(in srgb,var(--amber) 55%,transparent)}to{box-shadow:0 0 0 12px color-mix(in srgb,var(--amber) 0%,transparent)}}
+.where{margin-top:32px}
+.where h3,.needs-h h3{font-size:15px;line-height:22px;font-weight:700}
+.where ul{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.where li{border-bottom:1px solid var(--line)}
+/* a clinic row opens what that clinic gets and shows only its route on the map (v6); the dot is that route's color */
+.wrow{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px;width:calc(100% + 16px);margin:0 -8px;padding:11px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left}
+.wrow .wn{flex:1}
+button.wrow{cursor:pointer;transition:background-color .15s ease-out}
+button.wrow:hover{background:var(--paper-2)}
+.wrow>.i,.cvp>.i{align-self:center;margin-right:-4px;color:var(--mute);transform:rotate(-90deg);transition:transform .2s cubic-bezier(.16,1,.3,1),color .15s ease-out}
+button.wrow:hover>.i,.cvp:hover>.i{color:var(--ink);transform:rotate(-90deg) translateY(2px)}
+.ws{flex-basis:100%;padding-left:18px;color:var(--mute);font-size:13px;line-height:18px}
+.wrow:focus-visible{outline-offset:-2px}
+.wn{display:flex;align-items:baseline;gap:10px;min-width:0;font-weight:600}  /* a long clinic name wraps; it is never cut */
+.wn::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--map-transfer);transform:translateY(-1px)}
+.wrow.e .wn::before{background:var(--map-early)}
+.wrow.c .wn::before{background:var(--paper);box-shadow:inset 0 0 0 2px var(--map-staff)}
+.wv{flex:none;color:var(--ink-2);font-size:13px}
+.where .more{margin-top:10px}
+.where .more summary{display:flex;align-items:center;gap:6px;width:max-content;color:var(--ink-2);font-size:13px;font-weight:600;cursor:pointer;list-style:none}
+.where .more summary::-webkit-details-marker{display:none}
+.where .more[open] summary .i{transform:rotate(180deg)}
+
+/* v5 stage 3: the done board fills in as the replies land */
+.lead-s{margin-top:6px;color:var(--ink-2)}
+.board{margin:20px 0 0;border-top:1px solid var(--line)}
+.brow{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px 16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.brow dt{display:flex;align-items:center;gap:10px;font-weight:600}
+.brow dd{margin:0;color:var(--ink);text-align:right}
+.brow dd.bx{grid-column:1/-1;text-align:left}
+.bi{display:grid;place-items:center;flex:none;width:20px;height:20px;border:1.5px solid var(--line-2);border-radius:50%;transition:background-color .3s ease-out,border-color .3s ease-out}
+.bi .i{width:13px;height:13px;stroke-width:2.5}
+.brow.ok .bi{border-color:var(--green);background:var(--green);color:var(--paper)}
+.brow.wait .bi{border-color:var(--amber);border-right-color:transparent;animation:spin 1.1s linear infinite}
+.brow.todo .bi{border-color:var(--amber);background:var(--amber-bg)}
+.brow.fresh .bi{animation:pop .45s cubic-bezier(.16,1,.3,1)}
+.brow.fresh .bi path{stroke-dasharray:14;stroke-dashoffset:14;animation:draw .4s .12s ease-out forwards}
+@keyframes pop{from{transform:scale(.6)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+/* the told clinics, one line each, each opens what it gets: a check once it confirmed the slots, struck through when staff turned it off */
+.cl{display:grid;gap:2px;margin:4px 0 0 30px;padding:0;list-style:none;color:var(--ink-2);font-size:13px;line-height:18px}
+.cl li{display:flex;align-items:center;gap:6px}
+.cl li::before{content:"";flex:none;width:5px;height:5px;margin:0 4px 0 3px;border-radius:50%;background:var(--line-2)}
+.cl li.ok::before{display:none}
+.cl li.ok{color:var(--green-ink)}
+.cl li.off{text-decoration:line-through;color:var(--mute)}
+.cl button{display:inline-flex;align-items:center;gap:6px;margin:0 -4px;padding:1px 4px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;text-decoration:inherit;text-align:left;cursor:pointer}
+.cl button:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.cl .i{width:13px;height:13px;stroke-width:2.5}
+.needs-h{margin-top:32px}
+.needs{margin:10px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.needs li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.needs li.fresh{animation:rise .5s cubic-bezier(.16,1,.3,1)}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.nn{justify-self:start;max-width:100%;min-width:0;margin:0 -4px;padding:0 4px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-weight:700;text-align:left;cursor:pointer}
+.nn:hover{text-decoration:underline;text-underline-offset:3px}
+.np{grid-row:1/3;grid-column:2;color:var(--ink);font-weight:600;text-decoration:none}
+.np:hover{text-decoration:underline}
+.nw{grid-column:1;color:var(--ink-2);font-size:13px;line-height:18px}
+.doneb .acts{flex-wrap:wrap;gap:8px}
+.doneb.enter{animation:rise .55s cubic-bezier(.16,1,.3,1)}
+.print-only{display:none}
+
+/* v6: what a patient or a clinic gets, one view over the plan; Back or Esc closes it */
+.view{padding:16px 20px 28px}
+.back{display:inline-flex;align-items:center;gap:4px;height:32px;margin:0 0 14px -8px;padding:0 10px 0 6px;border:0;border-radius:8px;background:none;color:var(--ink-2);font-weight:600;cursor:pointer;transition:background-color .15s ease-out,color .15s ease-out}
+.back:hover{background:var(--paper-2);color:var(--ink)}
+.back .i{transform:rotate(90deg)}
+.vsub{margin-top:6px;color:var(--ink-2);text-wrap:pretty}
+.vnone{margin-top:16px;color:var(--ink-2)}
+.view .langs{margin-top:18px}
+/* the message as the patient sees it: one plain bubble, no phone around it */
+.bubble{width:fit-content;max-width:min(100%,46ch);margin-top:14px;padding:12px 15px;border-radius:18px 18px 18px 6px;background:var(--paper-3);color:var(--ink);font-size:15px;line-height:22px;white-space:pre-line;overflow-wrap:anywhere}
+.bubble.fresh{animation:bubble .5s cubic-bezier(.16,1,.3,1)}
+@keyframes bubble{from{opacity:0;transform:translateY(8px) scale(.97);transform-origin:0 100%;filter:blur(2px)}}
+/* under the bubble: when it went out and what the patient said ("Told 9:02 AM · Said yes") */
+.bmeta{display:flex;align-items:center;gap:5px;margin:8px 0 0 4px;color:var(--mute);font-size:13px;line-height:18px;font-variant-numeric:tabular-nums}
+.bmeta.told{color:var(--ink-2);font-weight:600}
+.bmeta.yes{color:var(--green-ink);font-weight:700}
+.bmeta.wait,.bmeta.no{color:var(--amber-ink);font-weight:700}
+.bmeta .i{width:14px;height:14px;stroke-width:2.5}
+.bmeta.fresh{animation:rise .45s cubic-bezier(.16,1,.3,1)}
+.vrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:20px}
+.vrow .small{margin:0}
+.view .err{margin-top:8px}
+/* the clinic's list: a plain card, To and From, one row per patient, the reply it asks for */
+.sheet{margin-top:18px;padding:4px 16px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.tf{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:20px}
+.tf dt{color:var(--mute)}
+.tf dd{margin:0;font-weight:600}
+.tf dd span{display:block;color:var(--ink-2);font-size:13px;font-weight:400}
+.arr{margin-top:14px;font-weight:700}
+.cv{margin:6px 0 0;padding:0;list-style:none}
+.cv li+li{border-top:1px solid var(--line)}
+/* a name is never cut: when the time does not fit beside it, the time wraps under it */
+.cvp{position:relative;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;width:calc(100% + 16px);margin:0 -8px;padding:10px 32px 10px 8px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
+.cvp:hover{background:var(--paper-2)}
+.cvp:focus-visible{outline-offset:-2px}
+.cvn{font-weight:700}
+.cvw{margin-left:auto;color:var(--ink);font-size:13px;white-space:nowrap}
+.cvd{flex-basis:100%;color:var(--ink-2);font-size:13px;line-height:18px}
+.cvp>.i{position:absolute;top:calc(50% - 8px);right:8px;margin:0}
+.reply{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-weight:600}
+.cvs{display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+.cvs.ok{color:var(--green-ink)}
+.cvs .i{width:16px;height:16px;stroke-width:2.5}
+
+/* the review list reuses these (review.js) */
+.langs{display:flex;flex-wrap:wrap;gap:4px}
+.langs button{height:28px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer}
+.langs button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.msgt{padding:10px 12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);max-width:65ch}
+.racts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+
+/* popovers */
+.pop{position:fixed;inset:calc(var(--top-h) + 8px) 16px auto auto;margin:0;width:min(340px,calc(100vw - 32px));padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+.pop h2{font-size:16px;line-height:24px}
+.pop form{display:grid;gap:8px;margin-top:12px}
+.pop label{font-size:13px;font-weight:600;color:var(--ink-2)}
+.pop .err{margin-top:8px}
+.pop .small{margin-top:12px}
+.pop .btn.pri{justify-self:start}
+.keyrow{display:flex;gap:8px}
+.keyrow input{flex:1;min-width:0;height:36px;padding:0 12px;border:1px solid var(--mute);border-radius:8px;background:var(--paper);font-family:var(--f-mono)}
+.keyrow input:focus-visible{outline-offset:0}
+#keyShow[aria-pressed="true"]{background:var(--paper-3)}
+.pop-b{display:flex;gap:8px;margin-top:12px}
+/* the Demo menu: reset, demo key, theme; it hangs under its button */
+.pop.menu{display:none;width:248px;padding:6px}
+.pop.menu:popover-open{display:grid;gap:2px}
+@supports (position-anchor:--demo){.pop.menu{position-anchor:--demo;inset:auto;top:calc(anchor(bottom) + 6px);right:anchor(right)}}
+.mi{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--ink);font-weight:600;text-align:left;cursor:pointer;transition:background-color .15s ease-out}
+.mi:hover:not(:disabled){background:var(--paper-2)}
+.mi:disabled{opacity:.55;cursor:not-allowed}
+.mi:focus-visible{outline-offset:-2px}
+.mi .i{color:var(--ink-2)}
+.pop.menu .small{margin:4px 0 0;padding:10px 10px 6px;border-top:1px solid var(--line)}
+
+/* narrow: the plan panel becomes a drawer */
+@media (max-width:1180px){
+  .app{grid-template-columns:var(--rail-w) minmax(0,1fr)}
+  .rsz{display:none}
+  .planbtn{display:inline-flex}
+  .panel{position:fixed;z-index:20;top:var(--top-h);right:0;bottom:0;width:min(400px,100vw);box-shadow:var(--shadow);transform:translateX(100%);visibility:hidden;transition:transform .2s ease-out,visibility 0s linear .2s}
+  .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
+  .planbtn[aria-expanded="true"]{background:var(--paper-3)}
+}
+@media (max-width:1000px){.home{display:none}}
+/* phone: rail is a top sheet, panel a bottom sheet; every control is at least 44 px tall */
+@media (max-width:760px){
+  body{grid-template-rows:auto minmax(0,1fr)}
+  .top{flex-wrap:wrap;gap:6px 8px;padding:8px 12px}
+  .logo{margin-right:auto}
+  .top .btn{height:44px;padding:0 12px}
+  .top>.sep{display:none}
+  .spacer{order:5;flex-basis:100%;height:0}
+  /* three rows: logo, Demo, Run demo; then "Power off in 33 hours" on its own line; then county and Plan */
+  .chip{order:6;flex:1 1 100%;margin:2px 0}
+  .chip:not(.on){display:none}
+  .top .selw,.planbtn{order:7}
+  .top .selw{flex:1 1 auto}
+  .top .selw select{width:100%;height:44px}
+  .mi{height:44px}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .rail{padding:12px}
+  .railtog{display:inline-flex;height:44px;padding:0 12px;border-color:var(--rail-line);color:var(--rail-ink);font-size:13px}
+  .pausebtn{height:44px}
+  .railtog .i{transition:transform .15s ease-out}
+  .railtog[aria-expanded="true"] .i{transform:rotate(180deg)}
+  .rail-body{display:none;max-height:52svh;overflow:auto}
+  .rail.open .rail-body{display:flex}
+  .chgbtn{min-height:44px}
+  .cmd-x{width:44px;height:44px}
+  .panel{top:auto;left:0;width:auto;height:72svh;border-left:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;transform:translateY(100%)}
+  .legend{max-width:calc(100% - 72px)}
+  .legend summary,.lgbtn{min-height:44px}
+  .ctl .btn{width:44px;height:44px}
+  section.sec{padding:16px}
+  .plan,.doneb{padding:20px 16px 24px}
+  .lead{font-size:20px;line-height:26px}
+  .wrow{min-height:44px;align-items:center}
+  .doneb .acts .btn,.verdict .btn,.keycard .btn{height:44px}
+  .np{display:inline-flex;align-items:center;min-height:44px}
+  .nn,.cl button,.back,.where .more summary{min-height:44px}
+  .view{padding:12px 16px 24px}
+  .view .langs button,.vrow .btn{height:44px}
+  .vnone a{display:inline-block;padding:12px 0;margin:-12px 0}  /* "Phone Rogelio at 555-0184": a 44 px tap, the line keeps its height */
+  .needs li{padding:6px 0}
+  .sugg{min-height:44px}
+  .send{width:44px;height:44px}
+  .ph .retry{height:44px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .brow.fresh .bi path{stroke-dashoffset:0}
+}
+
+/* Print the list: the done board on paper, black on white */
+@media print{
+  :root,:root[data-theme="dark"]{--paper:#FFFFFF;--paper-2:#FFFFFF;--ink:#000000;--ink-2:#222222;--mute:#444444;--line:#BBBBBB;--line-2:#888888;--green:#000000;--green-ink:#000000;--amber:#000000;--amber-2:#000000;--on-amber:#FFFFFF;--amber-bg:#FFFFFF;color-scheme:light}
+  @page{margin:16mm}
+  body{display:block;height:auto;overflow:visible;background:var(--paper)}
+  .top,.rail,.map,.rsz,.pop,dialog,.banner,.btn,.doneb .acts,.doneb .note,.vh{display:none!important}  /* buttons do nothing on paper */
+  .app{display:block}
+  .panel{position:static;width:auto;height:auto;overflow:visible;border:0;box-shadow:none;transform:none;visibility:visible}
+  .doneb{max-width:680px;padding:0}
+  .print-only{display:block;margin-bottom:12px;color:var(--ink-2);font-size:12px}
+  .needs li,.brow{break-inside:avoid}
+  .np{text-decoration:none}
+}
