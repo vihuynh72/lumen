@@ -3,11 +3,12 @@
 from copy import deepcopy
 import importlib
 import json
+import logging
 from pathlib import Path
 from threading import Barrier, Event, Lock
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 
 FIXTURES = Path(__file__).resolve().parents[2] / "contracts" / "fixtures"
@@ -66,7 +67,7 @@ def test_clean_three_languages_and_counted_summary(monkeypatch, inputs):
     write, calls = install(monkeypatch)
     plan, clinics, langs = inputs
     result = write(plan, clinics, langs)
-    assert len(calls) == 2
+    assert len(calls) == 1
     expected = [generated(row) for row in calls[0]["patients"]]
     for row, text in zip(result["patients"], expected):
         assert row["reason_text"] == text["reason_text"]
@@ -77,8 +78,8 @@ def test_clean_three_languages_and_counted_summary(monkeypatch, inputs):
         assert {k: v for k, v in row.items() if k not in ("messages", "reason_text")} == {
             k: v for k, v in plan["patients"][row["rank"] - 1].items()
             if k not in ("messages", "reason_text")}
-    assert calls[1]["counts"] == {"early_session": "2", "transfer": "2", "hospital": "1", "book_today": "1"}
-    assert result["summary"] == calls[1]["summary"]
+    assert result["summary"] == ("2 patients dialyze early, 2 move to another clinic, "
+                                 "and 1 needs a staff call. Book 1 paratransit ride today.")
     assert result["summary"].count(".") == 2
 
 
@@ -182,7 +183,7 @@ def corrupt(result, defect):
 
 
 @pytest.mark.parametrize("defect", [
-    "invented_id", "missing_row", "duplicate_row", "long_en", "long_zh",
+    "invented_id", "missing_row", "long_en", "long_zh",
     "banned:en:death", "banned:en:danger", "banned:en:risk",
     "banned:es:muerte", "banned:es:peligro", "banned:es:riesgo",
     "banned:zh:死亡", "banned:zh:危险", "banned:zh:风险",
@@ -228,18 +229,24 @@ def test_second_failure_templates_only_bad_row(monkeypatch, inputs, caplog):
     assert "23:59" not in caplog.text
 
 
-def test_summary_retries_then_uses_only_code_counts(monkeypatch, inputs):
-    def change(payload, result):
-        if "summary" in payload:
-            result["tool_uses"][0]["input"]["summary"] = "99 patients moved. Book 88 rides."
-        return result
-
-    write, calls = install(monkeypatch, change)
-    result = write(*inputs)
-    summaries = [call for call in calls if "summary" in call]
-    assert len(summaries) == 2
-    assert result["summary"] == summaries[-1]["summary"]
-    assert "99" not in result["summary"]
+@pytest.mark.parametrize("count", [0, 1, 2])
+def test_summary_uses_only_code_counts_with_plural_agreement(monkeypatch, inputs, count):
+    write, calls = install(monkeypatch)
+    plan, clinics, langs = inputs
+    plan["patients"] = []
+    for action in ("early_session", "transfer", "hospital"):
+        for i in range(count):
+            row = deepcopy(json.loads((FIXTURES / "plan.v1.json").read_text())["patients"][0])
+            row.update(patient_id=f"{action}{i}", action=action, book_today=action == "transfer")
+            plan["patients"].append(row)
+    result = write(plan, clinics, langs)
+    plural = count != 1
+    assert result["summary"] == (
+        f"{count} {'patients dialyze' if plural else 'patient dialyzes'} early, "
+        f"{count} {'move' if plural else 'moves'} to another clinic, "
+        f"and {count} {'need' if plural else 'needs'} a staff call. "
+        f"Book {count} paratransit {'rides' if plural else 'ride'} today.")
+    assert all("patients" in call and "summary" not in call for call in calls)
 
 
 def test_notify_only_never_gets_a_message(monkeypatch, inputs):
@@ -307,3 +314,90 @@ def test_parallel_batches_are_bounded_and_ordered(monkeypatch, inputs):
     assert [row["patient_id"] for row in result["patients"]] == list(inputs[2])
     for row in result["patients"]:
         assert row["reason_text"]
+
+
+@pytest.mark.parametrize("extra", ["unknown", "duplicate", "lookalike"])
+def test_extra_ids_are_dropped_without_poisoning_good_rows(monkeypatch, inputs, extra):
+    def change(payload, result):
+        rows = result["tool_uses"][0]["input"]["patients"]
+        extra_row = deepcopy(rows[0])
+        extra_row["patient_id"] = {"unknown": "P999", "duplicate": rows[0]["patient_id"],
+                                   "lookalike": rows[0]["patient_id"] + " "}[extra]
+        extra_row["messages"] = {"en": "unsafe duplicate"}
+        rows.append(extra_row)
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=list(LANGS))
+    assert len(calls) == 1
+    assert result["patients"][0]["messages"] == generated(calls[0]["patients"][0])["messages"]
+
+
+def test_lookalike_id_errors_only_missing_row(monkeypatch, inputs, caplog):
+    def change(payload, result):
+        result["tool_uses"][0]["input"]["patients"][0]["patient_id"] += " "
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=list(LANGS))
+    missing = inputs[0]["patients"][0]["patient_id"]
+    assert calls[1]["errors"] == {missing: "missing_row"}
+    assert result["patients"][1]["messages"] == generated(calls[0]["patients"][1])["messages"]
+    assert caplog.text.count("text fallback") == 1
+    assert f"patient_id={missing} error=missing_row" in caplog.text
+
+
+@pytest.mark.parametrize("bad", ["{{name}}", "{name}your", "your{name}", "{name}_"])
+def test_placeholder_must_be_standalone(monkeypatch, inputs, bad):
+    def change(payload, result):
+        row = result["tool_uses"][0]["input"]["patients"][0]
+        row["messages"]["en"] = row["messages"]["en"].replace("{name}", bad)
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=list(LANGS))
+    assert len(calls) == 2
+    assert calls[1]["errors"] == {"P002": "name_placeholder"}
+    assert bad not in result["patients"][0]["messages"]["en"]
+
+
+@pytest.mark.parametrize("lang,word", [("es", "murió"), ("es", "morirá"), ("en", "lethal"),
+                                      ("zh", "致命"), ("zh", "丧命"), ("zh", "亡")])
+def test_added_banned_words_have_explicit_error(monkeypatch, inputs, lang, word):
+    def change(payload, result):
+        corrupt(result, f"banned:{lang}:{word}")
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=list(LANGS))
+    assert len(calls) == 2
+    assert set(calls[1]["errors"].values()) == {"banned_word"}
+    assert all(word not in r["messages"].get(lang, "") for r in result["patients"])
+
+
+@pytest.mark.parametrize("char", ["😀", "⚠", "❤", "1️⃣", "\u202e", "\u2066", "\u200b", "\ufe0f"])
+def test_emoji_and_format_characters_are_rejected(monkeypatch, inputs, char):
+    def change(payload, result):
+        result["tool_uses"][0]["input"]["patients"][0]["messages"]["en"] += char
+        return result
+
+    write, calls = install(monkeypatch, change)
+    result = write(*inputs, only_ids=list(LANGS))
+    assert len(calls) == 2
+    assert set(calls[1]["errors"].values()) == {"unsupported_character"}
+    assert char not in result["patients"][0]["messages"]["en"]
+
+
+def test_fallback_log_codes_and_per_call_counts(monkeypatch, inputs, caplog):
+    caplog.set_level(logging.INFO, logger="lumen.ai.text")
+
+    def change(payload, result):
+        corrupt(result, "wrong_time")
+        return result
+
+    write, _ = install(monkeypatch, change)
+    write(*inputs)
+    lines = [r.getMessage() for r in caplog.records if r.name == "lumen.ai.text"]
+    assert "text fallback patient_id=P002 error=time_strings" in lines
+    assert lines.count("text generation bedrock_rows=4 template_rows=1") == 1
+    assert all("23:59" not in line and "DaVita" not in line for line in lines)
