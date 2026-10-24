@@ -47,6 +47,24 @@
         ],
         "createdAt": "2026-10-24T03:50:58.443Z",
         "reason": "Claude: the dot pulses only on the rail phase whose API request is in flight (.ph.running), next to a text status; off under prefers-reduced-motion"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T05:34:04.702Z",
+        "reason": "Claude: legend line swatches (app.css .sw.dead/.sw.wide/.sw.feed) are zero-height lines that mirror the map's dead line, route width and dashed live feeder (design decision D8), not card accents"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          "frontend/prototype/index.html"
+        ],
+        "createdAt": "2026-10-24T05:34:04.717Z",
+        "reason": "Claude: legend line swatches (app.css .sw.dead/.sw.wide/.sw.feed) are zero-height lines that mirror the map's dead line, route width and dashed live feeder (design decision D8), not card accents"
       }
     ]
   }
