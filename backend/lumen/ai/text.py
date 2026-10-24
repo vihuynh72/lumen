@@ -1,6 +1,7 @@
 """Generate plan text from a small, name-free set of preformatted facts."""
 
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import logging
@@ -148,7 +149,11 @@ def _batch(model, facts):
     good, errors = {}, {}
     for attempt in range(2):
         payload = {"patients": facts, **({"errors": errors} if attempt else {})}
-        valid, errors = _validated(_call(model, payload), facts)
+        response = _call(model, payload)
+        if isinstance(response, dict) and response.get("stop_reason") == "max_tokens" and len(facts) > 1:
+            middle = len(facts) // 2
+            return {**_batch(model, facts[:middle]), **_batch(model, facts[middle:])}
+        valid, errors = _validated(response, facts)
         good.update(valid)
         if not errors:
             return good
@@ -228,7 +233,10 @@ def write_plan_text(plan: dict, clinics: list, langs: dict, only_ids: list | Non
     by_clinic = {clinic["id"]: clinic for clinic in clinics}
     facts = [_facts(row, by_clinic, langs.get(row["patient_id"], "en")) for row in selected]
     if facts:
-        by_id = _batch(model, facts)
+        batches = [facts[start:start + 10] for start in range(0, len(facts), 10)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            by_id = {pid: row for batch in pool.map(lambda rows: _batch(model, rows), batches)
+                     for pid, row in batch.items()}
         for row in selected:
             row.update({key: by_id[row["patient_id"]][key] for key in ("reason_text", "messages")})
     if only_ids is None:
