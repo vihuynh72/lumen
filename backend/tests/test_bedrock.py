@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import traceback
 from copy import deepcopy
 from unittest.mock import Mock
 
@@ -21,6 +22,10 @@ TOOLS = [{"toolSpec": {
     "inputSchema": {"json": {"type": "object", "properties": {}}},
 }}]
 REQUEST = {"modelId": MODEL, "system": [{"text": SYSTEM}], "messages": MESSAGES}
+TRANSIENT_CODES = [
+    "ThrottlingException", "ServiceUnavailableException",
+    "InternalServerException", "ModelNotReadyException",
+]
 
 
 def response(content=None, stop_reason="end_turn"):
@@ -35,16 +40,23 @@ def response(content=None, stop_reason="end_turn"):
 
 
 @pytest.fixture
-def stub(monkeypatch):
+def client(monkeypatch):
     client = boto3.client(
         "bedrock-runtime", region_name="us-west-2",
         aws_access_key_id="testing", aws_secret_access_key="testing",
     )
     monkeypatch.setattr(bedrock, "_get_client", lambda: client)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture
+def stub(client):
     with Stubber(client) as stubber:
         yield stubber
         stubber.assert_no_pending_responses()
-    client.close()
 
 
 @pytest.fixture
@@ -64,6 +76,26 @@ def test_text_reply(stub):
         "message": reply["output"]["message"],
     }
     assert REQUEST == before
+
+
+def test_parameter_validation_does_not_leak_content(client, sleep, caplog):
+    caplog.set_level(logging.INFO, logger=bedrock.__name__)
+    invalid_system = [{"text": "P001 Rosa lives at 38.73,-120.79"}]
+    with Stubber(client) as stubber:
+        # Serialization fails before Stubber consumes this response.
+        stubber.add_response("converse", response(), {
+            **REQUEST, "system": [{"text": invalid_system}],
+        })
+        with pytest.raises(ValueError, match="^invalid Converse request$") as caught:
+            bedrock.converse(MODEL, invalid_system, MESSAGES)
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+    error_text = "".join(traceback.format_exception(caught.value))
+    for content in ("P001", "Rosa", "38.73", "-120.79", "private prompt"):
+        assert content not in error_text
+        assert content not in caplog.text
+    sleep.assert_not_called()
+    assert len(caplog.records) == 1
 
 
 @pytest.mark.parametrize("tool_choice", [None, "lookup"])
@@ -106,18 +138,18 @@ def test_tool_only_reply(stub):
     assert bedrock.converse(MODEL, SYSTEM, MESSAGES, TOOLS)["text"] == ""
 
 
-def test_throttle_then_success(stub, sleep, caplog):
+@pytest.mark.parametrize("code", TRANSIENT_CODES)
+def test_transient_error_then_success(stub, sleep, caplog, code):
     caplog.set_level(logging.INFO, logger=bedrock.__name__)
-    stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+    stub.add_client_error("converse", code, expected_params=REQUEST)
     stub.add_response("converse", response(), REQUEST)
     assert bedrock.converse(MODEL, SYSTEM, MESSAGES)["text"] == "Hello there!"
-    sleep.assert_called_once()
-    assert 0 < sleep.call_args.args[0] <= 1
+    sleep.assert_called_once_with(0.25)
     assert len(caplog.records) == 1
 
 
 @pytest.mark.parametrize("code", ["ValidationException", "AccessDeniedException"])
-def test_non_throttle_not_retried(stub, sleep, caplog, code):
+def test_permanent_error_not_retried(stub, sleep, caplog, code):
     caplog.set_level(logging.INFO, logger=bedrock.__name__)
     stub.add_client_error("converse", code, "private service error", expected_params=REQUEST)
     with pytest.raises(ClientError) as caught:
@@ -129,13 +161,15 @@ def test_non_throttle_not_retried(stub, sleep, caplog, code):
     assert "private" not in caplog.text
 
 
-def test_second_throttle_raises(stub, sleep):
-    for _ in range(2):
-        stub.add_client_error("converse", "ThrottlingException", expected_params=REQUEST)
+@pytest.mark.parametrize("code", TRANSIENT_CODES)
+def test_second_transient_error_raises(stub, sleep, code):
+    for message in ("first failure", "second failure"):
+        stub.add_client_error("converse", code, message, expected_params=REQUEST)
     with pytest.raises(ClientError) as caught:
         bedrock.converse(MODEL, SYSTEM, MESSAGES)
-    assert caught.value.response["Error"]["Code"] == "ThrottlingException"
-    sleep.assert_called_once()
+    assert caught.value.response["Error"]["Code"] == code
+    assert caught.value.response["Error"]["Message"] == "second failure"
+    sleep.assert_called_once_with(0.25)
 
 
 def test_log_has_metrics_without_content(stub, monkeypatch, caplog):
