@@ -26,7 +26,7 @@ Success: every affected patient has a confirmed chair or a staff call before the
 
 ## Positioning
 
-AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks, writes messages and applies plain-language re-plan instructions. Deterministic code picks chairs and checks capacity. No message goes out without staff approval. Every AI step reports whether the model or the rule-based fallback did the work.
+AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks, writes messages and applies plain-language re-plan instructions. Deterministic code picks chairs and checks capacity. No message goes out without staff approval. The screen credits Amazon Bedrock only for steps the model actually ran, and never claims AI that did not run.
 
 ## Operating Context
 
@@ -40,7 +40,7 @@ AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks,
 
 * API routes: `GET /state`, `POST /alert`, `/plan`, `/approve`, `/voice`, `/replan`, `/reset`. Header `X-Demo-Key` on every request.
 * Plan actions: `early_session`, `transfer`, `hospital` (staff call), `notify_only`. Row statuses: `draft`, `approved`, `confirmed`, `declined`, `no_answer`.
-* Bedrock model: Claude Haiku 4.5 in us-east-2. Message writing calls Bedrock and falls back to an English template. Notice parsing and re-plan always use their rule-based fallbacks today, because the backend has no `lumen.ai.parse` or `lumen.ai.replan` module yet. The API reports the source of each AI step (`parse_source`, `ai_sources`), and the UI must show it.
+* Bedrock model: Claude Haiku 4.5 in us-east-2. Message writing calls Bedrock and falls back to an English template. Notice parsing and re-plan always use their rule-based fallbacks today, because the backend has no `lumen.ai.parse` or `lumen.ai.replan` module yet. The API reports the source of each AI step (`parse_source`, `ai_sources`). The UI names Bedrock only when it did the work ("Written by Claude on Amazon Bedrock") and shows no source label otherwise; it never shows fallback, rules or Lambda labels (user decision, Oct 23).
 * Polly standard voices: English, Spanish, Chinese.
 * All patients are synthetic. Patient names never go to Bedrock.
 * The PG&E notice is simulated, and the feeders (distribution circuits) and their de-energized state are illustrative; both must be labeled as such. Real distribution circuit data is not public.
@@ -64,9 +64,9 @@ AI drafts, rules decide, people approve. Amazon Bedrock reads the notice, ranks,
 ## Product Principles
 
 1. Home first. Open on the administrator's own facility and its grid, then widen.
-2. Show the work. Every pipeline step shows what it did, which service did it, the source (model or rules) and the time it took.
+2. Show the work in plain words. Each step says what it did, and Run demo plays the response as one story on the map: notice, shutoff area, the clinic losing power, then routes traced on the roads to clinics with free chairs.
 3. People approve. The plan is a draft until staff approve it; nothing implies automatic sending.
-4. Honest labels. Illustrative grid, synthetic patients and fallback steps are labeled where they appear.
+4. Honest labels. The illustrative grid, the simulated notice and synthetic patients are labeled where they appear. Never claim AI that did not run.
 5. Calm under pressure. Few controls, clear counts, no alarm styling beyond the facts.
 
 ## Accessibility & Inclusion

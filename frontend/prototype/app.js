@@ -1,5 +1,6 @@
 /* Lumen app screen: API client, demo runner, rail, plan panel and controls.
-   Calls window.LumenMap (map.js) and window.LumenTour (tour.js). Contract: contracts/api.md. */
+   Calls window.LumenMap (map.js), LumenTour (tour.js), LumenReview (review.js) and LumenTimeline (timeline.js).
+   Contracts: contracts/api.md, CONTRACT-v2 (E1-E10). */
 (() => {
 'use strict';
 const CFG = window.LUMEN_CONFIG || {};
@@ -20,6 +21,9 @@ const SUGGEST_LIVE = 'DaVita Folsom can only take 4 more';
 const TOUR_SVC = 'In this page', TOUR_SRC = 'Illustrative tour';
 const NOTICE_TAG = 'Simulated PG&E notice';
 const PLAN_LINE = 'Lambda is finding affected sessions, ranking patients, assigning chairs and writing messages';
+const ROUTES_API = 'https://routes.geo.us-east-2.amazonaws.com/v2/routes';  // Amazon Location Routes v2, called with LUMEN_CONFIG.mapKey
+const NO_ROAD = 'Road route unavailable; straight line shown';
+const FAR_MIN = 40;
 
 // data/seed/clinics.json, so the map shows the clinics before GET /state answers
 const FALLBACK = [
@@ -68,6 +72,7 @@ const S = {
   phases: [], running: false, alertMs: null, runTotal: null,
   diff: null, expanded: null, selected: null, filter: 'all',
   msgLang: {}, audio: {}, rowErr: {}, busy: {}, approving: false, gen: 0, anim: true,
+  lang: {}, routes: null, rts: {}, road: {}, speak: {}, routesAll: false, opener: null,
 };
 const isTour = () => S.region === 'santaclara';
 const hasKey = () => !!store.get('lumenDemoKey');
@@ -140,6 +145,7 @@ const live = {
   voice: b => live.call('POST', '/voice', b),
   replan: b => live.call('POST', '/replan', b),
   reset: () => live.call('POST', '/reset', {}),
+  speak: b => live.call('POST', '/speak', b),  // the tour uses it too: Polly (and Translate without `translated`), same demo key
 };
 function tourBackend(data) {
   let t = LumenTour.build(data), event = null, plan = null;
@@ -157,11 +163,14 @@ function tourBackend(data) {
   };
 }
 
-/* ---------- map: every call is safe when map.js is missing or throws ---------- */
-function M(fn, ...a) {
-  try { const m = window.LumenMap; return m && typeof m[fn] === 'function' ? m[fn](...a) : undefined; }
-  catch (e) { console.warn('LumenMap.' + fn, e); }
-}
+/* ---------- modules: every call is safe when a script is missing or throws ---------- */
+const mod = name => (fn, ...a) => {
+  try { const m = window[name]; return m && typeof m[fn] === 'function' ? m[fn](...a) : undefined; }
+  catch (e) { console.warn(`${name}.${fn}`, e); }
+};
+const M = mod('LumenMap'), R = mod('LumenReview'), TL = mod('LumenTimeline');
+// The clinic each patient's affected session was at: their route starts there (E1).
+const usualOf = () => Object.fromEntries((S.affected?.sessions || []).map(s => [s.patient_id, s.clinic_id]));
 function facStatus() {
   const st = {};
   for (const f of S.clinics) st[f.id] = f.kind === 'hospital' ? 'hospital' : 'normal';
@@ -180,17 +189,63 @@ function mapPatients() {
       rank: S.stage >= 3 ? by[id]?.rank ?? null : null, to: to ? [to.lng, to.lat] : null };
   }));
 }
-// One item per moved patient, from the clinic of their affected session to the new facility; map.js merges equal routes.
+// One item per moved patient, from the clinic of their affected session to the new facility; map.js draws one road route per pair.
 // Early sessions stay at their own clinic, so they have no route (their home dot shows the action).
 function mapFlows() {
   if (S.stage < 4 || !S.plan) return M('setFlows', null);
-  const usual = Object.fromEntries((S.affected?.sessions || []).map(s => [s.patient_id, s.clinic_id])), home = homeFac()?.id;
+  const usual = usualOf(), home = homeFac()?.id;
   M('setFlows', S.plan.patients.flatMap(r => {
     const from = S.fac[usual[r.patient_id] || home], to = S.fac[r.clinic_id];
     if ((r.action !== 'transfer' && r.action !== 'hospital') || !from || !to) return [];
-    return [{ id: r.patient_id, from: [from.lng, from.lat], to: [to.lng, to.lat], action: r.action, changed: !!S.diff?.[r.patient_id] }];
+    return [{ id: r.patient_id, fromId: from.id, toId: to.id, from: [from.lng, from.lat], to: [to.lng, to.lat], action: r.action, changed: !!S.diff?.[r.patient_id] }];
   }));
 }
+
+/* ---------- road routes (E1-E3): data/routes-<region>.json, live Amazon Location calls for the tour ---------- */
+const loadRoutes = region => fetch(`data/routes-${region}.json`).then(r => r.ok ? r.json() : null).catch(() => null);  // 404 until the data lane writes it
+const toRoad = rt => { const minutes = Math.round(rt.seconds / 60); return { line: rt.line?.length > 1 ? rt.line : null, minutes, miles: +(rt.meters / 1609.344).toFixed(1), tooFar: minutes > FAR_MIN }; };
+const roadKey = r => `${r.patient_id}|${r.clinic_id}`;
+// A patient's road route home -> destination: {line, minutes, miles, tooFar}, null when unknown or failed, undefined while loading.
+function roadOf(r) {
+  if (!r?.clinic_id) return null;
+  const k = roadKey(r), pre = S.routes?.homes?.[k];
+  return pre ? toRoad(pre) : k in S.road ? S.road[k] : roadP[k] ? undefined : null;
+}
+const roadP = {};  // one live request per patient and destination, ever (a 403 stays a 403)
+function fetchRoad(r) {
+  const k = roadKey(r), f = S.fac[r.clinic_id], home = S.homes[r.patient_id];
+  if (!isTour() || !CFG.mapKey || !f || !home || S.routes?.homes?.[k]) return Promise.resolve();
+  return roadP[k] ||= (async () => {
+    let rt = null;
+    try {
+      const res = await fetch(`${ROUTES_API}?key=${encodeURIComponent(CFG.mapKey)}`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ Origin: home, Destination: [f.lng, f.lat], TravelMode: 'Car', LegGeometryFormat: 'Simple' }) });
+      const x = res.ok ? (await res.json())?.Routes?.[0] : null;
+      if (x?.Summary) rt = toRoad({ line: (x.Legs || []).flatMap(l => l.Geometry?.LineString || []), meters: x.Summary.Distance, seconds: x.Summary.Duration });
+    } catch { /* the straight line stands in */ }
+    S.road[k] = rt;
+  })();
+}
+const pairOf = (from, to) => { const p = S.routes?.pairs?.[`${from}|${to}`]; return p ? toRoad(p) : null; };
+const destName = r => r.action === 'hospital' ? `${cname(r.clinic_id)} if needed` : cname(r.clinic_id);
+function routeWords(r, rd) {
+  if (rd === undefined) return 'Finding the road route…';
+  return rd ? `${rd.minutes} min · ${rd.miles} mi by road` : NO_ROAD;
+}
+// Draws the selected patient's road route on the map (E2); the tour asks Amazon Location the first time.
+async function showRoute(id, fromMap) {
+  const r = S.stage >= 4 ? S.plan?.patients.find(x => x.patient_id === id) : null, f = r && S.fac[r.clinic_id], home = S.homes[id];
+  if (!f || !home) { M('showPatientRoute', null); if (!fromMap) M('focus', { patient: id }); return; }
+  if (isTour() && !(roadKey(r) in S.road)) {  // the caller's render shows "Finding the road route…" meanwhile
+    await fetchRoad(r);
+    if (S.selected !== id) return;
+    renderList(); syncReview();
+  }
+  const rd = roadOf(r);
+  M('showPatientRoute', { id, home, to: [f.lng, f.lat], line: rd?.line || null, minutes: rd?.minutes ?? null, miles: rd?.miles ?? null,
+    label: `${pname(id)} → ${destName(r)}${rd ? ` · ${routeWords(r, rd)}` : ''}` });  // map.js adds the straight-line note itself
+}
+function clearSel() { S.selected = null; M('selectPatient', null); M('showPatientRoute', null); }
 function mapStage(stage) {
   S.stage = stage;
   M('showOutage', stage >= 1 ? S.outage : null);
@@ -216,10 +271,13 @@ function fail(i, e, retry) {
 }
 function renderRail() {
   const ol = $('#phases');
-  keepFocus(() => { ol.innerHTML = S.phases.map((p, i) => {
+  keepFocus(() => keepScroll(ol, () => { ol.innerHTML = S.phases.map((p, i) => {
     const cur = ['running', 'waiting', 'error'].includes(p.status);
     // a step restored from GET /state can lack its server time; say so instead of leaving a blank
     const st = p.status !== 'done' ? esc(ST_WORD[p.status]) : p.ms != null ? `<span class="m">${fms(p.ms)}</span>` : isTour() ? '' : 'time not saved';
+    // while Approve waits, the Review and approve button sits on its service line (the rail must fit at 1440 x 900, D7)
+    const rv = i === 5 && p.status === 'waiting' && canReview()
+      ? `<button class="btn retry ph-rv" type="button" data-act="review" data-k="review-rail"${S.running ? ' disabled' : ''}>${esc(reviewLabel())}</button>` : '';
     const res = !p.res ? '' : p.det
       ? `<details class="det res" data-i="${i}"${p.open ? ' open' : ''}><summary data-k="det-${i}"><span>${esc(p.res)}</span>${icon('chev')}</summary><p>${esc(p.det)}</p></details>`
       : `<p class="res">${esc(p.res)}</p>`;
@@ -227,11 +285,11 @@ function renderRail() {
       <span class="d" aria-hidden="true">${p.status === 'done' ? icon('ck') : p.status === 'error' ? icon('x') : ''}</span>
       <div>
         <div class="ph-h"><span class="nm">${esc(p.name)}</span><span class="st">${p.status === 'done' ? '<span class="vh">Done, </span>' : p.status === 'pending' ? '<span class="vh">Not started</span>' : ''}${st}</span></div>
-        <div class="meta"><span class="svc">${esc(p.svc)}</span>${p.src ? `<span title="${esc(p.src)}">${esc(p.src)}</span>` : ''}</div>
+        <div class="meta"><span class="svc">${esc(p.svc)}</span>${p.src ? `<span title="${esc(p.src)}">${esc(p.src)}</span>` : ''}${rv}</div>
         ${res}
         ${p.err ? `<p class="err">${esc(p.err)}</p>${p.retry ? `<button class="btn retry" type="button" data-retry="${i}" data-k="retry-${i}">Retry</button>` : ''}` : ''}
       </div></li>`;
-  }).join(''); }, '#railH');
+  }).join(''); keepOpener(); }), '#railH');
   $('#railSub').textContent = railSub();
   // follow the newest event: a running or failed step, else the newest Re-plan step, else the step waiting for you
   const act = ol.querySelector('.ph.running, .ph.error') || (S.phases.length > PHASES.length ? ol.lastElementChild : ol.querySelector('[aria-current]'));
@@ -309,7 +367,7 @@ function planPhases(p) {
 }
 function voiceWaiting() {
   if (S.phases[6].status === 'done') return;
-  setPhase(6, { status: isTour() ? 'pending' : 'waiting', res: isTour() ? 'Voice notes need the live region.' : 'Confirm a patient to make one' });
+  setPhase(6, { status: isTour() ? 'pending' : 'waiting', res: isTour() ? 'Open a row, then Play voice note' : 'Confirm a patient to make one' });
 }
 function restorePhases() {
   resetPhases();
@@ -332,6 +390,7 @@ function applyState(st) {
     S.raw = Object.fromEntries(st.clinics.map(c => [c.id, c]));
     indexFac();
     M('setRegion', S.data[S.region], S.clinics);
+    M('setRoutes', S.routes);
   }
   setPeople(st.patients);
   S.outage = st.outage_area || S.outage;
@@ -341,14 +400,17 @@ function applyState(st) {
   mapStage(S.plan ? 4 : S.event ? 1 : 0);
   M('focus', S.stage >= 4 ? 'flows' : S.stage ? 'outage' : 'home');
   renderAll();
+  if (S.event) TL('set', sceneTime());
+  syncReview();
 }
 function indexFac() { S.fac = Object.fromEntries(S.clinics.map(c => [c.id, c])); }
 function setPeople(list) {
-  S.names = {}; S.homes = {}; S.langs = {};
+  S.names = {}; S.homes = {}; S.langs = {}; S.lang = {};
   for (const p of list || []) {
     S.names[p.id] = p.name || p.id;
     S.homes[p.id] = p.home ? [p.home.lng, p.home.lat] : [p.lng, p.lat];
     S.langs[p.id] = p.language_name || (p.language ? langName(p.language) : '');
+    S.lang[p.id] = p.language || 'en';
   }
 }
 async function loadLive(g = S.gen) {
@@ -379,8 +441,9 @@ async function runDemo(from) {
   renderPanel();
 }
 async function stepAlert() {
-  S.plan = S.affected = S.diff = null; S.expanded = S.selected = null; S.audio = {}; S.rowErr = {};
-  resetPhases(); mapStage(0); M('selectPatient', null); $('#panel').scrollTop = 0;
+  // a new notice: the old event goes too, so the timeline starts again from the notice
+  S.event = S.plan = S.affected = S.diff = null; S.expanded = null; S.audio = {}; S.speak = {}; S.rowErr = {};
+  resetPhases(); mapStage(0); clearSel(); R('close'); $('#panel').scrollTo({ top: 0, behavior: 'instant' });
   setPhase(0, { status: 'running', res: 'Reading the simulated PG&E notice' });
   renderAll();
   const t0 = performance.now();
@@ -404,29 +467,38 @@ async function stepPlan() {
   S.affected = st.affected; S.plan = plan; S.diff = null;
   S.runTotal = (S.alertMs || 0) + (plan.timing_ms?.total || 0);
   const res = planPhases(plan);
-  done(1, res[0]); mapStage(2); M('focus', 'home'); renderAll();
-  await sleep(2600);  // hold the home grid in 3D so the dead feeder and the closed clinic read
+  // Find affected: over the home grid in 3D, the timeline runs to Tue 6 PM and the power goes off, then the closed clinic and its patients show
+  done(1, res[0]); M('focus', 'home'); renderAll();
+  await tlPlay(S.event.start, 2200, 1200);
+  mapStage(2); renderAll();
+  await sleep(1400);  // hold so the dead feeder and the closed clinic read
   done(2, res[1]); mapStage(3); renderRail();
   await sleep(900);
+  // Assign chairs: the routes appear and the timeline plays the funnel (patients flow out along the roads)
   done(3, res[2]); mapStage(4); M('focus', 'flows'); renderAll();
-  await sleep(900);
+  await Promise.all([sleep(900), tlPlay(funnelAt(), 2400)]);
   done(4, res[3]);
   setPhase(5, { status: 'waiting', res: 'Review the plan, then approve it' });
   announce('Approve is waiting for you. Review the plan, then approve it.');
   renderRail();
 }
-async function approveAll() {
-  if (S.approving || S.running || !S.plan) return;
+// ids: 'all' (the panel's Approve all) or a list of patient ids (the review's Approve selected). Rejects on failure.
+async function approve(ids) {
+  if (S.approving || S.running || !S.plan) throw new ApiError('Another change is still saving. Try again in a moment.', 0);
+  const all = ids === 'all';
   S.approving = true;
-  setPhase(5, { status: 'running', res: 'Approving every row' });
+  setPhase(5, { status: 'running', res: all ? 'Approving every row' : `Approving ${plural(ids.length, 'row')}` });
   renderRail(); renderPanel();
+  let err = null;
   try {
-    S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: ['all'], edits: [] });
-    done(5, { ms: S.plan.timing_ms?.total, src: 'You', res: `Approved by you · plan v${S.plan.version}` });
-    voiceWaiting();
-  } catch (e) { fail(5, e, approveAll); }
+    S.plan = await S.B.approve({ event_id: S.event.event_id, patient_ids: all ? ['all'] : ids, edits: [] });
+    const left = S.plan.patients.filter(r => r.status === 'draft').length;
+    if (left) setPhase(5, { status: 'waiting', src: 'You', res: `${plural(left, 'row')} still to approve` });
+    else { done(5, { ms: S.plan.timing_ms?.total, src: 'You', res: `Approved by you · plan v${S.plan.version}` }); voiceWaiting(); }
+  } catch (e) { err = e; fail(5, e, () => approve(ids).catch(() => {})); }
   S.approving = false;
-  renderRail(); renderPanel();
+  renderRail(); renderPanel(); syncReview();
+  if (err) throw err;
 }
 async function edit(id, status) {
   if (S.running || S.busy[id]) return;
@@ -436,7 +508,52 @@ async function edit(id, status) {
     announce(`${pname(id)}: ${STATUS[status].toLowerCase()}. Plan v${S.plan.version}.`);
   } catch (e) { S.rowErr[id] = e.message; if (e.status !== 401) banner(e.message); }
   S.busy[id] = false;
-  renderPanel(); renderRail();
+  renderPanel(); renderRail(); syncReview();
+}
+// The review panel wants a promise that rejects with the reason the write failed.
+const editOrThrow = (id, status) => edit(id, status).then(() => { if (S.rowErr[id]) throw new ApiError(S.rowErr[id], 0); });
+// Voice for the review panel: live = the Polly voice note (POST /voice), tour = translate and play (POST /speak).
+async function voiceFor(id, lang) {
+  if (isTour()) return speak(id, lang);
+  const first = S.phases[6].status !== 'done', t0 = performance.now();
+  if (first) { setPhase(6, { status: 'running', res: `Making a voice note for ${pname(id)}` }); renderRail(); }
+  try {
+    const { url } = await S.B.voice({ event_id: S.event.event_id, patient_id: id, lang });
+    S.audio[id] = url;
+    if (first) done(6, { ms: Math.round(performance.now() - t0), src: 'Polly standard voice', res: `Voice note in ${langName(lang)} for ${pname(id)}` });
+    renderRail(); renderList();
+    return { url };
+  } catch (e) { if (first) fail(6, e, null); throw e; }
+}
+// E10: POST /speak. Text already in `lang` (English, or a tour template translation written ahead of time) goes with
+// translated: true, so Polly reads it as given. Other languages need Amazon Translate first, which this AWS account may block.
+const noVoice = lang => `No Polly voice for ${langName(lang)}. Staff read this message aloud.`;
+async function speak(id, lang) {
+  const r = S.plan?.patients.find(x => x.patient_id === id), own = r?.messages?.[lang], en = r?.messages?.en;
+  if (!own && !en) throw new ApiError('This row has no message to read.', 0);
+  if (!hasKey()) { openKey('Add the demo key to play voice notes.'); throw new ApiError('Add the demo key to play voice notes.', 401); }
+  const k = `${id}|${lang}`, t0 = performance.now();
+  if (!S.speak[k]) {
+    let res;
+    try { res = await live.speak(own ? { text: own.slice(0, 600), lang, translated: true } : { text: en.slice(0, 600), lang }); }
+    catch (e) { throw /translate not permitted/i.test(e.message) ? new ApiError('Translation is not turned on for this AWS account.', e.status) : e; }
+    S.speak[k] = { url: res.url || null, voice: res.voice || null, machine: !own, text: own ? null : res.text || null, note: res.url ? null : noVoice(lang) };
+    if (res.url && S.phases[6].status !== 'done') {
+      done(6, { ms: Math.round(performance.now() - t0), svc: own ? 'Amazon Polly' : 'Translate + Polly',
+        src: res.voice ? `Polly voice ${res.voice}` : 'Polly standard voice', res: `${langName(lang)} voice note for ${pname(id)}` });
+      renderRail();
+    }
+  }
+  const sp = S.speak[k];
+  return { url: sp.url || undefined, text: sp.text || undefined, note: sp.note || undefined };
+}
+// The panel's voice button on tour rows: Play voice note, or Translate and play when the row has no template.
+async function speakRow(id) {
+  if (S.busy[id]) return;
+  S.busy[id] = true; S.rowErr[id] = null; renderList();
+  try { await speak(id, S.lang[id] || 'en'); } catch (e) { S.rowErr[id] = e.message; }
+  S.busy[id] = false; renderList();
+  $(`#pts audio[data-id="${id}"]`)?.play().catch(() => { /* the controls stay; press play */ });
 }
 async function voice(id) {
   if (S.running || S.busy[id]) return;
@@ -483,7 +600,7 @@ async function replan(instruction) {
       if (S.phases[6].status !== 'done') setPhase(6, { status: 'pending', res: '' });  // one step waits at a time
     }
     $('#instr').value = '';
-    S.running = false; S.expanded = S.selected = null; M('selectPatient', null);
+    S.running = false; S.expanded = null; clearSel();
     renderPanel(); flip(before);
     facStatus(); mapPatients(); mapFlows(); M('focus', 'flows');
     $('#pts > .pt.chg')?.scrollIntoView({ block: 'nearest', behavior: reduced.matches ? 'auto' : 'smooth' });
@@ -499,23 +616,26 @@ async function doReset() {
   catch (e) { setRunning(false); if (e.status !== 401) banner(e.message); return; }
   clearRun();
   S.running = false;
-  M('selectPatient', null); M('focus', 'home');
+  M('focus', 'home');
   renderAll();
   announce('The demo is reset.');
 }
 function clearRun() {
-  Object.assign(S, { event: null, affected: null, plan: null, diff: null, expanded: null, selected: null, filter: 'all',
-    alertMs: null, runTotal: null, audio: {}, rowErr: {}, busy: {}, msgLang: {} });
-  resetPhases(); mapStage(0);
-  $('#banner').hidden = true; $('#panel').scrollTop = 0;
+  Object.assign(S, { event: null, affected: null, plan: null, diff: null, expanded: null, filter: 'all',
+    alertMs: null, runTotal: null, audio: {}, speak: {}, rowErr: {}, busy: {}, msgLang: {}, routesAll: false });
+  resetPhases(); mapStage(0); clearSel(); R('close');
+  $('#banner').hidden = true; $('#panel').scrollTo({ top: 0, behavior: 'instant' });
 }
 async function setRegion(region) {
   const g = ++S.gen;
   S.region = region;
   clearRun();
+  const rtP = S.rts[region] ? Promise.resolve(S.rts[region]) : loadRoutes(region);
   try { S.data[region] ||= await (await fetch(`data/${region}.json`)).json(); }
   catch { banner('The map data did not load. Reload the page.'); }
+  const rt = S.rts[region] = await rtP;
   if (g !== S.gen) return;  // the user switched again while this loaded
+  S.routes = rt;
   if (isTour()) {
     if (!window.LumenTour) { banner('The tour did not load. Reload the page.'); return renderAll(); }
     S.B = tourBackend(S.data[region]);
@@ -525,7 +645,9 @@ async function setRegion(region) {
     S.B = live; S.tour = null; S.clinics = FALLBACK; S.raw = {}; setPeople([]); S.outage = null;
   }
   indexFac();
-  M('setRegion', S.data[region], S.clinics);
+  M('setRegion', S.data[region], S.clinics);  // regionData carries the county outline when the data has one (E9)
+  $('#lgCounty').hidden = !S.data[region]?.county;
+  M('setRoutes', S.routes);
   mapStage(0); M('focus', 'home');
   renderAll();
   if (!isTour()) await loadLive(g);
@@ -541,14 +663,36 @@ function renderTop() {
   $('#chipT').textContent = S.event ? `Starts in ${countdown()} · ${NOTICE_TAG}` : 'No shutoff notice';
   for (const id of ['run', 'reset', 'region']) setDisabled($('#' + id), S.running);
   $('#wholeBtn').hidden = S.stage < 4 || !S.plan;
+  syncTimeline();
 }
+
+/* ---------- outage timeline (E8): LumenTimeline in a bar at the bottom of the map ---------- */
+let tlKey = '';  // the event the timeline is mounted for
+const funnelAt = () => { const a = Date.parse(S.event.start); return new Date(a + 0.12 * (Date.parse(S.event.end) - a)).toISOString(); };  // funnel is full after ~10% of the off window
+const sceneTime = () => S.stage >= 4 ? funnelAt() : S.stage >= 2 ? S.event.start : S.event.issued_at;
+function syncTimeline() {
+  const ev = S.event, k = ev ? `${S.region}|${ev.event_id}|${ev.issued_at}|${ev.start}|${ev.end}` : '';
+  if (k === tlKey || !window.LumenTimeline) return;
+  if (tlKey) { TL('destroy'); M('setScene', null); }  // the map goes back to the real power state
+  tlKey = k;
+  if (!ev) return;
+  TL('mount', $('#timeline'), {
+    stops: [{ t: ev.issued_at, label: 'Notice' }, { t: ev.start, label: 'Power off' }, { t: ev.end, label: 'Power back' }],
+    label: isTour() ? 'Simulated outage' : 'Simulated timeline',
+    onChange: st => M('setScene', { power: st.power, funnel: st.funnel }),
+  });
+  TL('set', sceneTime());
+}
+// Plays the timeline to `to`; without a timeline it just waits `wait` ms.
+const tlPlay = (to, ms, wait = 0) => tlKey ? Promise.resolve(TL('play', { to, ms })).catch(() => {}) : sleep(wait);
 
 /* ---------- right panel ---------- */
 // Re-rendering replaces the focused control: focus its new copy, else its row, else the fallback.
 function keepFocus(fn, fallback = '#filter') {
   const a = document.activeElement, k = a?.dataset?.k, row = a?.closest?.('.pt')?.dataset.id;
   fn();
-  if (!k || a.isConnected) return;
+  if (!k) return;
+  if (a.isConnected) { if (document.activeElement !== a) a.focus({ preventScroll: true }); return; }  // a node put back (keepOpener) lost focus
   const el = $(`[data-k="${k}"]`);
   (el && !el.disabled ? el : (row && $(`[data-k="row-${row}"]`)) || $(fallback))?.focus({ preventScroll: true });
 }
@@ -559,13 +703,25 @@ function keepAudio(fn) {
   const n = old && $(`#pts audio[data-id="${old.dataset.id}"]`);
   if (n && n.getAttribute('src') === old.getAttribute('src')) n.replaceWith(old);
 }
+// Re-renders keep the scroll position; an instant scroll, since the panels scroll smoothly (E6).
+function keepScroll(el, fn) {
+  const top = el.scrollTop;
+  fn();
+  if (el.scrollTop !== top) el.scrollTo({ top, behavior: 'instant' });
+}
+// The review panel returns focus to its opener: when a re-render replaced that button, put the original node back.
+function keepOpener() {
+  const o = S.opener; if (!o || o.isConnected) return;
+  const n = $(`[data-k="${o.dataset.k}"]`);
+  if (n) { o.className = n.className; o.disabled = n.disabled; o.innerHTML = n.innerHTML; n.replaceWith(o); }
+}
 function renderAll() { renderTop(); renderRail(); renderPanel(); }
 function renderPanel() {
-  keepFocus(() => keepAudio(() => {
-    const el = $('#panel');
-    if (S.stage >= 4 && S.plan) { el.innerHTML = planHTML(); return; }
-    el.innerHTML = keyCard() + (S.event ? eventHTML() : '') + homeHTML() + (S.event ? '' : howHTML());
-  }));
+  const el = $('#panel');
+  keepFocus(() => keepScroll(el, () => keepAudio(() => {
+    el.innerHTML = S.stage >= 4 && S.plan ? planHTML() : keyCard() + (S.event ? eventHTML() : '') + homeHTML() + (S.event ? '' : howHTML());
+    keepOpener();
+  })));
 }
 function keyCard() {
   if (isTour() || hasKey()) return '';
@@ -612,9 +768,12 @@ function planHTML() {
   const nd = S.diff ? Object.keys(S.diff).length : 0, waiting = S.phases[5]?.status === 'waiting';
   const opts = [['all', 'All patients'], ['early', 'Early session'], ['transfer', 'Transfer'], ['staff', 'Staff call']].concat(nd ? [['changed', 'Changed']] : []);
   const cell = (label, color, n) => `<div style="--c:var(${color})"><span>${label}</span><b>${n}</b></div>`;
-  return `<div class="plan-h"><h2>Plan v${p.version} · ${draft ? 'draft' : 'approved'}</h2><span class="mute">${plural(p.patients.length, 'patient')}</span></div>
+  return `<div class="plan-h"><h2>Plan v${p.version} · ${draft ? 'draft' : 'approved'}</h2>${canReview()
+      ? `<button class="btn sec sm" type="button" data-act="review" data-k="review-panel"${S.running ? ' disabled' : ''}>${esc(reviewLabel())}</button>`
+      : `<span class="mute">${plural(p.patients.length, 'patient')}</span>`}</div>
     <div class="cnt">${cell('Early session', '--green', c.early_session)}${cell('Transfer', '--blue', c.transfer)}${cell('Staff call', '--map-staff', c.hospital)}</div>
     ${p.summary ? `<p class="sum">${esc(p.summary)}</p>` : ''}
+    ${routesHTML()}
     <div class="acts">
       ${draft || S.approving ? `<button class="btn pri${waiting ? ' pulse' : ''}" type="button" data-act="approve" data-k="approve"${S.approving || S.running ? ' disabled' : ''}>${S.approving ? 'Approving…' : 'Approve all'}</button>`
         : `<p class="okline">${icon('ck')}Every row is approved</p>`}
@@ -624,11 +783,39 @@ function planHTML() {
     ${nd ? `<div class="chgbar"><span>${nd} changed in v${p.version}</span><button class="btn sec sm" type="button" data-act="ack" data-k="ack">Acknowledge changes</button></div>` : ''}
     <ul class="pts" id="pts" aria-label="Patients in rank order">${listHTML()}</ul>`;
 }
+// E3: where patients go, in plain words. One row per closed clinic -> destination (early sessions stay at their clinic).
+const WHERE = { early_session: to => `Come in early at ${cname(to)}`, transfer: to => `Move to ${cname(to)}`, hospital: () => 'Staff will call' };
+function routesHTML() {
+  const usual = usualOf(), home = homeFac()?.id, by = new Map();
+  for (const r of S.plan.patients) {
+    if (!WHERE[r.action] || !r.clinic_id) continue;
+    const from = r.action === 'early_session' ? r.clinic_id : usual[r.patient_id] || home, k = `${r.action}|${from}|${r.clinic_id}`;
+    if (!by.has(k)) by.set(k, { action: r.action, from, to: r.clinic_id, n: 0, rides: 0 });
+    const g = by.get(k); g.n++; if (r.book_today) g.rides++;
+  }
+  const all = [...by.values()].sort((a, b) => b.n - a.n);
+  if (!all.length) return '';
+  const many = new Set(all.filter(g => g.action !== 'early_session').map(g => g.from)).size > 1, shown = S.routesAll ? all : all.slice(0, 6);
+  let road = false;
+  const tr = shown.map(g => {
+    const rd = g.action === 'early_session' ? null : pairOf(g.from, g.to); road ||= !!rd;
+    return `<tr><th scope="row">${esc(WHERE[g.action](g.to))}${g.action === 'hospital' ? `<span class="sub">${esc(cname(g.to))} if needed</span>` : ''}${many && g.action !== 'early_session' ? `<span class="sub">from ${esc(cname(g.from))}</span>` : ''}${rd?.tooFar ? `<span class="far">Too far: over ${FAR_MIN} min by road</span>` : ''}</th>
+      <td class="m">${g.n}</td><td class="m">${g.rides}</td>
+      <td>${g.action === 'early_session' ? '<span class="sub">Usual clinic</span>' : rd ? `<span class="m">${rd.minutes} min</span><span class="m sub">${rd.miles} mi</span>` : '<span class="sub">Road route pending</span>'}</td></tr>`;
+  }).join('');
+  const sum = k => all.reduce((s, g) => s + g[k], 0);
+  return `<section class="routes" aria-labelledby="rtH"><h3 id="rtH">Routes</h3>
+    <table class="rtab"><thead><tr><th scope="col">Where patients go</th><th scope="col">Patients</th><th scope="col">Rides to book</th><th scope="col">Road</th></tr></thead>
+      <tbody>${tr}</tbody>
+      <tfoot><tr><th scope="row">Total</th><td class="m">${sum('n')}</td><td class="m">${sum('rides')}</td><td></td></tr></tfoot></table>
+    ${all.length > shown.length || S.routesAll && all.length > 6 ? `<button class="lnk" type="button" data-act="routes" data-k="routes">${S.routesAll ? 'Show fewer routes' : `Show all ${all.length} routes`}</button>` : ''}
+    <p class="small">${road ? 'Road times from Amazon Location Service. ' : ''}Pickup times in the plan use the drive estimate.</p></section>`;
+}
 function listHTML() {
   const list = rows().filter(FILTERS[S.filter] || FILTERS.all);
   return list.length ? list.map(rowHTML).join('') : '<li class="empty">No patients match this filter.</li>';
 }
-function renderList() { const ul = $('#pts'); if (ul) keepFocus(() => keepAudio(() => { ul.innerHTML = listHTML(); })); }
+function renderList() { const ul = $('#pts'); if (ul) keepFocus(() => keepScroll($('#panel'), () => keepAudio(() => { ul.innerHTML = listHTML(); }))); }
 function changeWords(entries) {
   const f = Object.fromEntries(entries.map(e => [e.field, e])), out = [];
   const toStaff = f.action?.to === 'hospital';
@@ -639,14 +826,17 @@ function changeWords(entries) {
   if (!out.length) out.push(`Updated ${join(entries.map(e => FIELD[e.field] || e.field))}`);
   return cap(out.join(' · '));
 }
+function rideText(r) {
+  const ride = RIDE[r.ride] || cap(String(r.ride || '').replace(/_/g, ' '));
+  return r.pickup_time ? `${ride} · ${r.ride === 'self' ? 'leave by' : 'pickup'} ${time(r.pickup_time)}` : ride;
+}
 function rowHTML(r) {
   const id = r.patient_id, open = S.expanded === id, chg = S.diff?.[id], a = ACTION[r.action] || ACTION.notify_only;
   const dest = r.clinic_id ? cname(r.clinic_id) : r.action === 'notify_only' ? 'Usual clinic' : 'No clinic';
   const when = r.slot ? `<span class="m">${esc(slotText(r.slot))}</span>` : r.action === 'hospital' ? '<span class="nochair">No chair fits</span>' : '';
-  const ride = RIDE[r.ride] || cap(String(r.ride || '').replace(/_/g, ' '));
-  const rideLine = r.pickup_time ? `${ride} · ${r.ride === 'self' ? 'leave by' : 'pickup'} ${time(r.pickup_time)}` : ride;
+  const rideLine = rideText(r);
   const lang = S.langs[id] && S.langs[id] !== 'English' ? S.langs[id] : '';
-  return `<li class="pt${chg ? ' chg' : ''}${S.selected === id ? ' sel' : ''}" data-id="${id}">
+  return `<li class="pt${chg ? ' chg' : ''}${S.selected === id ? ' sel' : ''}${open ? ' open' : ''}" data-id="${id}">
     <button class="rowb" type="button" data-act="row" data-id="${id}" data-k="row-${id}" aria-expanded="${open}">
       <span class="rk m">${r.rank}</span>
       <span class="rb">
@@ -659,13 +849,20 @@ function rowHTML(r) {
     ${open ? detailHTML(r) : ''}
   </li>`;
 }
+// Message tabs: the patient's language and English only. In the tour, a non-English message is a template written ahead of time.
+const msgLangs = r => Object.keys(r.messages || {}).filter(l => l === 'en' || l === (S.lang[r.patient_id] || 'en'));
+const tabLabel = l => `${langName(l)}${isTour() && l !== 'en' ? ' · Template translation' : ''}`;
 function detailHTML(r) {
-  const id = r.patient_id, langs = Object.keys(r.messages || {});
-  const cur = langs.includes(S.msgLang[id]) ? S.msgLang[id] : langs.find(l => langName(l) === S.langs[id]) || langs[0];
+  const id = r.patient_id, langs = msgLangs(r);
+  const cur = [S.msgLang[id], S.lang[id]].find(l => langs.includes(l)) || langs[0];
   const move = r.action === 'early_session' || r.action === 'transfer';
   const drive = r.drive_minutes != null ? `${r.drive_minutes} min drive, ${r.drive_source === 'location_service' ? 'Amazon Location' : 'estimate'}` : '';
   const flags = (r.flags || []).map(f => FLAG[f] || cap(f.replace(/_/g, ' ')));
+  const rd = roadOf(r);
   return `<div class="pdet">
+    ${r.clinic_id ? `<div class="rcard"><p class="rc1">${esc(pname(id))} → ${esc(destName(r))}</p>
+      <p>${esc(routeWords(r, rd))}${r.pickup_time ? ` · ${esc(rideText(r))}` : ''}</p>
+      ${rd?.tooFar ? `<p class="far">Too far: over ${FAR_MIN} min by road</p>` : ''}</div>` : ''}
     ${r.reason_text ? `<p class="why">${esc(r.reason_text)}</p>` : ''}
     ${r.reasons?.length ? `<ul class="chips" aria-label="Reasons">${r.reasons.map(k => `<li>${esc(reasonWord(k))}</li>`).join('')}</ul>` : ''}
     <dl class="facts">
@@ -677,24 +874,30 @@ function detailHTML(r) {
       ${flags.length ? `<dt>Flags</dt><dd>${esc(flags.join(', '))}</dd>` : ''}
     </dl>
     ${langs.length ? `<div class="msg">
-      <div class="langs" role="group" aria-label="Message language">${langs.map(l => `<button type="button" data-act="lang" data-id="${id}" data-lang="${l}" data-k="lang-${id}-${l}" aria-pressed="${l === cur}">${esc(langName(l))}</button>`).join('')}</div>
-      <p class="msgt" lang="${esc(cur)}">${esc(r.messages[cur])}</p></div>` : ''}
+      <div class="langs" role="group" aria-label="Message language">${langs.map(l => `<button type="button" data-act="lang" data-id="${id}" data-lang="${l}" data-k="lang-${id}-${l}" aria-pressed="${l === cur}">${esc(tabLabel(l))}</button>`).join('')}</div>
+      <p class="msgt" lang="${esc(cur)}">${esc(r.messages[cur])}</p>
+      ${isTour() && cur !== 'en' ? '<p class="small">Template translation (written ahead of time)</p>' : ''}</div>` : ''}
     ${move ? actionsHTML(r, langs, cur) : ''}
     ${S.rowErr[id] ? `<p class="err" role="alert">${esc(S.rowErr[id])}</p>` : ''}
   </div>`;
 }
 function actionsHTML(r, langs, cur) {
   const id = r.patient_id, dis = S.busy[id] || S.running ? ' disabled' : '', ok = r.status === 'confirmed';
-  let voiceUI = '';
-  if (ok && isTour()) voiceUI = '<p class="small">Voice notes need the live region.</p>';
-  else if (ok && langs.length) voiceUI = `<label class="selw sm"><span class="vh">Voice note language</span><select data-k="vl-${id}">${langs.map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${esc(langName(l))}</option>`).join('')}</select>${icon('chev')}</label>
+  let voiceUI = '', spoken = '';
+  if (isTour() && r.messages?.en) {  // E10: the voice in the patient's language; nothing is sent
+    const lang = S.lang[id] || 'en', own = !!r.messages[lang], sp = S.speak[`${id}|${lang}`];
+    voiceUI = `<button class="btn sec sm" type="button" data-act="speak" data-id="${id}" data-k="spk-${id}"${S.busy[id] ? ' disabled' : ''}><svg class="i fill"><use href="#i-play"/></svg>${
+      S.busy[id] ? (own ? 'Making voice note…' : 'Translating…') : own ? 'Play voice note' : 'Translate and play'}</button>`;
+    if (sp) spoken = `<div class="spk">${sp.machine && sp.text ? `<p class="small">Translated by Amazon Translate</p><p class="msgt" lang="${esc(lang)}">${esc(sp.text)}</p>` : ''}${
+      sp.url ? `<audio controls preload="auto" src="${esc(sp.url)}" data-id="${id}"></audio>` : sp.note ? `<p class="small">${esc(sp.note)}</p>` : ''}</div>`;
+  } else if (ok && langs.length) voiceUI = `<label class="selw sm"><span class="vh">Voice note language</span><select data-k="vl-${id}">${langs.map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${esc(langName(l))}</option>`).join('')}</select>${icon('chev')}</label>
     <button class="btn sec sm" type="button" data-act="voice" data-id="${id}" data-k="voice-${id}"${dis}><svg class="i fill"><use href="#i-play"/></svg>${S.busy[id] ? 'Making voice note…' : 'Play voice note'}</button>`;
   return `<div class="racts">
     ${ok ? '' : r.status === 'draft' ? `<button class="btn sec sm" type="button" disabled>${icon('ck')}Confirm after approval</button>`
       : `<button class="btn sec sm" type="button" data-act="confirm" data-id="${id}" data-k="cf-${id}"${dis}>${icon('ck')}Mark confirmed</button>`}
     ${r.status === 'declined' ? '' : `<button class="btn q sm" type="button" data-act="decline" data-id="${id}" data-k="dc-${id}"${dis}>Decline</button>`}
     ${voiceUI}
-  </div>${S.audio[id] ? `<audio controls preload="auto" src="${esc(S.audio[id])}" data-id="${id}"></audio>` : ''}`;
+  </div>${spoken}${S.audio[id] ? `<audio controls preload="auto" src="${esc(S.audio[id])}" data-id="${id}"></audio>` : ''}`;
 }
 // FLIP: rows slide from their old place to the new rank order (positions are relative to the list)
 function positions() { return Object.fromEntries([...document.querySelectorAll('#pts > .pt')].map(li => [li.dataset.id, li.offsetTop])); }
@@ -711,13 +914,62 @@ function flip(before) {
 function selectRow(id, fromMap) {
   S.selected = id; S.expanded = id;
   M('selectPatient', id);
-  if (!fromMap) M('focus', { patient: id });
+  showRoute(id, fromMap);  // their road route home -> destination; the map fits it
   if (S.stage < 4) return;
   const r = S.plan.patients.find(x => x.patient_id === id);
   if (r && !(FILTERS[S.filter] || FILTERS.all)(r)) { S.filter = 'all'; renderPanel(); } else renderList();
   if (fromMap) openPanel(true);
-  $(`#pts > .pt[data-id="${id}"]`)?.scrollIntoView({ block: fromMap ? 'center' : 'nearest', behavior: reduced.matches ? 'auto' : 'smooth' });
+  $(`#pts > .pt[data-id="${id}"]`)?.scrollIntoView({ block: 'nearest', behavior: reduced.matches ? 'auto' : 'smooth' });
 }
+
+/* ---------- review and approve (E4): window.LumenReview, a pop-out over the whole screen ---------- */
+const canReview = () => !!(window.LumenReview && S.plan && S.stage >= 4);
+function reviewLabel() {
+  const d = S.plan.patients.filter(r => r.status === 'draft').length;
+  return d ? `Review and approve (${d})` : `Review plan (${S.plan.patients.length})`;
+}
+const WHAT = { early_session: r => `Comes in early at ${cname(r.clinic_id)}`, transfer: r => `Moves to ${cname(r.clinic_id)}`,
+  hospital: () => 'Staff will call', notify_only: () => 'Gets a notice; the usual session stays' };
+// View models for review.js: plain words only, no internal codes.
+function viewRows() {
+  return rows().map(r => {
+    const id = r.patient_id, st = r.status, move = r.action === 'early_session' || r.action === 'transfer', rd = roadOf(r);
+    const lang = S.lang[id] || 'en', hasMsg = Object.keys(r.messages || {}).length > 0, own = !!r.messages?.[lang];
+    const messages = Object.fromEntries(msgLangs(r).map(l => [l, r.messages[l]]));
+    const canVoice = isTour() ? !!r.messages?.en : move && st === 'confirmed' && hasMsg;
+    return {
+      id, rank: r.rank, name: pname(id), lang, langName: S.langs[id] || langName(lang), action: r.action,
+      what: (WHAT[r.action] || WHAT.notify_only)(r), where: r.clinic_id ? destName(r) : '',
+      when: r.slot ? slotText(r.slot) : r.action === 'hospital' ? 'No chair fits' : '', pickup: rideText(r),
+      road: rd ? { minutes: rd.minutes, miles: rd.miles, tooFar: rd.tooFar } : null,
+      status: st, statusText: STATUS[st] || st, changed: !!S.diff?.[id], changeText: S.diff?.[id] ? changeWords(S.diff[id]) : null,
+      reasons: (r.reasons || []).map(reasonWord), messages,
+      msgLabels: Object.fromEntries(Object.keys(messages).map(l => [l, tabLabel(l)])),
+      canConfirm: move && st !== 'draft' && st !== 'confirmed',
+      confirmHint: !move ? (r.action === 'hospital' ? 'A staff member calls this patient' : 'Nothing to confirm: the usual session stays')
+        : st === 'draft' ? 'Approve this row first' : st === 'confirmed' ? 'Already confirmed' : '',
+      canVoice,
+      voiceHint: canVoice ? (!isTour() ? '' : lang === 'en' ? 'Polly reads the English message. Nothing is sent.'
+          : own ? `The ${langName(lang)} message is a template translation, written ahead of time. Polly reads it; nothing is sent.`
+          : `No ${langName(lang)} template: Amazon Translate would translate the English message first. Nothing is sent.`)
+        : isTour() ? 'This row has no message' : !move ? 'Only moves get a voice note' : st !== 'confirmed' ? 'Mark the row confirmed first' : 'This row has no message',
+    };
+  });
+}
+function openReview(opener) {
+  if (!canReview() || S.running) return;
+  S.opener = opener;
+  R('open', {
+    title: `Review plan v${S.plan.version}`, isTour: isTour(), rows: viewRows(), opener,
+    onApprove: ids => approve(ids),
+    onDecline: id => editOrThrow(id, 'declined'),
+    onConfirm: id => editOrThrow(id, 'confirmed'),
+    onVoice: (id, lang) => voiceFor(id, lang),
+    onSelect: id => selectRow(id, false),  // draws the road route; its time reaches the review through update()
+  });
+}
+// After each write, and when a road route arrives, the review gets fresh rows (it keeps its filters, search, scroll and selection).
+function syncReview() { if (canReview()) R('update', viewRows()); }
 
 /* ---------- popovers, theme, drawers ---------- */
 function openKey(msg) {
@@ -727,9 +979,10 @@ function openKey(msg) {
   if (!p.matches(':popover-open')) p.showPopover();
   $('#keyInput').focus();
 }
-function setTheme(t) {
+// save: the toggle's choice persists; the first visit only follows prefers-color-scheme (E7)
+function setTheme(t, save = true) {
   document.documentElement.dataset.theme = t;
-  store.set('lumenTheme', t);
+  if (save) store.set('lumenTheme', t);
   const dark = t === 'dark', b = $('#themeTog');
   b.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
   b.innerHTML = icon(dark ? 'sun' : 'moon');
@@ -746,12 +999,14 @@ let padKey = '';
 function padMap() {
   const m = $('#main').getBoundingClientRect(), p = { top: 0, right: 0, bottom: 0, left: 0 };
   const over = el => { const r = el.getBoundingClientRect(); return r.width && r.left < m.right && r.right > m.left && r.top < m.bottom && r.bottom > m.top ? r : null; };
-  const lg = over($('#legend')), ctl = over($('.ctl')), pn = $('#panel').classList.contains('open') && over($('#panel'));
-  if (lg) {  // the legend pads the side that costs the map less area
+  const lg = over($('#legend')), ctl = over($('.ctl')), tl = over($('#timeline')), pn = $('#panel').classList.contains('open') && over($('#panel'));
+  const tlPad = tl ? Math.round(m.bottom - tl.top) + 8 : 0;
+  if (lg) {  // the legend pads the side that costs the map less area; the timeline already pads the bottom
     const w = Math.round(lg.right - m.left) + 8, h = Math.round(m.bottom - lg.top) + 8;
-    if (w / m.width < h / m.height) p.left = w; else p.bottom = h;
+    if (w / m.width < (h - tlPad) / m.height) p.left = w; else p.bottom = h;
   }
   if (ctl) p.right = Math.round(m.right - ctl.left) + 8;
+  p.bottom = Math.max(p.bottom, tlPad);
   if (pn) {  // a drawer or sheet that would leave under 160 px of map is left out, so fits still have room
     const sheet = pn.width >= m.width - 1, side = sheet ? 'bottom' : 'right';
     const v = Math.round(sheet ? m.bottom - pn.top : m.right - pn.left) + 8;
@@ -760,6 +1015,58 @@ function padMap() {
   const k = JSON.stringify(p);
   if (k !== padKey) { padKey = k; M('setPadding', p); }
 }
+// The legend, the controls and the map's own corner controls sit above the timeline bar.
+function tlHeight() { const h = $('#timeline').offsetHeight; $('#main').style.setProperty('--tl-h', h ? `${h + 12}px` : '0px'); }
+
+/* ---------- resizable rail and panel (E5): wide layout only ---------- */
+const SIZES = { rail: { min: 280, max: 480, key: 'lumenRailW', v: '--rail-user', el: '#rail' }, panel: { min: 340, max: 640, key: 'lumenPanelW', v: '--panel-user', el: '#panel' } };
+const MAP_MIN = 420, wide = matchMedia('(min-width: 1181px)');
+// Clamps to the side's limits and to what leaves the map 420 px; returns the width it set.
+function setWidth(side, w) {
+  const o = SIZES[side], other = SIZES[side === 'rail' ? 'panel' : 'rail'];
+  const max = Math.max(o.min, Math.min(o.max, $('.app').clientWidth - $(other.el).offsetWidth - MAP_MIN));
+  w = Math.round(Math.max(o.min, Math.min(max, w)));
+  $('.app').style.setProperty(o.v, `${w}px`);
+  const sep = $(`.rsz[data-side="${side}"]`);
+  sep.setAttribute('aria-valuemax', max); sep.setAttribute('aria-valuenow', w);
+  M('resize');
+  return w;
+}
+function resetWidth(side) {
+  $('.app').style.removeProperty(SIZES[side].v); store.set(SIZES[side].key, '');
+  $(`.rsz[data-side="${side}"]`).setAttribute('aria-valuenow', $(SIZES[side].el).offsetWidth);
+  M('resize');
+}
+// Window resize: keep saved widths inside the limits, without saving the clamped value.
+function fitWidths() {
+  if (!wide.matches) return;
+  for (const side of ['rail', 'panel']) {
+    const saved = +store.get(SIZES[side].key);
+    if (saved) setWidth(side, saved); else $(`.rsz[data-side="${side}"]`).setAttribute('aria-valuenow', $(SIZES[side].el).offsetWidth);
+  }
+}
+function bindResize(sep) {
+  const side = sep.dataset.side, o = SIZES[side], save = w => store.set(o.key, String(w));
+  let raf = 0, x = 0, moved = false;
+  sep.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); sep.setPointerCapture(e.pointerId); document.body.classList.add('resizing'); moved = false;
+  });
+  sep.addEventListener('pointermove', e => {
+    if (!sep.hasPointerCapture(e.pointerId)) return;
+    x = e.clientX; moved = true;
+    raf ||= requestAnimationFrame(() => { raf = 0; const a = $('.app').getBoundingClientRect(); setWidth(side, side === 'rail' ? x - a.left : a.right - x); });
+  });
+  sep.addEventListener('lostpointercapture', () => { document.body.classList.remove('resizing'); if (moved) save(+sep.getAttribute('aria-valuenow')); });
+  sep.addEventListener('keydown', e => {
+    const step = e.shiftKey ? 64 : 16, dir = side === 'rail' ? 1 : -1, w = $(o.el).offsetWidth;  // the plan panel grows to the left
+    const n = { ArrowRight: w + step * dir, ArrowLeft: w - step * dir, Home: o.min, End: o.max }[e.key];
+    if (n == null) return;
+    e.preventDefault(); save(setWidth(side, n));
+  });
+  sep.addEventListener('dblclick', () => resetWidth(side));
+}
+
 function sync3D() { const on = !!M('is3D'); $('#d3').setAttribute('aria-pressed', on); }
 
 /* ---------- events ---------- */
@@ -784,14 +1091,16 @@ function bind() {
   });
   $('#bannerX').addEventListener('click', () => { $('#banner').hidden = true; });
   $('#homeBtn').addEventListener('click', () => M('focus', 'home'));
-  $('#wholeBtn').addEventListener('click', () => { S.selected = null; M('selectPatient', null); M('focus', 'flows', { all: true }); renderList(); });
+  $('#wholeBtn').addEventListener('click', () => { clearSel(); M('focus', 'flows', { all: true }); renderList(); });
   $('#animTog').addEventListener('click', e => {
     S.anim = !S.anim; M('setAnimation', S.anim);
     e.currentTarget.textContent = S.anim ? 'Pause animation' : 'Play animation';
   });
   $('#panel').addEventListener('transitionend', e => { if (e.target === e.currentTarget) padMap(); });
-  const ro = new ResizeObserver(() => padMap());  // the legend and the controls change size too (toggle, Whole plan)
-  for (const el of [$('#main'), $('#legend'), $('.ctl')]) ro.observe(el);
+  const ro = new ResizeObserver(() => { tlHeight(); padMap(); });  // the legend, the controls and the timeline change size too
+  for (const el of [$('#main'), $('#legend'), $('.ctl'), $('#timeline')]) ro.observe(el);
+  document.querySelectorAll('.rsz').forEach(bindResize);
+  addEventListener('resize', fitWidths);
   $('#d3').addEventListener('click', () => { M('set3D', !M('is3D')); sync3D(); });
   $('#planTog').addEventListener('click', () => openPanel(!$('#panel').classList.contains('open')));
   $('#railTog').addEventListener('click', e => {
@@ -802,7 +1111,10 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && $('#panel').classList.contains('open')) { openPanel(false); $('#planTog').focus(); }
   });
-  $('#phases').addEventListener('click', e => { const b = e.target.closest('[data-retry]'); if (b) S.phases[b.dataset.retry]?.retry?.(); });
+  $('#phases').addEventListener('click', e => {
+    const b = e.target.closest('[data-retry]'); if (b) return S.phases[b.dataset.retry]?.retry?.();
+    const v = e.target.closest('[data-act="review"]'); if (v && !v.disabled) openReview(v);
+  });
   $('#phases').addEventListener('toggle', e => { const d = e.target.closest?.('details[data-i]'); if (d) S.phases[d.dataset.i].open = d.open; }, true);
   $('#replan').addEventListener('submit', e => { e.preventDefault(); replan($('#instr').value); });
   $('#instr').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); replan($('#instr').value); } });
@@ -816,7 +1128,10 @@ function bind() {
       case 'confirm': edit(id, 'confirmed'); break;
       case 'decline': edit(id, 'declined'); break;
       case 'voice': voice(id); break;
-      case 'approve': approveAll(); break;
+      case 'approve': approve('all').catch(() => { /* the Approve step shows the error and a Retry */ }); break;
+      case 'review': openReview(b); break;
+      case 'speak': speakRow(id); break;
+      case 'routes': S.routesAll = !S.routesAll; renderPanel(); break;
       case 'ack': ack(); break;
       case 'key': openKey(); break;
     }
@@ -837,16 +1152,19 @@ async function boot() {
   motion(); reduced.addEventListener('change', motion);
   S.B = live; indexFac();
   const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
-  setTheme(theme);
+  setTheme(theme, false);
+  fitWidths();
   renderAll();
-  const dataP = fetch('data/eldorado.json').then(r => r.json()).catch(() => null);
+  const dataP = fetch('data/eldorado.json').then(r => r.json()).catch(() => null), rtP = loadRoutes('eldorado');
   // init creates the map at once and resolves on its first load; the setters below queue until then
   const mapP = window.LumenMap ? Promise.resolve().then(() => LumenMap.init($('#map'), { theme, mapKey: CFG.mapKey || '', onSelect, on3D: sync3D })) : Promise.reject(new Error('map.js missing'));
   mapP.catch(e => { console.warn('LumenMap.init', e); banner('The map did not load. The plan still works.'); });
-  S.data.eldorado = await dataP;
+  S.data.eldorado = await dataP; S.rts.eldorado = await rtP;
   M('set3D', true);  // first view: tilted 50 degrees over the home clinic
   if (S.region === 'eldorado') {
+    S.routes = S.rts.eldorado;
     if (S.data.eldorado) M('setRegion', S.data.eldorado, S.clinics); else banner('The map data did not load. Reload the page.');
+    M('setRoutes', S.routes);
     M('focus', 'home');
   }
   sync3D();

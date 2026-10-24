@@ -1,4 +1,5 @@
-/* Lumen map: window.LumenMap on MapLibre GL JS 4.7.1 (global maplibregl). Contract: CONTRACT.md "Map module". */
+/* Lumen map: window.LumenMap on MapLibre GL JS 4.7.1 (global maplibregl).
+   Contracts: CONTRACT.md "Map module", CONTRACT-v2 E1 (funnel on roads), E2 (patient route), E7-E9 and the map API additions. */
 (() => {
   'use strict';
 
@@ -10,6 +11,9 @@
   const DASH_MS = 60;
   const ANIM_MIN_ZOOM = 11;   // below this the feeders are a few px: no animation, no repaints
   const STAFF_DASH = [1.6, 1.1]; // staff-call routes, in line widths
+  const STRAIGHT_DASH = [2, 2];  // straight stand-in lines (no road route), in line widths
+  const FUNNEL_STEPS = 6 * DASH.length; // funnel 0..1 runs the dash cycle 6 times along every route
+  const TOO_FAR = 40;            // road minutes
   const FIT_PAD = 48;
   // [pitch, bearing] per kind of view while 3D is on; flat views use [0, 0].
   const VIEW3D = { home: [55, -20], over: [40, -15], near: [50, -15] };
@@ -22,15 +26,22 @@
   const fc = (features) => ({ type: 'FeatureCollection', features });
   const point = (c, properties = {}) => ({ type: 'Feature', properties, geometry: { type: 'Point', coordinates: c } });
   const z = (...stops) => ['interpolate', ['linear'], ['zoom'], ...stops];
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const is = (k) => ['==', ['get', k], true];
+  const isLine = (l) => Array.isArray(l) && l.length > 1;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const miles = (m) => { const v = m / 1609.344; return v < 10 ? v.toFixed(1) : String(Math.round(v)); };
 
   let map = null, opts = {}, ready = false, amazon = false, raf = 0, dashStep = -1, moveRaf = 0, flying = null;
   let T = {}, fontR = ['Noto Sans Regular'], fontB = ['Noto Sans Bold'];
   let markers = [];
-  let counts = []; // route count labels: { k, line, props, t }; t = where on the arc the number sits
+  let counts = []; // one per drawn route: { k, line, cum, props, t }; t = where along the route its badge sits (0..1)
   const area = { marker: null, text: null, box: null }; // DOM "Shutoff area" label, so facility labels can avoid it
+  const call = { marker: null, el: null, w: 0, h: 0 };  // DOM callout at the selected patient's destination
   const S = { theme: 'light', region: null, facilities: [], status: {}, dead: false, outage: null, patients: null,
-    flows: null, recv: {}, sel: null, is3D: false, anim: true, pad: { top: 0, right: 0, bottom: 0, left: 0 } };
-  const D = { trans: EMPTY, subs: EMPTY, feeders: EMPTY, fp: [], center: {} };
+    flows: null, recv: {}, early: {}, sel: null, routes: null, pr: null, scene: null,
+    is3D: false, anim: true, pad: { top: 0, right: 0, bottom: 0, left: 0 } };
+  const D = { trans: EMPTY, subs: EMPTY, feeders: EMPTY, county: EMPTY, fp: [], center: {} };
 
   // ---------- style, tokens, fonts ----------
 
@@ -52,7 +63,9 @@
       early: g('--map-early', '#23784A', '#57C98C'), transfer: g('--map-transfer', '#2457C5', '#7FA6FF'),
       staff: g('--map-staff', '#3A4843', '#C2CEC9'), affected: g('--map-affected', '#E39A1E', '#F2AE3D'),
       ink: g('--map-ink', '#13201C', '#E6EDEA'), halo: g('--map-halo', 'rgba(251,252,251,.92)', 'rgba(10,16,14,.85)'),
-      mute: g('--mute', '#5B6863', '#93A39C'),
+      mute: g('--mute', '#5B6863', '#93A39C'), paper: g('--paper', '#FBFCFB', '#111917'), line2: g('--line-2', '#B7C1BC', '#35453F'),
+      amberInk: g('--amber-ink', '#8A5300', '#F5BE63'),
+      mask: v('--map-mask') || g('--rail', '#15211D', '#0D1412'), // dark in both themes
       powerInk: g('--green-ink', '#1D6940', '#7ED8A8'), deadInk: g('--red-ink', '#A12A24', '#FF8A7D'),
       warm: v('--map-fac') || g('--line-2', '#B7C1BC', '#35453F'),   // facility buildings
       bldg: v('--map-bldg') || g('--line', '#D4DBD7', '#24312C'),    // faint basemap buildings
@@ -91,6 +104,16 @@
     return x.getImageData(0, 0, s, s);
   }
 
+  // Paper pill behind route badges; stretchable, so icon-text-fit sizes it to any text.
+  function badgeIcon() {
+    const r = 2, s = 24 * r, c = document.createElement('canvas');
+    c.width = c.height = s;
+    const x = c.getContext('2d');
+    x.fillStyle = T.paper; x.strokeStyle = T.line2; x.lineWidth = r;
+    x.beginPath(); x.roundRect(r / 2, r / 2, s - r, s - r, 6 * r); x.fill(); x.stroke();
+    return x.getImageData(0, 0, s, s);
+  }
+
   function addOverlays() {
     const style = map.getStyle();
     const before = (style.layers.find((l) => l.type === 'symbol') || {}).id;
@@ -102,12 +125,15 @@
     const flowColor = ['case', ['get', 'changed'], T.affected, act];
     const fade = { duration: 0, delay: 0 };
 
-    ['lm-outage', 'lm-trans', 'lm-subs', 'lm-feeders', 'lm-fp', 'lm-flows', 'lm-flow-mid', 'lm-pat']
+    ['lm-county', 'lm-outage', 'lm-trans', 'lm-subs', 'lm-feeders', 'lm-fp', 'lm-flows', 'lm-flow-mid', 'lm-pr', 'lm-pat']
       .forEach((id) => map.addSource(id, { type: 'geojson', data: EMPTY }));
     map.addImage('lm-sub-live', subIcon(T.trans, false), { pixelRatio: 2 });
     map.addImage('lm-sub-dead', subIcon(T.dead, true), { pixelRatio: 2 });
+    map.addImage('lm-badge', badgeIcon(), { pixelRatio: 2, stretchX: [[12, 36]], stretchY: [[12, 36]], content: [10, 7, 38, 41] });
 
-    // Under the basemap labels: outage fill, grid, outline, buildings.
+    // Under the basemap labels: county outline, power-off mask, outage fill, grid, outline, buildings.
+    add({ id: 'lm-county-line', type: 'line', source: 'lm-county', layout: { 'line-join': 'round' }, paint: { 'line-color': T.ink, 'line-opacity': S.theme === 'dark' ? 0.32 : 0.45, 'line-width': z(8, 1.25, 13, 2.25), 'line-dasharray': [4, 2.5] } }, before);
+    add({ id: 'lm-outage-mask', type: 'fill', source: 'lm-outage', paint: { 'fill-color': T.mask, 'fill-opacity': 0, 'fill-opacity-transition': fade } }, before);
     add({ id: 'lm-outage-fill', type: 'fill', source: 'lm-outage', paint: { 'fill-color': T.outage, 'fill-opacity': 0, 'fill-opacity-transition': fade } }, before);
     const w = ['get', 'w'], tw = (k) => z(8, ['+', k, ['*', 1, w]], 11, ['+', k, ['*', 1.6, w]], 14, ['+', k, ['*', 2, w]], 17, ['+', k, ['*', 3, w]]);
     add({ id: 'lm-trans-line', type: 'line', source: 'lm-trans', layout: round, paint: { 'line-color': T.trans, 'line-opacity': 0.85, 'line-width': tw(0) } }, before);
@@ -144,13 +170,23 @@
     add({ id: 'lm-fp-line', type: 'line', source: 'lm-fp', filter: real, paint: { 'line-color': fpColor(0.3), 'line-width': z(13, 0.6, 17, 1.4) } }, before);
     add({ id: 'lm-fp-3d', type: 'fill-extrusion', source: 'lm-fp', filter: real, paint: { 'fill-extrusion-color': fpColor(0), 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-opacity': 0.94 } }, before);
 
-    // Above basemap labels: aggregated flows (width grows with the patient count), patients, then our own labels.
-    const sort = { 'line-sort-key': ['case', ['get', 'sel'], 2, ['get', 'changed'], 1, 0] };
-    add({ id: 'lm-flow-casing', type: 'line', source: 'lm-flows', layout: { ...round, ...sort }, paint: { 'line-color': T.halo, 'line-width': ['+', ['get', 'w'], 3] } });
-    add({ id: 'lm-flow-line', type: 'line', source: 'lm-flows', filter: ['!=', ['get', 'action'], 'hospital'], layout: { ...round, ...sort }, paint: { 'line-color': flowColor, 'line-width': ['get', 'w'] } });
-    add({ id: 'lm-flow-staff', type: 'line', source: 'lm-flows', filter: ['==', ['get', 'action'], 'hospital'], layout: { 'line-join': 'round', ...sort }, paint: { 'line-color': flowColor, 'line-width': ['get', 'w'], 'line-dasharray': STAFF_DASH } });
-    add({ id: 'lm-pat-ring', type: 'circle', source: 'lm-pat', filter: ['==', ['get', 'sel'], true], paint: { 'circle-radius': z(8, 9, 14, 13), 'circle-color': T.ink, 'circle-opacity': 0, 'circle-stroke-color': T.ink, 'circle-stroke-width': 2 } });
-    add({ id: 'lm-pat', type: 'circle', source: 'lm-pat', layout: { 'circle-sort-key': ['case', ['get', 'sel'], 1, 0] }, paint: { 'circle-radius': z(8, 4, 14, 7), 'circle-color': act, 'circle-stroke-color': T.halo, 'circle-stroke-width': 1.5 } });
+    // Above basemap labels: road routes (one per closed clinic, destination and action; width grows with the patient
+    // count; largest underneath, changed on top, 1 px halo casing), the selected patient's route, patients, our labels.
+    const road = ['!', is('pending')];
+    const sort = { 'line-sort-key': ['+', ['case', ['get', 'changed'], 1e4, 0], ['-', 0, ['get', 'n']]] };
+    add({ id: 'lm-flow-casing', type: 'line', source: 'lm-flows', filter: road, layout: { ...round, ...sort }, paint: { 'line-color': T.halo, 'line-width': ['+', ['get', 'w'], 2] } });
+    add({ id: 'lm-flow-line', type: 'line', source: 'lm-flows', filter: ['all', road, ['!=', ['get', 'action'], 'hospital']], layout: { ...round, ...sort }, paint: { 'line-color': flowColor, 'line-width': ['get', 'w'] } });
+    add({ id: 'lm-flow-staff', type: 'line', source: 'lm-flows', filter: ['all', road, ['==', ['get', 'action'], 'hospital']], layout: { 'line-join': 'round', ...sort }, paint: { 'line-color': flowColor, 'line-width': ['get', 'w'], 'line-dasharray': STAFF_DASH } });
+    // Funnel: dashes moving from the closed clinic toward the destination (setScene funnel 0..1 steps the dash).
+    add({ id: 'lm-flow-run', type: 'line', source: 'lm-flows', filter: road, layout: { 'line-join': 'round', visibility: 'none', ...sort }, paint: { 'line-color': flowColor, 'line-width': ['get', 'w'], 'line-dasharray': DASH[0] } });
+    // No road route for the pair yet: a thin dashed straight line, never a fake road.
+    add({ id: 'lm-flow-pending', type: 'line', source: 'lm-flows', filter: is('pending'), layout: { 'line-join': 'round' }, paint: { 'line-color': flowColor, 'line-width': 2, 'line-dasharray': STRAIGHT_DASH } });
+    add({ id: 'lm-pr-casing', type: 'line', source: 'lm-pr', layout: round, paint: { 'line-color': T.halo, 'line-width': 8 } });
+    add({ id: 'lm-pr-line', type: 'line', source: 'lm-pr', filter: ['!', is('straight')], layout: round, paint: { 'line-color': act, 'line-width': 5 } });
+    add({ id: 'lm-pr-straight', type: 'line', source: 'lm-pr', filter: is('straight'), layout: { 'line-join': 'round' }, paint: { 'line-color': act, 'line-width': 4, 'line-dasharray': STRAIGHT_DASH } });
+    add({ id: 'lm-pat-ring', type: 'circle', source: 'lm-pat', filter: is('sel'), paint: { 'circle-radius': z(8, 7, 14, 10), 'circle-color': T.ink, 'circle-opacity': 0, 'circle-stroke-color': T.ink, 'circle-stroke-width': 2 } });
+    // Home dots stay small and faint (no lines from homes); the selected patient's dot is full strength.
+    add({ id: 'lm-pat', type: 'circle', source: 'lm-pat', layout: { 'circle-sort-key': ['case', ['get', 'sel'], 1, 0] }, paint: { 'circle-radius': z(8, 3, 14, 5.5), 'circle-color': act, 'circle-stroke-color': T.halo, 'circle-stroke-width': 1.25 } });
 
     add({ id: 'lm-trans-label', type: 'symbol', source: 'lm-trans', minzoom: 12, filter: ['has', 'kv'],
       layout: { 'symbol-placement': 'line', 'symbol-spacing': 420, 'text-field': ['get', 'kv'], 'text-font': fontR, 'text-size': 10.5, 'text-offset': [0, -0.8], 'text-letter-spacing': 0.02 },
@@ -164,10 +200,13 @@
       layout: { 'symbol-placement': 'line-center', 'text-field': 'Feeder (illustrative)', 'text-font': fontR, 'text-size': 10.5, 'text-offset': [0, -0.9] },
       paint: { 'text-color': T.powerInk, ...halo } });
     add({ id: 'lm-flow-count', type: 'symbol', source: 'lm-flow-mid',
-      // Counts collide with each other and the rank tags; changed arcs place first, then the biggest counts.
-      layout: { 'text-field': ['to-string', ['get', 'n']], 'text-font': fontB, 'text-size': 12.5, 'text-allow-overlap': false, 'text-ignore-placement': false, 'text-padding': 4,
+      // One badge per route ("16 patients · 22 min · 14 mi", short below zoom 11). Badges collide with each other and the
+      // rank tags and hide instead of piling up: changed routes place first, then the biggest counts.
+      layout: { 'text-field': ['step', ['zoom'], ['get', 's'], 11, ['get', 'l']], 'text-font': fontB, 'text-size': 12,
+        'text-max-width': 40, 'icon-image': 'lm-badge', 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 2, 1, 2],
+        'text-allow-overlap': false, 'icon-allow-overlap': false, 'text-padding': 4,
         'symbol-sort-key': ['-', ['case', ['get', 'changed'], 0, 1e4], ['get', 'n']] },
-      paint: { 'text-color': T.ink, 'text-halo-color': T.halo, 'text-halo-width': 2.4 } });
+      paint: { 'text-color': ['case', ['get', 'changed'], T.amberInk, is('pending'), T.mute, T.ink] } });
     add({ id: 'lm-pat-label', type: 'symbol', source: 'lm-pat', filter: ['!=', ['get', 'txt'], ''],
       layout: { 'text-field': ['get', 'txt'], 'text-font': fontB, 'text-size': 11.5, 'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
         'text-radial-offset': 0.85, 'text-padding': 4, 'symbol-sort-key': ['case', ['get', 'sel'], 0, 1] },
@@ -177,16 +216,21 @@
   function setSrc(id, data) { const s = ready && map.getSource(id); if (s) s.setData(data); }
 
   function renderAll() {
-    setSrc('lm-trans', D.trans); setSrc('lm-subs', D.subs); setSrc('lm-feeders', D.feeders);
-    renderFp(); renderOutage(true); renderPatients(); renderFlows(); applyPower();
+    setSrc('lm-trans', D.trans); setSrc('lm-subs', D.subs); setSrc('lm-feeders', D.feeders); setSrc('lm-county', D.county);
+    renderFp(); renderOutage(true); renderPatients(); renderFlows(); renderPr(); applyPower(); applyFlowPaint();
   }
 
-  const statusOf = (f) => S.status[f.id] || 'normal';
+  const rawStatus = (f) => S.status[f.id] || 'normal';
+  // In a simulation (setScene) a closed clinic is drawn red only while its power is off.
+  const statusOf = (f) => { const st = rawStatus(f); return st === 'closed' && S.scene && S.scene.power !== 'off' ? 'normal' : st; };
+  const isDead = () => (S.scene ? S.scene.power === 'off' : S.dead);
   const facPt = (f) => f && (D.center[f.id] || [f.lng, f.lat]); // pin the building when its footprint is known
+  const facById = (id) => id != null && S.facilities.find((x) => x.id === id);
   // The facility at a coordinate: exact match first, else the first within ~200 m.
   const near = (x, c, d) => Math.abs(x.lng - c[0]) < d && Math.abs(x.lat - c[1]) < d;
-  const facAt = (c) => c && (S.facilities.find((x) => x.lng === c[0] && x.lat === c[1]) || S.facilities.find((x) => near(x, c, 2e-3)));
+  const facAt = (c) => Array.isArray(c) && (S.facilities.find((x) => x.lng === c[0] && x.lat === c[1]) || S.facilities.find((x) => near(x, c, 2e-3)));
   const snap = (c) => facPt(facAt(c)) || c;
+  const pairOf = (a, b) => (S.routes && S.routes.pairs && a != null && b != null && S.routes.pairs[`${a}|${b}`]) || null;
 
   function renderFp() {
     const byId = Object.fromEntries(S.facilities.map((f) => [f.id, f]));
@@ -208,61 +252,105 @@
   }
 
   function renderPatients() {
+    const pr = S.pr && S.pr.id;
     setSrc('lm-pat', fc((S.patients || []).filter((p) => Number.isFinite(p.lng) && Number.isFinite(p.lat)).map((p) => {
-      const sel = p.id === S.sel, rk = p.rank != null && p.rank <= 3 ? `#${p.rank}` : '';
+      const sel = p.id === S.sel || p.id === pr, rk = p.rank != null && p.rank <= 3 ? `#${p.rank}` : '';
       return point([p.lng, p.lat], { id: p.id, action: p.action || '', sel, txt: sel ? [rk, p.label].filter(Boolean).join(' ') : rk });
     })));
   }
 
-  // Quadratic curve from a to b; every arc bends the same side so shared routes stack instead of crossing.
-  function arc(a, b) {
-    const A = maplibregl.MercatorCoordinate.fromLngLat(a), B = maplibregl.MercatorCoordinate.fromLngLat(b);
-    const dx = B.x - A.x, dy = B.y - A.y, k = 0.34; // control point offset 34% => curve apex ~17% of the distance
-    const cx = (A.x + B.x) / 2 - dy * k, cy = (A.y + B.y) / 2 + dx * k;
-    const at = (t) => {
-      const u = 1 - t, ll = new maplibregl.MercatorCoordinate(u * u * A.x + 2 * u * t * cx + t * t * B.x, u * u * A.y + 2 * u * t * cy + t * t * B.y).toLngLat();
-      return [ll.lng, ll.lat];
-    };
-    return Array.from({ length: 33 }, (_, i) => at(i / 32));
+  // Cumulative route length (degrees, longitude scaled by cos(lat)), so a badge can sit at a fraction of the route.
+  function measure(line) {
+    const k = Math.cos((line[0][1] * Math.PI) / 180), cum = [0];
+    for (let i = 1; i < line.length; i++) cum.push(cum[i - 1] + Math.hypot((line[i][0] - line[i - 1][0]) * k, line[i][1] - line[i - 1][1]));
+    return cum;
+  }
+  function along(c, t) {
+    const L = c.cum[c.cum.length - 1] * t;
+    let i = c.cum.findIndex((d) => d >= L);
+    i = i < 0 ? c.cum.length - 1 : Math.max(1, i);
+    const d0 = c.cum[i - 1], d1 = c.cum[i], u = d1 > d0 ? (L - d0) / (d1 - d0) : 0, A = c.line[i - 1], B = c.line[i];
+    return [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u];
   }
 
-  // One patient's own route: home dot -> destination facility. Early sessions have no flow, so their own `to` is used.
-  function routeOf(id) {
-    const p = id != null && (S.patients || []).find((x) => x.id === id && Number.isFinite(x.lng) && Number.isFinite(x.lat));
-    const f = p && ((S.flows || []).find((x) => x && x.id === id && x.to) || (p.action && Array.isArray(p.to) && p));
-    return f ? { a: [p.lng, p.lat], b: snap(f.to), action: f.action || '', changed: !!f.changed } : null;
+  function badgeText(n, r) {
+    if (!r) return { l: `${plural(n, 'patient')} · Road route pending`, s: `${n} · route pending` };
+    const min = Number.isFinite(r.seconds) ? `${Math.round(r.seconds / 60)} min` : '', mi = Number.isFinite(r.meters) ? `${miles(r.meters)} mi` : '';
+    return { l: [plural(n, 'patient'), min, mi].filter(Boolean).join(' · '), s: [n, min || mi].filter(Boolean).join(' · ') };
   }
 
-  // Flows sharing from/to/action merge into one arc with a count; the selected patient's route is drawn on top.
+  // E1 funnel: patients gather at their closed clinic; one road route per (closed clinic, destination, action), from
+  // data/routes-<region>.json. A pair without a route is a thin dashed straight line labeled "Road route pending".
+  // Early sessions draw no route (the clinic label carries "N come in early").
   function renderFlows() {
-    const groups = new Map(), lines = [], sel = routeOf(S.sel), prevT = new Map(counts.map((c) => [c.k, c.t]));
+    const groups = new Map(), lines = [], prevT = new Map(counts.map((c) => [c.k, c.t]));
     counts = [];
     (S.flows || []).forEach((f) => {
-      if (!f || !f.from || !f.to) return;
-      const a = snap(f.from), b = snap(f.to), k = `${a}|${b}|${f.action}`;
-      if (a[0] === b[0] && a[1] === b[1]) return;
-      const g = groups.get(k) || groups.set(k, { a, b, action: f.action || '', n: 0, changed: false }).get(k);
+      if (!f || !f.from || !f.to || f.action === 'early_session') return;
+      const fromId = f.fromId != null ? f.fromId : (facAt(f.from) || {}).id, toId = f.toId != null ? f.toId : (facAt(f.to) || {}).id;
+      if (fromId != null && fromId === toId) return;
+      const k = `${fromId != null ? fromId : f.from}|${toId != null ? toId : f.to}|${f.action}`;
+      const g = groups.get(k) || groups.set(k, { fromId, toId, a: facPt(facById(fromId)) || snap(f.from), b: facPt(facById(toId)) || snap(f.to),
+        action: f.action || '', n: 0, changed: false }).get(k);
       g.n++; g.changed = g.changed || !!f.changed;
     });
     groups.forEach((g, k) => {
-      const line = arc(g.a, g.b), props = { action: g.action, changed: g.changed, n: g.n, w: 2 + 1.6 * Math.sqrt(g.n), sel: false };
+      const r = pairOf(g.fromId, g.toId), road = r && isLine(r.line), line = road ? r.line : [g.a, g.b];
+      const props = { action: g.action, changed: g.changed, n: g.n, w: 3 + 1.4 * Math.sqrt(g.n), pending: !road, ...badgeText(g.n, road && r) };
       lines.push({ type: 'Feature', properties: props, geometry: { type: 'LineString', coordinates: line } });
-      counts.push({ k, line, props, t: prevT.get(k) || 0.5 });
+      counts.push({ k, line, cum: measure(line), props, t: prevT.get(k) || 0.5 });
     });
-    if (sel) lines.push({ type: 'Feature', properties: { action: sel.action, changed: sel.changed, n: 1, w: 4, sel: true }, geometry: { type: 'LineString', coordinates: arc(sel.a, sel.b) } });
     setSrc('lm-flows', fc(lines)); writeCounts();
-    if (!ready) return;
-    const o = sel ? ['case', ['get', 'sel'], 1, 0.3] : 1;
-    ['lm-flow-casing', 'lm-flow-line', 'lm-flow-staff'].forEach((id) => map.setPaintProperty(id, 'line-opacity', o));
-    map.setPaintProperty('lm-flow-count', 'text-opacity', sel ? 0.3 : 1);
   }
 
-  const countAt = (c) => c.line[Math.round(c.t * 32)];
-  function writeCounts() { setSrc('lm-flow-mid', fc(counts.map((c) => point(countAt(c), c.props)))); }
+  function writeCounts() { setSrc('lm-flow-mid', fc(counts.filter((c) => !c.hide).map((c) => point(along(c, c.t), c.props)))); }
+
+  // E2: the selected patient's own route on top (road line, else a dashed straight line) and a callout at the destination.
+  function renderPr() {
+    const p = S.pr, road = p && isLine(p.line);
+    setSrc('lm-pr', p ? fc([{ type: 'Feature', properties: { action: p.action, straight: !road }, geometry: { type: 'LineString', coordinates: road ? p.line : [p.home, p.to] } }]) : EMPTY);
+    if (!map) return;
+    if (!call.marker) {
+      call.el = document.createElement('div');
+      call.el.className = 'lm-call';
+      call.el.style.zIndex = 8; // above facility pins, below a hovered pin
+      call.marker = new maplibregl.Marker({ element: call.el, anchor: 'top-left' });
+    }
+    const facts = p && [Number.isFinite(p.minutes) && `${Math.round(p.minutes)} min`, Number.isFinite(p.miles) && `${p.miles} mi`].filter(Boolean).join(' · ');
+    const rows = !p ? [] : [[p.label || (facts && `${facts} by road`), 'lm-call-t'],
+      [!road && (p.note || 'Road route unavailable; straight line shown'), 'lm-call-n'],
+      [p.minutes > TOO_FAR && `Too far: over ${TOO_FAR} min by road`, 'lm-call-f']].filter(([t]) => t);
+    if (!rows.length) { call.marker.remove(); call.w = 0; return; }
+    // Non-breaking space keeps a number with its unit ("21 min", "3 mi") when the callout wraps; the label may come from app.js.
+    call.el.replaceChildren(...rows.map(([t, c]) => { const s = document.createElement('span'); s.className = c; s.textContent = t.replace(/(\d) (?=(min|mi)\b)/g, '$1\u00a0'); return s; }));
+    call.marker.setLngLat(p.to).addTo(map);
+    call.w = call.el.offsetWidth; call.h = call.el.offsetHeight;
+  }
+
+  // Opacity and the funnel. A shown patient route dims everything else to 0.35. In a simulation (setScene) the routes
+  // stay faint until patients flow: while 0 < funnel < 1 dashes move from the closed clinic outward, at 1 they are solid.
+  function applyFlowPaint() {
+    if (!ready) return;
+    const dim = S.pr ? 0.35 : 1, sc = S.scene, f = sc ? sc.funnel : 1, run = !!sc && !reduced() && f > 0 && f < 1;
+    const base = dim * (f >= 1 || (f > 0 && reduced()) ? 1 : 0.35);
+    ['lm-flow-casing', 'lm-flow-line', 'lm-flow-staff', 'lm-flow-pending'].forEach((id) => map.setPaintProperty(id, 'line-opacity', base));
+    map.setLayoutProperty('lm-flow-run', 'visibility', run ? 'visible' : 'none');
+    if (run) map.setPaintProperty('lm-flow-run', 'line-dasharray', DASH[Math.floor(f * FUNNEL_STEPS) % DASH.length]);
+    map.setPaintProperty('lm-flow-run', 'line-opacity', dim);
+    map.setPaintProperty('lm-flow-count', 'text-opacity', dim);
+    map.setPaintProperty('lm-flow-count', 'icon-opacity', dim);
+    const dot = ['case', is('sel'), 1, ['==', ['get', 'action'], ''], 0.85 * dim, 0.55 * dim];
+    map.setPaintProperty('lm-pat', 'circle-opacity', dot);
+    map.setPaintProperty('lm-pat', 'circle-stroke-opacity', dot);
+    map.setPaintProperty('lm-pat-label', 'text-opacity', ['case', is('sel'), 1, dim]);
+  }
 
   function applyPower() {
     if (!ready) return;
-    const dead = (k) => ['all', S.dead, ['==', ['get', k], true]], live = (k) => ['!', dead(k)];
+    const off = isDead(), dead = (k) => ['all', off, ['==', ['get', k], true]], live = (k) => ['!', dead(k)];
+    // Power off: the shutoff area goes dark under the grid, buildings and labels.
+    map.setPaintProperty('lm-outage-mask', 'fill-opacity-transition', { duration: reduced() ? 0 : 600, delay: 0 });
+    map.setPaintProperty('lm-outage-mask', 'fill-opacity', off ? (S.theme === 'dark' ? 0.5 : 0.22) : 0);
     map.setFilter('lm-trans-line', live('in_outage')); map.setFilter('lm-trans-dead', dead('in_outage')); map.setFilter('lm-trans-dead-casing', dead('in_outage'));
     map.setFilter('lm-feeder-live', live('deenergized')); map.setFilter('lm-feeder-flow', live('deenergized'));
     map.setFilter('lm-feeder-dead', dead('deenergized'));
@@ -287,7 +375,7 @@
   // Runs only while wanted: not paused, motion allowed, tab visible, zoomed in enough to see feeders, a live feeder exists.
   function syncAnim() {
     const want = ready && S.anim && !reduced() && !document.hidden && map.getZoom() >= ANIM_MIN_ZOOM
-      && D.feeders.features.some((f) => !(S.dead && f.properties.deenergized));
+      && D.feeders.features.some((f) => !(isDead() && f.properties.deenergized));
     if (want && !raf) raf = requestAnimationFrame(tick);
     else if (!want && raf) { cancelAnimationFrame(raf); raf = 0; }
   }
@@ -320,6 +408,15 @@
 .lm-fac[data-st=closed] .lm-sub{color:var(--red-ink)}
 .lm-fac[data-st=receiving] .lm-sub{color:var(--green-ink)}
 .lm-fac.no-sub .lm-sub{display:none}
+.lm-early{display:none;align-self:flex-start;margin:2px 0 1px;padding:0 5px;border-radius:4px;background:var(--green-bg);color:var(--green-ink);font-size:11.5px;font-weight:600}
+.lm-fac.lbl-left .lm-early{align-self:flex-end}
+.lm-fac.has-early .lm-early{display:block}
+.lm-fac{transition:opacity .2s ease-out}
+.lm-fac.lm-dim{opacity:.35}
+.lm-call{pointer-events:none;box-sizing:border-box;max-width:260px;display:flex;flex-direction:column;gap:2px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--f-ui);font-size:12.5px;line-height:1.3;box-shadow:var(--shadow)}
+.lm-call-t{font-weight:600}
+.lm-call-n{color:var(--mute)}
+.lm-call-f{color:var(--red-ink);font-weight:600}
 .lm-area{display:inline-block;pointer-events:none;white-space:nowrap;font-family:var(--f-ui);font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--map-outage);background:var(--map-halo);padding:0 4px;border-radius:4px;opacity:0;transition:opacity .4s ease-out}
 .lm-area.on{opacity:1}
 .lm-fac.no-label .lm-txt{visibility:hidden}
@@ -334,16 +431,18 @@
 .maplibregl-ctrl-attrib a{color:inherit}
 .maplibregl-ctrl-scale{border-color:var(--ink-2)}
 :root[data-theme=dark] .maplibregl-ctrl-icon,:root[data-theme=dark] .maplibregl-ctrl-attrib-button{filter:invert(1) hue-rotate(180deg)}
-@media (prefers-reduced-motion:reduce){.lm-pin,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
+@media (prefers-reduced-motion:reduce){.lm-fac,.lm-pin,.lm-area{transition:none}.lm-fac:hover .lm-pin{transform:none}}`;
     document.head.appendChild(css);
   }
 
   // Same rule as the panel's short name (app.js), so the visible pin text is part of its accessible name.
   const shortName = (n) => String(n || '').replace(/\s+Dialysis(\s+(Center|Clinic))?$/i, '');
 
+  // st is the real status (not the simulated look), so a closed clinic always says what happens to its power.
   function subLabel(f, st, n) {
     if (f.kind === 'hospital') return n ? `Hospital · ${n} staff call${n > 1 ? 's' : ''}` : 'Hospital';
-    const s = st === 'closed' ? 'loses power' : st === 'receiving' ? `receiving${n ? ' ' + n : ''}` : '';
+    const s = st === 'closed' ? ({ off: 'no power', restored: 'power back' }[S.scene && S.scene.power] || 'loses power')
+      : st === 'receiving' ? `receiving${n ? ' ' + n : ''}` : '';
     if (f.home) return s ? `Home · ${s}` : 'Home clinic';
     if (s) return s[0].toUpperCase() + s.slice(1);
     return f.stations ? `${f.stations} stations` : 'Dialysis';
@@ -358,10 +457,10 @@
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'lm-fac';
-      el.innerHTML = `<span class="lm-stem"></span><span class="lm-pin">${f.kind === 'hospital' ? HOSP : DROP}</span><span class="lm-txt"><span class="lm-name"></span><span class="lm-sub"></span></span>`;
+      el.innerHTML = `<span class="lm-stem"></span><span class="lm-pin">${f.kind === 'hospital' ? HOSP : DROP}</span><span class="lm-txt"><span class="lm-name"></span><span class="lm-sub"></span><span class="lm-early"></span></span>`;
       el.addEventListener('click', (e) => { e.stopPropagation(); if (opts.onSelect) opts.onSelect({ type: 'facility', id: f.id }); });
       const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left' }).setLngLat(facPt(f)).addTo(map);
-      markers.push({ f, el, marker, name: el.querySelector('.lm-name'), sub: el.querySelector('.lm-sub'), txt: el.querySelector('.lm-txt'), key: '' });
+      markers.push({ f, el, marker, name: el.querySelector('.lm-name'), sub: el.querySelector('.lm-sub'), early: el.querySelector('.lm-early'), txt: el.querySelector('.lm-txt'), key: '' });
     });
     updateMarkers();
   }
@@ -370,10 +469,11 @@
     if (!map) return;
     const zm = map.getZoom(), short = zm < 12, noSub = zm < 11, tall = zm >= 14.5, small = zm < 10.5;
     markers.forEach((m) => {
-      const f = m.f, st = statusOf(f), n = S.recv[f.id] || 0, name = short ? shortName(f.name) : f.name, sub = subLabel(f, st, n);
+      const f = m.f, raw = rawStatus(f), st = statusOf(f), n = S.recv[f.id] || 0, name = short ? shortName(f.name) : f.name, sub = subLabel(f, raw, n);
+      const early = S.early[f.id] ? `${S.early[f.id]} come in early` : '', dim = !!S.pr && !S.pr.keep.has(f.id);
       // Status text stays at every zoom, so closed and receiving never rely on pin color alone.
-      const ns = noSub && !f.home && (st === 'normal' || (f.kind === 'hospital' && !n));
-      const key = `${st}|${name}|${sub}|${ns}|${tall}|${small}`;
+      const ns = noSub && !f.home && (raw === 'normal' || (f.kind === 'hospital' && !n));
+      const key = `${st}|${name}|${sub}|${early}|${dim}|${ns}|${tall}|${small}`;
       if (key === m.key) return;
       m.key = key;
       m.el.dataset.st = st;
@@ -382,12 +482,15 @@
       m.el.classList.toggle('no-sub', ns);
       m.el.classList.toggle('is-tall', tall);
       m.el.classList.toggle('is-small', small);
+      m.el.classList.toggle('has-early', !!early);
+      m.el.classList.toggle('lm-dim', dim);
       m.stem = tall ? 30 : small ? 7 : 10;
       m.pin = small ? (f.home ? 26 : 24) : (f.home ? 30 : 26);
       m.marker.setOffset([-m.pin / 2, 0]); // keeps the stem foot on the point
       m.name.textContent = name;
       m.sub.textContent = sub;
-      m.el.setAttribute('aria-label', `${f.name}. ${sub}`);
+      m.early.textContent = early;
+      m.el.setAttribute('aria-label', `${f.name}. ${sub}${early ? `. ${early}` : ''}`);
       m.el.style.zIndex = f.home ? 3 : st === 'normal' ? 1 : 2;
       m.rank = f.home ? 0 : RANK[st] != null ? RANK[st] : 4;
       m.lw = m.txt.offsetWidth; m.lh = m.txt.offsetHeight;
@@ -404,18 +507,26 @@
       if (m.el.tabIndex !== tab) m.el.tabIndex = tab; // no focus stops on pins outside the map
       return { m, p, pin: [p.x - m.pin / 2 - 2, p.y - m.stem - m.pin - 2, p.x + m.pin / 2 + 2, p.y + 3] };
     });
-    const placed = items.map((i) => i.pin);
+    // While one patient's route is shown, faded pins do not push labels away, and faded labels place last.
+    const faded = (m) => m.el.classList.contains('lm-dim');
+    const placed = items.filter((i) => !faded(i.m)).map((i) => i.pin);
     const hit = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+    if (S.pr && call.w) { // route callout under the destination pin (above it near the bottom edge), kept inside the map
+      const q = map.project(S.pr.to), w = call.w, h = call.h, below = q.y + 12, above = q.y - 46 - h;
+      const y = below + h <= H - 8 || above < 8 ? below : above, x = clamp(q.x - w / 2, 8, Math.max(8, W - w - 8));
+      call.marker.setOffset([x - q.x, y - q.y]);
+      placed.push([x, y, x + w, y + h]);
+    }
+    const npin = placed.length;
     const placeArea = () => { // area label: where it is now, else center, else the first nearby spot no pin or label covers
       if (!area.box) return;
-      const labels = placed.slice(items.length); // pins come first; after them only the home label is placed yet
+      const labels = placed.slice(npin); // pins (and the route callout) come first; after them only the home label is placed yet
       const c = map.project(area.marker.getLngLat()), [w, h] = area.box, dx = w / 2 + 12, dy = h + 6, cur = area.marker.getOffset();
       const at = ([x, y]) => [c.x + x - w / 2, c.y + y - h / 2, c.x + x + w / 2, c.y + y + h / 2];
       const fits = (o) => { const b = at(o); return b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !placed.some((p) => hit(b, p)); };
-      const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
       // Nothing free: centered, but pulled inside the map edges while the area's center is on screen.
       const off = [[cur.x, cur.y], [0, 0], [dx, 0], [0, dy], [0, -dy], [-dx, 0], [dx, dy], [dx, -dy]].find(fits)
-        || (c.x >= 0 && c.x <= W && c.y >= 0 && c.y <= H ? [cl(0, w / 2 - c.x, W - w / 2 - c.x), cl(0, h / 2 - c.y, H - h / 2 - c.y)] : [0, 0]);
+        || (c.x >= 0 && c.x <= W && c.y >= 0 && c.y <= H ? [clamp(0, w / 2 - c.x, W - w / 2 - c.x), clamp(0, h / 2 - c.y, H - h / 2 - c.y)] : [0, 0]);
       if (cur.x !== off[0] || cur.y !== off[1]) area.marker.setOffset(off);
       // Over a label or past the map edge: hide it; the red area and its legend row still say what it is.
       const b = at(off), show = b[0] >= 0 && b[1] >= 0 && b[2] <= W && b[3] <= H && !labels.some((p) => hit(b, p));
@@ -423,7 +534,7 @@
       if (show) placed.push(b);
     };
     let areaDone = false;
-    items.sort((a, b) => a.m.rank - b.m.rank).forEach(({ m, p, pin }) => {
+    items.sort((a, b) => a.m.rank + 10 * faded(a.m) - b.m.rank - 10 * faded(b.m)).forEach(({ m, p, pin }) => {
       if (!m.f.home && !areaDone) { areaDone = true; placeArea(); }
       const cy = p.y - m.stem - m.pin / 2, top = cy - Math.max(m.lh, m.pin) / 2, bottom = cy + Math.max(m.lh, m.pin) / 2 + 1; // label is centered on the pin
       const right = [p.x + m.pin / 2 + 2, top - 1, p.x + m.pin / 2 + 6 + m.lw, bottom];
@@ -436,12 +547,15 @@
       m.el.classList.toggle('lbl-left', box === left);
     });
     if (!areaDone) placeArea();
+    // Route badges slide along their route off pins, labels and each other. The symbol layer cannot see DOM pins, so a
+    // badge with no free spot is hidden (the route line and the Routes table still carry its numbers).
     let moved = false;
-    [...counts].sort((a, b) => b.props.changed - a.props.changed).forEach((c) => {
-      const w = String(c.props.n).length * 8 + 8, box = (t) => { const q = map.project(c.line[Math.round(t * 32)]); return [q.x - w / 2, q.y - 9, q.x + w / 2, q.y + 9]; };
-      const t = [c.t, 0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78].find((x) => !placed.some((b) => hit(box(x), b))) || c.t;
-      placed.push(box(t));
-      if (t !== c.t) { c.t = t; moved = true; }
+    const short = map.getZoom() < 11;
+    [...counts].sort((a, b) => b.props.changed - a.props.changed || b.props.n - a.props.n).forEach((c) => {
+      const w = (short ? c.props.s : c.props.l).length * 7 + 20, box = (t) => { const q = map.project(along(c, t)); return [q.x - w / 2, q.y - 12, q.x + w / 2, q.y + 12]; };
+      const t = [c.t, 0.5, 0.4, 0.6, 0.3, 0.7, 0.22, 0.78].find((x) => !placed.some((b) => hit(box(x), b))), hide = t == null;
+      if (!hide) placed.push(box(t));
+      if (hide !== !!c.hide || (!hide && t !== c.t)) { c.hide = hide; if (!hide) c.t = t; moved = true; }
     });
     if (moved) writeCounts();
   }
@@ -508,19 +622,32 @@
     return { type: 'Polygon', coordinates: g.coordinates.map((ring) => ring.map(([x, y]) => [cx + (x - cx) * 1.03, cy + (y - cy) * 1.03])) };
   }
 
+  // Convex hull of LngLats (monotone chain on Mercator y, where the camera's projection keeps straight lines straight).
+  function hull(pts) {
+    if (pts.length < 4) return pts;
+    const P = pts.map((p) => [p.lng, Math.log(Math.tan(Math.PI / 4 + (p.lat * Math.PI) / 360)), p]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const half = (list) => list.reduce((h, q) => { while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); return h; }, []);
+    const lo = half(P), up = half(P.slice().reverse());
+    return [...lo.slice(0, -1), ...up.slice(0, -1)].map((q) => q[2]);
+  }
+
   // Camera that fits pts inside the padded view at this pitch. cameraForBounds ignores pitch, so search zoom and
   // center on a copy of the map transform (MapLibre 4.x internals; falls back to the flat answer if they are missing).
-  function camFor(pts, pitch, bearing, maxZoom) {
-    const ll = pts.filter(Boolean).map((p) => maplibregl.LngLat.convert(p));
-    if (!ll.length) return null;
+  function camFor(pts, pitch, bearing, maxZoom, pad = FIT_PAD) {
+    pts = pts.filter(Boolean).map((p) => maplibregl.LngLat.convert(p));
+    if (!pts.length) return null;
+    const el = map.getContainer();
+    pad = Math.min(pad, el.clientWidth / 5, el.clientHeight / 5); // small maps (phones) keep room for the content
     const bounds = new maplibregl.LngLatBounds();
-    ll.forEach((p) => bounds.extend(p));
-    const flat = map.cameraForBounds(bounds, { padding: FIT_PAD, bearing, maxZoom });
+    pts.forEach((p) => bounds.extend(p));
+    const ll = hull(pts); // fitting the hull fits every point, and stays fast with hundreds of homes and route points
+    const flat = map.cameraForBounds(bounds, { padding: pad, bearing, maxZoom });
     if (!flat) return null;
     const cam = { center: flat.center, zoom: flat.zoom, pitch, bearing };
     const tr = pitch && map.transform && map.transform.clone ? map.transform.clone() : null;
     if (!tr || !tr.locationPoint || !tr.pointLocation) return cam;
-    const P = tr.padding, box = [P.left + FIT_PAD, P.top + FIT_PAD, tr.width - P.right - FIT_PAD, tr.height - P.bottom - FIT_PAD];
+    const P = tr.padding, box = [P.left + pad, P.top + pad, tr.width - P.right - pad, tr.height - P.bottom - pad];
     if (box[2] <= box[0] || box[3] <= box[1]) return cam;
     tr.bearing = bearing; tr.pitch = pitch; tr.center = flat.center;
     const place = (zm) => { // center the points in the box at this zoom; true when they fit
@@ -605,6 +732,8 @@
     }));
     D.subs = r.substations || EMPTY;
     D.feeders = r.feeders || EMPTY;
+    D.county = r.county || EMPTY; // E9: faint outline when the region has one
+    S.pr = null; renderPr(); // a patient route never outlives its county
     D.fp = ((r.footprints || EMPTY).features || []).map((f) => ({ id: f.properties.facility_id, levels: f.properties.levels,
       gen: f.properties.source === 'generated', geometry: grow(f.geometry) }));
     D.center = Object.fromEntries(D.fp.filter((f) => f.geometry && f.geometry.type === 'Polygon').map((f) => {
@@ -613,13 +742,22 @@
     }));
     computeRecv();
     buildMarkers();
-    if (ready) { setSrc('lm-trans', D.trans); setSrc('lm-subs', D.subs); setSrc('lm-feeders', D.feeders); renderFp(); renderFlows(); }
+    if (ready) { setSrc('lm-trans', D.trans); setSrc('lm-subs', D.subs); setSrc('lm-feeders', D.feeders); setSrc('lm-county', D.county); renderFp(); renderFlows(); }
     syncAnim();
   }
 
+  // Per facility: patients moving in (routes) and patients coming in early (no route; shown on the clinic label).
   function computeRecv() {
-    S.recv = {};
-    (S.flows || []).forEach((fl) => { const f = fl && facAt(fl.to); if (f) S.recv[f.id] = (S.recv[f.id] || 0) + 1; });
+    S.recv = {}; S.early = {};
+    (S.flows || []).forEach((fl) => {
+      const f = fl && fl.action !== 'early_session' && (facById(fl.toId) || facAt(fl.to));
+      if (f) S.recv[f.id] = (S.recv[f.id] || 0) + 1;
+    });
+    const home = S.facilities.find((x) => x.home);
+    (S.patients || []).forEach((p) => {
+      const f = p && p.action === 'early_session' && (facAt(p.to) || home);
+      if (f) S.early[f.id] = (S.early[f.id] || 0) + 1;
+    });
   }
 
   function focus(target, o = {}) {
@@ -632,7 +770,7 @@
       map.flyTo({ ...cam, duration, essential: true });
       flying = [target, o]; // after flyTo: the flight it interrupts ends (moveend) inside that call
     };
-    const fit = (pts, kind, maxZoom = 14.5) => { const [pitch, bearing] = view(kind); go(camFor(pts, pitch, bearing, maxZoom)); };
+    const fit = (pts, kind, maxZoom = 14.5, pad) => { const [pitch, bearing] = view(kind); go(camFor(pts, pitch, bearing, maxZoom, pad)); };
     const at = (center, zoom, kind) => { const [pitch, bearing] = view(kind); go({ center, zoom, pitch, bearing }); };
     const home = S.facilities.find((f) => f.home);
     const bbox = S.region && S.region.bbox;
@@ -648,13 +786,14 @@
     if (target === 'flows') { // after a re-plan: the changed routes and home (D7); else, or with { all: true }, the whole plan and area
       const fl = (S.flows || []).filter((f) => f && f.from && f.to), ch = o.all ? [] : fl.filter((f) => f.changed);
       const pts = (ch.length ? ch : fl).flatMap((f) => [snap(f.from), snap(f.to)]);
-      return pts.length ? fit([...pts, ...(ch.length ? [facPt(home)] : whole())], 'over') : region();
+      const roads = counts.filter((c) => !ch.length || c.props.changed).flatMap((c) => c.line); // roads can bulge past their ends
+      return pts.length ? fit([...pts, ...roads, ...(ch.length ? [facPt(home)] : whole())], 'over') : region();
     }
     if (target.facility != null) { const f = S.facilities.find((x) => x.id === target.facility); return f && at(facPt(f), 15.5, 'near'); }
-    if (target.patient != null) { // their home and destination together, else just their home
-      const r = routeOf(target.patient);
-      if (r) return fit([r.a, r.b], 'over', 14);
-      const p = (S.patients || []).find((x) => x.id === target.patient);
+    if (target.patient != null) { // their route (home and destination together), else just their home
+      const pr = S.pr && S.pr.id === target.patient && S.pr, p = (S.patients || []).find((x) => x.id === target.patient);
+      if (pr) return fit([pr.home, pr.to, ...(isLine(pr.line) ? pr.line : [])], 'over', 14, 110); // room for the name and the callout
+      if (p && Array.isArray(p.to)) return fit([[p.lng, p.lat], snap(p.to)], 'over', 14);
       return p && at([p.lng, p.lat], 14, 'near');
     }
   }
@@ -674,16 +813,43 @@
     showOutage(g) { S.outage = g || null; renderOutage(false); showAreaLabel(); },
     setPower(dead) { S.dead = !!dead; applyPower(); syncAnim(); },
     setFacilityStatus(statusById) { S.status = { ...(statusById || {}) }; renderFp(); updateMarkers(); },
-    setPatients(list) { S.patients = list || null; renderPatients(); renderFlows(); },
+    setPatients(list) { S.patients = list || null; computeRecv(); renderPatients(); updateMarkers(); },
+    // Items {id, fromId, toId, from:[lng,lat], to:[lng,lat], action, changed}; ids are optional (found from the coordinates).
     setFlows(list) { S.flows = list || null; computeRecv(); renderFlows(); updateMarkers(); },
+    // Parsed data/routes-<region>.json, or null (file missing: every route is a straight "Road route pending" line).
+    setRoutes(data) { S.routes = data && typeof data === 'object' ? data : null; renderFlows(); updateMarkers(); },
+    routeInfo(fromId, toId) {
+      const r = pairOf(fromId, toId);
+      return r && (Number.isFinite(r.seconds) || Number.isFinite(r.meters))
+        ? { minutes: Number.isFinite(r.seconds) ? Math.round(r.seconds / 60) : null, miles: Number.isFinite(r.meters) ? Number(miles(r.meters)) : null } : null;
+    },
+    // E2: {id, home, to, line|null, minutes, miles, label, action?, note?}; draws that route on top, dims the rest, fits it.
+    showPatientRoute(p) {
+      if (!p || !Array.isArray(p.home) || !Array.isArray(p.to)) S.pr = null;
+      else {
+        const fl = (S.flows || []).find((x) => x && x.id === p.id), me = (S.patients || []).find((x) => x.id === p.id);
+        const from = fl && (facById(fl.fromId) || facAt(fl.from)), to = facAt(p.to);
+        S.pr = { ...p, action: p.action || (me && me.action) || (fl && fl.action) || 'transfer', keep: new Set([from, to].filter(Boolean).map((f) => f.id)) };
+      }
+      renderPatients(); renderPr(); applyFlowPaint(); updateMarkers();
+      if (S.pr) focus({ patient: S.pr.id });
+    },
+    // E8: {power:'on'|'off'|'restored', funnel:0..1}; null hands power back to setPower. Called every animation frame,
+    // so only a power change redraws the grid and clinics.
+    setScene(sc) {
+      const prev = S.scene && S.scene.power, f = sc && Number(sc.funnel);
+      S.scene = sc ? { power: ['on', 'off', 'restored'].includes(sc.power) ? sc.power : 'on', funnel: Number.isFinite(f) ? clamp(f, 0, 1) : 1 } : null;
+      if ((S.scene && S.scene.power) !== prev) { applyPower(); renderFp(); updateMarkers(); syncAnim(); }
+      applyFlowPaint();
+    },
     focus,
     set3D,
     is3D: () => S.is3D,
-    // Ring + label on the dot; when the patient has a route, draw it on top and fit their home and destination.
+    // Ring + label on the dot. A route shown for another patient goes away (it belongs to the selected patient).
     selectPatient(id) {
       S.sel = id == null ? null : id;
-      renderPatients(); renderFlows();
-      if (S.sel != null && routeOf(S.sel)) focus({ patient: S.sel });
+      if (S.pr && S.pr.id !== S.sel) S.pr = null;
+      renderPatients(); renderPr(); applyFlowPaint(); updateMarkers();
     },
     setAnimation(on) { S.anim = on !== false; syncAnim(); },
     setPadding(p) {

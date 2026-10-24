@@ -30,8 +30,73 @@
   const DIFF_FIELDS = ['action', 'clinic_id', 'slot', 'drive_minutes', 'drive_source', 'pickup_time', 'book_today', 'flags', 'status', 'pinned'];
   const DECISION = ['action', 'clinic_id', 'slot'];
   const NUMBERS = { no: 0, zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  // Template translations for patient messages (tour only). d is a local Date read with getUTC*.
+  // v: {name, home, clinic, street, callback, oldDay, day, m, dd, t (new time), same (same date), ride}
+  const hm = d => `${(d.getUTCHours() + 11) % 12 + 1}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  const MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const BUWAN = ['Enero', 'Pebrero', 'Marso', 'Abril', 'Mayo', 'Hunyo', 'Hulyo', 'Agosto', 'Setyembre', 'Oktubre', 'Nobyembre', 'Disyembre'];
+  const alas = t => (t.startsWith('1:') ? 'a la ' : 'a las ') + t;
+  const L10N = {
+    es: {
+      days: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+      time: d => `${hm(d)} ${d.getUTCHours() < 12 ? 'a. m.' : 'p. m.'}`,
+      para: t => `El paratránsito pasará por usted ${alas(t)}.`,
+      leave: t => `Salga de su casa a más tardar ${alas(t)}.`,
+      text: v => `${v.name}, le habla ${v.home}. Un corte de electricidad programado cambia su tratamiento del ${v.oldDay} ` +
+        (v.same ? alas(v.t) : `al ${v.day} ${v.dd} de ${MES[v.m - 1]}, ${alas(v.t)}`) +
+        `, en ${v.clinic}, ${v.street}. ${v.ride} ¿Preguntas? Llame al ${v.callback}.`,
+    },
+    zh: {
+      days: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
+      time: d => `${d.getUTCHours() < 12 ? '上午' : '下午'}${hm(d)}`,
+      para: t => `辅助交通车将于${t}来接您。`,
+      leave: t => `请于${t}前出门。`,
+      text: v => `${v.name}，您好，这里是${v.home}。由于计划停电，您${v.oldDay}的透析治疗改到` +
+        (v.same ? `当天${v.t}` : `${v.m}月${v.dd}日（${v.day}）${v.t}`) +
+        `，地点：${v.clinic}（${v.street}）。${v.ride}如有疑问，请致电 ${v.callback}。`,
+    },
+    yue: {
+      days: ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'],
+      time: d => `${d.getUTCHours() < 12 ? '上午' : '下午'}${hm(d)}`,
+      para: t => `復康巴士會喺${t}嚟接你。`,
+      leave: t => `請喺${t}之前出門。`,
+      text: v => `${v.name}，你好，呢度係${v.home}。因為計劃停電，你${v.oldDay}嘅洗腎療程改咗去` +
+        (v.same ? `當日${v.t}` : `${v.m}月${v.dd}日（${v.day}）${v.t}`) +
+        `，地點：${v.clinic}（${v.street}）。${v.ride}如有疑問，請致電 ${v.callback}。`,
+    },
+    ko: {
+      days: ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'],
+      time: d => `${d.getUTCHours() < 12 ? '오전' : '오후'} ${hm(d)}`,
+      para: t => `장애인 교통 서비스 차량이 ${t}에 모시러 갑니다.`,
+      leave: t => `${t}까지 집에서 출발해 주세요.`,
+      text: v => `${v.name}님, ${v.home}입니다. 계획 정전으로 ${v.oldDay} 투석 치료 일정이 바뀌었습니다. 새 일정: ` +
+        (v.same ? `같은 날 ${v.t}` : `${v.m}월 ${v.dd}일 ${v.day} ${v.t}`) +
+        `, ${v.clinic}(${v.street}). ${v.ride} 문의: ${v.callback}.`,
+    },
+    vi: {
+      days: ['Chủ Nhật', 'thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy'],
+      time: d => `${hm(d)} ${d.getUTCHours() < 12 ? 'sáng' : d.getUTCHours() < 18 ? 'chiều' : 'tối'}`,
+      para: t => `Xe đưa đón (paratransit) sẽ đến đón quý vị lúc ${t}.`,
+      leave: t => `Vui lòng rời nhà trước ${t}.`,
+      text: v => `Xin chào ${v.name}, đây là ${v.home}. Do cắt điện theo kế hoạch, buổi lọc máu ${v.oldDay} của quý vị được dời sang ` +
+        (v.same ? `${v.t} cùng ngày` : `${v.t} ${v.day}, ngày ${v.dd} tháng ${v.m}`) +
+        `, tại ${v.clinic}, ${v.street}. ${v.ride} Nếu có thắc mắc, vui lòng gọi ${v.callback}.`,
+    },
+    tl: {
+      days: ['Linggo', 'Lunes', 'Martes', 'Miyerkules', 'Huwebes', 'Biyernes', 'Sabado'],
+      time: d => `${hm(d)} ng ${d.getUTCHours() < 12 ? 'umaga' : d.getUTCHours() < 18 ? 'hapon' : 'gabi'}`,
+      para: t => `Susunduin kayo ng paratransit nang ${t}.`,
+      leave: t => `Umalis po kayo ng bahay nang ${t}.`,
+      text: v => `Magandang araw, ${v.name}. Ito ang ${v.home}. Dahil sa nakaplanong pagpatay ng kuryente, ` +
+        (v.same ? `inilipat ang oras ng inyong dialysis sa ${v.oldDay} sa ${v.t}` :
+          `inilipat ang inyong dialysis mula ${v.oldDay} patungong ${v.day}, ${BUWAN[v.m - 1]} ${v.dd}, ${v.t}`) +
+        `, sa ${v.clinic}, ${v.street}. ${v.ride} May tanong? Tumawag sa ${v.callback}.`,
+    },
+  };
+
   const EDIT_STATUSES = ['approved', 'confirmed', 'declined', 'no_answer'];
 
+  const street = c => c.address.split(',')[0].replace(/\.$/, '');  // some CMS addresses end in a period
   const pad = (n, w = 2) => String(n).padStart(w, '0');
   const iso = t => new Date(t - PDT).toISOString().slice(0, 19) + '-07:00';
   const local = t => new Date(t - PDT);  // read with getUTC*
@@ -197,21 +262,38 @@
         : `${weekday(next)}, ${MONTH[local(next).getUTCMonth()]} ${local(next).getUTCDate()}, ${clock(next)},`;
       const ride = row.ride === 'paratransit' ? `Paratransit picks you up at ${pickup}.` : `Please leave home by ${pickup}.`;
       return `${p.name}, this is ${fac[p.center_id].name.replace(/ Dialysis$/, '')}. A power shutoff moves your ${weekday(old)} treatment to ` +
-        `${when} at ${c.name}, ${c.address.split(',')[0]}. ${ride} Questions? Call ${CALLBACK}.`;
+        `${when} at ${c.name}, ${street(c)}. ${ride} Questions? Call ${CALLBACK}.`;
+    }
+
+    // Template translations, written ahead of time (not machine-translated per message). Same facts as message().
+    function localized(row, lang) {
+      const L = L10N[lang], p = byPid[row.patient_id], c = fac[row.clinic_id];
+      const old = local(Date.parse(row.affected_session)), next = at(row.slot.date, row.slot.shift), n = local(next);
+      const pickup = L.time(local(Date.parse(row.pickup_time)));
+      return L.text({
+        name: p.name, home: fac[p.center_id].name, clinic: c.name, street: street(c), callback: CALLBACK,
+        oldDay: L.days[old.getUTCDay()], day: L.days[n.getUTCDay()], m: n.getUTCMonth() + 1, dd: n.getUTCDate(), t: L.time(n),
+        same: iso(next).slice(0, 10) === iso(Date.parse(row.affected_session)).slice(0, 10),
+        ride: row.ride === 'paratransit' ? L.para(pickup) : L.leave(pickup),
+      }).replace(/\.(\s*\.)+/g, '.');  // names like "Minh G." and "p. m." end a sentence once
     }
 
     function fillText(rows, only) {
       for (const r of rows) {
         if (only && !only.has(r.patient_id)) continue;
         if (r.affected_session) r.reason_text = reasonText(r);
-        r.messages = r.slot && (r.action === 'transfer' || r.action === 'early_session') ? { en: message(r) } : {};
+        const lang = byPid[r.patient_id].language, move = r.slot && (r.action === 'transfer' || r.action === 'early_session');
+        r.messages = move ? { en: message(r), ...(L10N[lang] ? { [lang]: localized(r, lang) } : {}) } : {};
       }
     }
 
-    function summary(rows) {  // backend text_fallback.fill
+    function summary(rows) {  // backend text_fallback.fill, with zero counts left out
       const n = a => rows.filter(r => r.action === a).length, rides = rows.filter(r => r.book_today).length;
-      return `${n('early_session')} patients dialyze early, ${n('transfer')} move to another clinic, ` +
-        `and ${n('hospital')} need a staff call. Book ${rides} paratransit rides today.`;
+      const parts = [['early_session', 'dialyzes early', 'dialyze early'], ['transfer', 'moves to another clinic', 'move to another clinic'], ['hospital', 'needs a staff call', 'need a staff call']]
+        .map(([a, one, many]) => [n(a), one, many]).filter(([k]) => k)
+        .map(([k, one, many], i) => `${k} ${i ? '' : k === 1 ? 'patient ' : 'patients '}${k === 1 ? one : many}`);
+      const list = parts.length > 2 ? `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}` : parts.join(' and ') || 'No patient needs a change';
+      return `${list}.${rides ? ` Book ${rides} paratransit ride${rides === 1 ? '' : 's'} today.` : ''}`;
     }
 
     const matched = step('match', () => match(ranked, baseCap, new Map()));

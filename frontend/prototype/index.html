@@ -5,17 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lumen</title>
 <meta name="description" content="Lumen turns a PG&amp;E power shutoff notice into a patient-by-patient dialysis plan that staff approve.">
-<script>try{var t=localStorage.getItem('lumenTheme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- first visit follows the system theme; the toggle saves a choice that wins after that -->
+<script>(function(){var t;try{t=localStorage.getItem('lumenTheme')}catch(e){}if(t!=='dark'&&t!=='light')t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=t})()</script>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500;600&family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="review.css">
+<link rel="stylesheet" href="timeline.css">
 <!-- mapKey: Amazon Location API key, public by design: tiles only, referrer-restricted to localhost:5173 and the Amplify URL -->
 <script>window.LUMEN_CONFIG={api:'https://7nkmh6ezx4unlwxzfjh3gy5lci0brirr.lambda-url.us-east-2.on.aws/', mapKey:'v1.public.eyJqdGkiOiIxZDMwMTg3Ny00OGZiLTQzMjItOTUyZS1lYWVlYzM4YWM2MWEifRQn7mCoI7ZUKDIw21KFAof_ct3Gtf_T9BEDaxxk0KbBtz8iE9S2uhjC28mENWcWBKfK85wLZIWnOSbwdOC8XAOGoN6NzQ2UEaWOYWY-Kj5o4Y68Gsh6YEjKCa1eg2y36_YqqyOWuSUYrqqlrn0Gbc0ObMiy27nCSXfmxO9uH1f1UJDLROpKSC9vK6JXNletxiDeFqQHy51FUPzBxrScCkprbVZ734GDmcOd_x4yNeRJrtY_hZtWXVicMlMGSbiv44KdHeQrJ23SFbqEWOxfExvUeyupfgwzsc6T8-plvC0WTP6oXdvL17hS7917kVn9ZQVaLvYdxdrf2g60M712e0k.NjAyMWJkZWUtMGMyOS00NmRkLThjZTMtODEyOTkzZTUyMTBi'}</script>
 <script src="map.js" defer></script>
 <script src="tour.js" defer></script>
+<script src="review.js" defer></script>
+<script src="timeline.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
@@ -41,7 +46,7 @@
   <span class="sep" aria-hidden="true"></span>
   <div class="home"><span class="nm" id="homeName">DaVita Cameron Park Dialysis</span><span class="tag n">Home</span></div>
   <span class="sep" aria-hidden="true"></span>
-  <label class="selw"><span class="vh">Region</span>
+  <label class="selw"><span class="vh">County</span>
     <select id="region">
       <option value="eldorado">El Dorado County · live</option>
       <option value="santaclara">Santa Clara County · illustrative tour</option>
@@ -76,33 +81,34 @@
     <p class="vh" id="live" aria-live="polite"></p>
   </aside>
 
+  <div class="rsz" data-side="rail" role="separator" aria-orientation="vertical" aria-label="Resize steps panel" aria-controls="rail" aria-valuemin="280" aria-valuemax="480" aria-valuenow="336" tabindex="0"></div>
+  <div class="rsz" data-side="panel" role="separator" aria-orientation="vertical" aria-label="Resize plan panel" aria-controls="panel" aria-valuemin="340" aria-valuemax="640" aria-valuenow="380" tabindex="0"></div>
   <main class="map" id="main" aria-label="Map of the home clinic and its power grid">
     <div id="map"></div>
     <div class="banner" id="banner" role="alert" hidden><span id="bannerT"></span><button class="btn q ico sm" id="bannerX" type="button" aria-label="Dismiss the message"><svg class="i"><use href="#i-x"/></svg></button></div>
     <details class="legend" id="legend">
       <summary>Legend<svg class="i"><use href="#i-chev"/></svg></summary>
-      <ul>
-        <li><i class="sw feed"></i>Live feeder (illustrative)</li>
-        <li><i class="sw ln dead"></i>De-energized line (simulated)</li>
-        <li><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line (OpenStreetMap)</li>
-        <li><i class="sw sub"></i>Substation (OpenStreetMap)<i class="sw sub dead"></i>No power</li>
-        <li><i class="sw zone"></i>Shutoff area (illustrative)</li>
-        <li><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic<i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic<i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</li>
-        <li><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>Loses power<i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Receiving</li>
-        <li><i class="sw bld"></i>Building (dashed outline: approximate)</li>
-        <li><i class="sw dot" style="--c:var(--map-affected)"></i>Patient home (synthetic), before the plan</li>
-        <li><i class="sw dot" style="--c:var(--map-early)"></i>Early session<i class="sw dot" style="--c:var(--map-transfer)"></i>Transfer<i class="sw dot" style="--c:var(--map-staff)"></i>Staff call<i class="sw dot" style="--c:var(--mute)"></i>Notice only</li>
-        <li><b class="sw rk">#1</b>Rank (top 3 patients)</li>
-        <li><i class="sw ln" style="--c:var(--map-transfer)"></i>Transfer route<i class="sw ln dash" style="--c:var(--map-staff)"></i>Staff call route</li>
-        <li><i class="sw ln wide" style="--c:var(--map-early)"></i>Selected patient route</li>
-        <li><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed by a re-plan</li>
-        <li class="lgnote">The number on a route counts its patients</li>
-      </ul>
+      <dl>
+        <dt>Power</dt>
+        <dd><span><i class="sw feed"></i>Live feeder (illustrative)</span><span><i class="sw ln dead"></i>No power (simulated)</span><span><i class="sw ln thick" style="--c:var(--map-trans)"></i>Transmission line</span><span><i class="sw sub"></i>Substation<i class="sw sub dead"></i>off</span></dd>
+        <dt>Area</dt>
+        <dd><span><i class="sw zone"></i>Shutoff area (illustrative)</span><span><i class="sw zone off"></i>Darker while the power is off</span><span id="lgCounty" hidden><i class="sw ln county"></i>County line</span></dd>
+        <dt>Places</dt>
+        <dd><span><i class="sw pin home"><svg class="i"><use href="#i-drop"/></svg></i>Home clinic</span><span><i class="sw pin"><svg class="i"><use href="#i-drop"/></svg></i>Clinic</span><span><i class="sw hosp"><svg class="i"><use href="#i-h"/></svg></i>Hospital</span><span><i class="sw pin off"><svg class="i"><use href="#i-drop"/></svg></i>Loses power</span><span><i class="sw pin rcv"><svg class="i"><use href="#i-drop"/></svg></i>Receiving</span><span><i class="sw bld"></i>Building (dashed: approximate)</span></dd>
+        <dt>Patients</dt>
+        <dd><span><i class="sw dot" style="--c:var(--map-affected)"></i>Before the plan</span><span><i class="sw dot" style="--c:var(--map-early)"></i>Early session</span><span><i class="sw dot" style="--c:var(--map-transfer)"></i>Transfer</span><span><i class="sw dot" style="--c:var(--map-staff)"></i>Staff call</span><span><i class="sw dot" style="--c:var(--mute)"></i>Notice only</span><span><b class="sw rk">#1</b>Top 3</span></dd>
+        <dt>Routes</dt>
+        <dd><span><i class="sw ln wide" style="--c:var(--map-transfer)"></i>Transfer</span><span><i class="sw ln wide dash" style="--c:var(--map-staff)"></i>Staff call</span><span><i class="sw ln wide" style="--c:var(--map-affected)"></i>Changed by a re-plan</span><span><i class="sw ln dash" style="--c:var(--map-transfer)"></i>Straight line: no road route yet</span><span><i class="sw ln sel" style="--c:var(--map-transfer)"></i>Selected patient, in their color</span></dd>
+        <dt>Labels</dt>
+        <dd><span><b class="sw tagp">6 · 22 min</b>Patients · road time</span><span><b class="sw tagp e">8 come in early</b>at their own clinic</span></dd>
+      </dl>
+      <p class="lgnote">Lines and substations: OpenStreetMap. Patient homes: synthetic.</p>
       <button class="lgbtn" id="animTog" type="button">Pause animation</button>
     </details>
+    <div class="tlbar" id="timeline"></div>
     <div class="ctl">
-      <button class="btn sec" id="wholeBtn" type="button" hidden><svg class="i"><use href="#i-fit"/></svg>Whole plan</button>
-      <button class="btn sec" id="homeBtn" type="button"><svg class="i"><use href="#i-home"/></svg>Home</button>
+      <button class="btn sec" id="wholeBtn" type="button" title="Whole plan" hidden><svg class="i"><use href="#i-fit"/></svg><span class="lb">Whole plan</span></button>
+      <button class="btn sec" id="homeBtn" type="button" title="Home clinic"><svg class="i"><use href="#i-home"/></svg><span class="lb">Home</span></button>
       <button class="btn sec m" id="d3" type="button" aria-pressed="true" aria-label="3D view">3D</button>
     </div>
   </main>

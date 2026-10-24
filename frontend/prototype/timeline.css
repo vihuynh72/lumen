@@ -1,0 +1,39 @@
+/* Lumen outage timeline bar (CONTRACT-v2 E8), built by timeline.js. Tokens come from app.css; both themes follow :root[data-theme].
+   The bar fills its container's width (it is a size container), so the container needs a width: for example left/right insets on the map. */
+.lt{--p:0;container:lt/inline-size;display:grid;grid-template-columns:32px minmax(0,1fr);grid-template-rows:16px 28px;column-gap:10px;align-items:center;padding:5px 12px 5px 8px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);font:400 12px/16px var(--f-ui);box-shadow:var(--shadow);-webkit-user-select:none;user-select:none}
+.lt-btn{grid-row:1/3}
+.lt.playing .lt-ip,.lt:not(.playing) .lt-ipa{display:none}
+
+/* head: label left, current time and power state right */
+.lt-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0;white-space:nowrap}
+.lt-lb{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:var(--ink-2)}
+.lt-rd{display:flex;align-items:baseline;gap:10px;flex:none}
+.lt-t{min-width:20ch;text-align:right;color:var(--ink)}
+.lt-pw{display:inline-flex;align-items:center;gap:5px;min-width:13ch;font-weight:600;color:var(--green-ink)}
+.lt-pw::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:currentColor}
+.lt[data-power="off"] .lt-pw{color:var(--red-ink)}
+
+/* track: the whole 28 px band (line and stop labels) takes the pointer */
+.lt-tr{position:relative;height:28px;cursor:pointer;touch-action:none}
+.lt-in{position:relative;height:100%;margin:0 7px}
+.lt-ln{position:absolute;inset:0 0 auto;height:14px}
+.lt-ln i{position:absolute}
+.lt-base,.lt-fill{left:0;top:5px;height:4px;border-radius:2px}
+.lt-base{right:0;background:var(--line-2)}
+.lt-fill{width:calc(var(--p) * 100%);background:var(--ink-2)}
+.lt-off{top:1px;height:12px;left:calc(var(--off0) * 100%);width:calc((var(--off1) - var(--off0)) * 100%);border-radius:4px;background:color-mix(in srgb,var(--map-outage) 18%,transparent)}
+.lt-tk{top:2px;width:2px;height:10px;margin-left:-1px;border-radius:1px;background:var(--ink-2)}
+.lt-h{position:absolute;top:0;left:calc(var(--p) * 100%);width:14px;height:14px;margin-left:-7px;border:2px solid var(--ink);border-radius:50%;background:var(--paper);cursor:grab}
+.lt-h:hover,.lt.drag .lt-h{box-shadow:0 0 0 4px color-mix(in srgb,var(--ink) 14%,transparent)}
+.lt-h:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.lt.drag,.lt.drag *{cursor:grabbing}
+.lt-stops{position:absolute;inset:14px 0 auto;height:14px}
+.lt-sl{position:absolute;top:0;transform:translateX(-50%);font-size:11px;line-height:14px;white-space:nowrap;color:var(--mute)}
+.lt-sl.first{transform:none}
+.lt-sl.last{transform:translateX(-100%)}
+.lt-sl b{font-weight:600;color:var(--ink-2)}
+
+/* narrow maps: drop ":00" from stop times, then stop times and the date, then tighten the readout */
+@container lt (max-width:520px){.lt-mm{display:none}}
+@container lt (max-width:440px){.lt-st,.lt-dt{display:none}.lt-t{min-width:12ch}}
+@container lt (max-width:400px){.lt-on{display:none}.lt-hd{gap:8px}.lt-rd{gap:6px}.lt-t,.lt-pw{min-width:0}}  /* phones */

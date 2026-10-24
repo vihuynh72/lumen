@@ -70,7 +70,7 @@ button,select,input,textarea{font:inherit;color:inherit}
 .btn.sm{height:32px;padding:0 12px;font-size:13px}
 .btn.ico.sm{width:32px;padding:0}
 .selw{position:relative;display:inline-flex;align-items:center;min-width:0}
-.selw select{appearance:none;height:36px;max-width:100%;padding:0 32px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-weight:600;text-overflow:ellipsis;cursor:pointer}
+.selw select{appearance:none;field-sizing:content;height:36px;max-width:100%;padding:0 32px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-weight:600;text-overflow:ellipsis;cursor:pointer}
 .selw select:hover:not(:disabled){border-color:var(--line-2)}
 .selw select:disabled{opacity:.55;cursor:not-allowed}
 .selw .i{position:absolute;right:10px;pointer-events:none;color:var(--mute)}
@@ -101,8 +101,19 @@ button,select,input,textarea{font:inherit;color:inherit}
 .chip #chipT{overflow:hidden;text-overflow:ellipsis}
 .planbtn{display:none}
 
-/* layout */
-.app{display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr) var(--panel-w);min-height:0}
+/* layout: --rail-user / --panel-user are the widths the manager dragged (app.js, wide layout only) */
+.app{position:relative;display:grid;grid-template-columns:var(--rail-user,var(--rail-w)) minmax(0,1fr) var(--panel-user,var(--panel-w));min-height:0}
+.rsz{position:absolute;z-index:6;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none}
+.rsz[data-side="rail"]{left:calc(var(--rail-user,var(--rail-w)) - 6px)}
+.rsz[data-side="panel"]{right:calc(var(--panel-user,var(--panel-w)) - 6px)}
+.rsz::after{content:"";position:absolute;top:0;bottom:0;left:5px;width:2px;background:transparent;transition:background-color .15s ease-out}
+.rsz:hover::after{background:var(--line-2)}
+.rsz:focus-visible{outline:0}
+.rsz:focus-visible::after,.rsz:active::after{background:var(--focus)}
+body.resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+body.resizing #map{pointer-events:none}
+/* smooth, contained scrolling (reduced motion turns smooth off below) */
+.phases,.panel{scroll-behavior:smooth;scrollbar-gutter:stable}
 
 /* rail */
 .rail{display:flex;flex-direction:column;min-height:0;padding:16px;background:var(--rail);color:var(--rail-ink)}
@@ -140,6 +151,7 @@ button,select,input,textarea{font:inherit;color:inherit}
 .ph .err{margin-top:6px;color:var(--rail-err)}
 .ph .retry{margin-top:8px;height:28px;padding:0 10px;border-color:var(--rail-line);color:var(--rail-ink);font-size:12px}
 .ph .retry:hover{background:var(--rail-line)}
+.ph .ph-rv{margin:0 0 0 auto;height:26px}
 /* the result line is the Details toggle, so a done step stays one line */
 .det summary{display:flex;align-items:center;gap:4px;cursor:pointer;list-style:none}
 .det summary::-webkit-details-marker{display:none}
@@ -168,15 +180,19 @@ button,select,input,textarea{font:inherit;color:inherit}
 #map{position:absolute;inset:0}
 .banner{position:absolute;z-index:5;top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);padding:6px 6px 6px 14px;border:1px solid color-mix(in srgb,var(--red) 30%,transparent);border-radius:12px;background:var(--red-bg);color:var(--red-ink);font-weight:600;box-shadow:var(--shadow)}
 .banner .btn{color:var(--red-ink)}
-.legend{position:absolute;z-index:2;left:10px;bottom:42px;max-width:calc(100% - 32px);border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink-2);font-size:12px;line-height:16px;box-shadow:var(--shadow)}
+.legend{position:absolute;z-index:2;left:10px;bottom:calc(42px + var(--tl-h,0px));max-width:calc(100% - 32px);border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink-2);font-size:12px;line-height:16px;box-shadow:var(--shadow)}
 .legend summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;font-weight:700;color:var(--ink);cursor:pointer;list-style:none;border-radius:12px}
 .legend summary::-webkit-details-marker{display:none}
 .legend summary .i{transition:transform .15s ease-out;transform:rotate(180deg)}
 .legend:not([open]) summary .i{transform:none}
-.legend ul{display:grid;gap:4px;padding:0 12px 8px;list-style:none}
-.legend li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
-.legend li .sw:not(:first-child){margin-left:6px}
-.legend .lgnote{padding-left:26px;color:var(--mute)}
+/* compact: one line per kind of thing, a muted name on the left (D8) */
+.legend[open]{width:min(470px,calc(100% - 32px))}
+.legend dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 10px;padding:0 12px 6px}
+.legend dt{color:var(--mute);font-weight:600}
+.legend dd{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin:0}
+.legend dd>span{display:inline-flex;align-items:center;gap:6px}
+.legend dd>span[hidden]{display:none}
+.legend .lgnote{padding:0 12px 6px;color:var(--mute)}
 .lgbtn{margin:0 12px 10px;padding:0;border:0;background:none;color:var(--ink-2);font-size:12px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .lgbtn:hover{color:var(--ink)}
 /* swatches copy the shapes and colors map.js draws */
@@ -202,9 +218,25 @@ button,select,input,textarea{font:inherit;color:inherit}
 .sw.bld{width:14px;height:10px;margin:0 3px;border:1.5px dashed var(--ink-2);border-radius:2px;background:var(--map-fac)}
 .sw.rk{width:20px;text-align:center;font-weight:700;color:var(--ink)}
 .sw.dot{width:8px;height:8px;margin:0 6px;border-radius:50%;background:var(--c);box-shadow:0 0 0 1.5px var(--map-halo)}
-.ctl{position:absolute;z-index:2;right:10px;bottom:152px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.sw.zone.off{--a:22%;background:linear-gradient(color-mix(in srgb,var(--rail) var(--a),transparent) 0 0),color-mix(in srgb,var(--map-outage) 10%,transparent)}
+:root[data-theme="dark"] .sw.zone.off{--a:50%}
+.sw.county{border-top:1.5px dashed color-mix(in srgb,var(--map-ink) 45%,transparent)}
+.sw.sel{border-top-width:5px;border-radius:3px}
+.sw.tagp{padding:0 5px;border:1px solid var(--line-2);border-radius:5px;background:var(--paper);color:var(--ink);font-size:11.5px;font-weight:700;line-height:16px;white-space:nowrap}
+.sw.tagp.e{border-color:transparent;border-radius:4px;background:var(--green-bg);color:var(--green-ink);font-weight:600}
+/* the outage timeline (timeline.js) sits along the bottom of the map; --tl-h lifts what would sit under it */
+.tlbar{position:absolute;z-index:3;left:12px;right:12px;bottom:12px}
+.tlbar:empty{display:none}
+.map .maplibregl-ctrl-bottom-left,.map .maplibregl-ctrl-bottom-right{bottom:var(--tl-h,0px)}
+.ctl{position:absolute;z-index:2;right:10px;bottom:calc(152px + var(--tl-h,0px));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
 .ctl .btn{box-shadow:var(--shadow)}
 .ctl #d3{min-width:44px;font-weight:600}
+/* a narrow map keeps its width for the plan: the controls go icon-only (their names stay for screen readers and tooltips) */
+.map{container-type:inline-size}
+@container (max-width:799px){
+  .ctl .btn:not(#d3){width:36px;padding:0}
+  .ctl .lb{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
 .ctl #d3[aria-pressed="true"]{background:var(--paper-3);border-color:var(--ink-2)}
 
 /* panel */
@@ -238,7 +270,7 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .notice summary{width:max-content;cursor:pointer;font-weight:600;color:var(--ink-2)}
 .notice pre{margin:8px 0 0;padding:12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);font:400 12px/18px var(--f-ui);white-space:pre-wrap}
 
-.plan-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:20px 20px 12px}
+.plan-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:20px 20px 12px}
 .plan-h .mute{font-size:13px}
 .cnt{display:grid;grid-template-columns:repeat(3,1fr);margin:0 20px;border:1px solid var(--line);border-radius:12px;background:var(--paper-2)}
 .cnt div{min-width:0;padding:10px 12px}
@@ -247,6 +279,21 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .cnt span::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .cnt b{display:block;margin-top:2px;font:500 24px/28px var(--f-mono);font-variant-numeric:tabular-nums}
 .sum{margin:12px 20px 0;color:var(--ink-2);max-width:65ch}
+/* routes (E3) */
+.routes{margin:20px 20px 0}
+.routes h3{margin-bottom:8px;font-size:14px;line-height:20px;font-weight:700}
+.rtab{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;line-height:18px}
+.rtab th,.rtab td{padding:6px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.rtab thead th{padding-top:0;color:var(--mute);font-size:12px;line-height:16px;font-weight:600;vertical-align:bottom}
+.rtab thead th:nth-child(2){width:64px}.rtab thead th:nth-child(3){width:64px}.rtab thead th:nth-child(4){width:64px}
+.rtab th:nth-child(2),.rtab th:nth-child(3),.rtab td:nth-child(2),.rtab td:nth-child(3){padding-right:12px;text-align:right}
+.rtab tbody th{padding-right:8px;font-weight:600;color:var(--ink)}
+.rtab td .m{display:block}
+.rtab .sub{display:block;color:var(--mute);font-size:12px;line-height:16px;font-weight:400}
+.rtab tfoot th,.rtab tfoot td{border-bottom:0;font-weight:700}
+.far{display:block;color:var(--red-ink);font-size:12px;line-height:16px;font-weight:700}
+.lnk{margin-top:8px;padding:0;border:0;background:none;color:var(--blue-ink);font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.routes .small{margin-top:8px}
 .acts{display:flex;gap:8px;margin:16px 20px 0}
 .acts .pri{flex:1;height:40px}
 .okline{display:flex;flex:1;align-items:center;gap:8px;color:var(--green-ink);font-weight:700}
@@ -256,7 +303,8 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .note{margin:8px 20px 0;color:var(--mute);font-size:12px;line-height:16px}
 .chgbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 20px 0;padding:8px 8px 8px 12px;border-radius:12px;background:var(--amber-bg);color:var(--amber-ink);font-size:13px;font-weight:600}
 .pts{position:relative;margin-top:16px;padding:0;list-style:none;border-top:1px solid var(--line)}
-.pt{border-bottom:1px solid var(--line);transition:background-color .2s ease-out}
+.pt{border-bottom:1px solid var(--line);transition:background-color .2s ease-out;content-visibility:auto;contain-intrinsic-size:auto 86px}
+.pt.open{content-visibility:visible}  /* an open row is tall: an estimate would shift the list when it re-renders off screen */
 .pt.chg{background:var(--amber-bg)}
 .pt.sel:not(.chg){background:var(--paper-2)}
 .rowb{display:grid;grid-template-columns:24px minmax(0,1fr);gap:0 10px;width:100%;padding:12px 20px;border:0;background:none;text-align:left;cursor:pointer}
@@ -283,10 +331,14 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 .chips li{padding:0 8px;border:1px solid var(--line);border-radius:10px;color:var(--ink-2);font-size:12px;line-height:20px;background:var(--paper)}
 .pdet .facts{margin:0}
 .msg{display:grid;gap:8px}
-.langs{display:flex;gap:4px}
+.langs{display:flex;flex-wrap:wrap;gap:4px}
 .langs button{height:28px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer}
 .langs button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .msgt{padding:10px 12px;border-radius:8px;background:var(--paper-2);color:var(--ink-2);max-width:65ch}
+.rcard{display:grid;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink-2)}
+.rcard .rc1{font-weight:700;color:var(--ink)}
+.spk{display:grid;gap:8px}
+.spk audio{width:100%;height:36px}
 .racts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pdet audio{width:100%;height:36px}
 .empty{padding:24px 20px;color:var(--mute)}
@@ -308,6 +360,7 @@ section.sec+section.sec{border-top:1px solid var(--line)}
 /* narrow: the plan panel becomes a drawer */
 @media (max-width:1180px){
   .app{grid-template-columns:var(--rail-w) minmax(0,1fr)}
+  .rsz{display:none}
   .planbtn{display:inline-flex}
   .panel{position:fixed;z-index:20;top:var(--top-h);right:0;bottom:0;width:min(400px,100vw);box-shadow:var(--shadow);transform:translateX(100%);visibility:hidden;transition:transform .2s ease-out,visibility 0s linear .2s}
   .panel.open{transform:none;visibility:visible;transition:transform .2s ease-out}
@@ -338,7 +391,7 @@ section.sec+section.sec{border-top:1px solid var(--line)}
   .legend{max-width:calc(100% - 72px)}
   section.sec{padding:16px}
   .plan-h{padding:16px 16px 12px}
-  .cnt,.acts,.sum,.note,.chgbar{margin-left:16px;margin-right:16px}
+  .cnt,.acts,.sum,.note,.chgbar,.routes{margin-left:16px;margin-right:16px}
   .rowb{padding:12px 16px}
   .pdet{padding:0 16px 16px 50px}
 }
