@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import datetime, timedelta, timezone
 
-from lumen import approve, store, text_fallback, voice
+from lumen import approve, speak, store, text_fallback, voice
 from lumen.affected import find_affected
 from lumen.geo import drive_minutes
 from lumen.match import match
@@ -277,6 +277,20 @@ def voice_route(body):
     return {"url": voice.presign(key)}
 
 
+def speak_route(body):
+    text, lang = body.get("text"), body.get("lang")
+    if not isinstance(text, str) or not text.strip() or len(text) > speak.MAX_CHARS:
+        raise ApiError(400, f"text of 1 to {speak.MAX_CHARS} characters is required", "speak")
+    if not isinstance(lang, str) or lang not in speak.LANGS:
+        raise ApiError(400, f"lang must be one of {', '.join(speak.LANGS)}", "speak")
+    try:
+        return timed({}, "speak", speak.speak, text, lang)
+    except ApiError as exc:
+        if isinstance(exc.__cause__, speak.TranslateDenied):  # until Vi adds translate:TranslateText to the Lambda role
+            raise ApiError(500, "translate not permitted", "speak") from None
+        raise
+
+
 def save_new_version(plan, step):
     """Write v(N+1) only if no other request wrote it first; the loser gets 409 instead of overwriting."""
     try:
@@ -290,7 +304,8 @@ def reset(_body):
 
 
 ROUTES = {("GET", "/state"): state, ("POST", "/alert"): alert, ("POST", "/plan"): plan, ("POST", "/replan"): replan_route,
-          ("POST", "/approve"): approve_route, ("POST", "/voice"): voice_route, ("POST", "/reset"): reset}
+          ("POST", "/approve"): approve_route, ("POST", "/voice"): voice_route, ("POST", "/speak"): speak_route,
+          ("POST", "/reset"): reset}
 
 
 def lambda_handler(event, context):
