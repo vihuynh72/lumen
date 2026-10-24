@@ -30,6 +30,7 @@ logging.getLogger().setLevel(logging.INFO)  # the Lambda runtime defaults to WAR
 DEMO_CLOCK_DELAY = timedelta(minutes=30)  # demo "now" = the notice's issued_at + 30 min (master plan section 5)
 # Seconds a Bedrock step may take before the router uses its rule-based fallback (Lambda timeout is 120 s).
 DEADLINES = {"parse": 20, "text": 25, "replan": 45, "check": 25}
+MODEL_ISSUES = 12
 MAX_NOTICE_CHARS, MAX_INSTRUCTION_CHARS = 20_000, 500
 _pool = ThreadPoolExecutor(max_workers=4)
 EVENT_KEYS = ("event_id", "notice_type", "issued_at", "start", "end", "area_name")  # event.schema.json order; source_text is added after
@@ -306,9 +307,16 @@ def check_route(body):
     issues = timed({}, "check", check.check_plan, plan, seed, plan.get("capacity_overrides"))
     facts = check.row_facts(plan, seed)
     out = [{**i, "source": "template"} for i in issues]
+    # The imported model is slow on long lists: it rewords the blocks and one example of each warning kind, at most 12.
+    pick = [n for n, i in enumerate(issues) if i["severity"] == "block"][:MODEL_ISSUES]
+    for n, i in enumerate(issues):
+        if len(pick) < MODEL_ISSUES and i["severity"] != "block" and all(issues[m]["code"] != i["code"] for m in pick):
+            pick.append(n)
+    rows = {issues[n].get("patient_id") for n in pick}
     try:
-        explained = with_deadline("check", explain_with_bedrock, issues, facts)
-        texts = {e["index"]: e["text"] for e in explained["items"] if isinstance(e["text"], str) and 0 < len(e["text"].split()) <= 30}
+        explained = with_deadline("check", explain_with_bedrock, [issues[n] for n in pick], [f for f in facts if f["patient_id"] in rows])
+        texts = {pick[e["index"]]: e["text"] for e in explained["items"] if isinstance(e.get("index"), int) and 0 <= e["index"] < len(pick)
+                 and isinstance(e["text"], str) and 0 < len(e["text"].split()) <= 30}
         # The model only rewords: severity, code and the issue list stay as code set them. Soft warnings pass a fact check.
         out = [{**i, "text": texts[n], "source": "bedrock"} if n in texts else i for n, i in enumerate(out)]
         out += [{**s, "source": "template", "soft": True} for s in check.soft_warnings(explained["soft"], facts)]
