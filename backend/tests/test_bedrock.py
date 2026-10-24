@@ -2,6 +2,7 @@
 
 import importlib
 import logging
+import traceback
 from copy import deepcopy
 from unittest.mock import Mock
 
@@ -35,16 +36,23 @@ def response(content=None, stop_reason="end_turn"):
 
 
 @pytest.fixture
-def stub(monkeypatch):
+def client(monkeypatch):
     client = boto3.client(
         "bedrock-runtime", region_name="us-west-2",
         aws_access_key_id="testing", aws_secret_access_key="testing",
     )
     monkeypatch.setattr(bedrock, "_get_client", lambda: client)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture
+def stub(client):
     with Stubber(client) as stubber:
         yield stubber
         stubber.assert_no_pending_responses()
-    client.close()
 
 
 @pytest.fixture
@@ -64,6 +72,26 @@ def test_text_reply(stub):
         "message": reply["output"]["message"],
     }
     assert REQUEST == before
+
+
+def test_parameter_validation_does_not_leak_content(client, sleep, caplog):
+    caplog.set_level(logging.INFO, logger=bedrock.__name__)
+    invalid_system = [{"text": "P001 Rosa lives at 38.73,-120.79"}]
+    with Stubber(client) as stubber:
+        # Serialization fails before Stubber consumes this response.
+        stubber.add_response("converse", response(), {
+            **REQUEST, "system": [{"text": invalid_system}],
+        })
+        with pytest.raises(ValueError, match="^invalid Converse request$") as caught:
+            bedrock.converse(MODEL, invalid_system, MESSAGES)
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+    error_text = "".join(traceback.format_exception(caught.value))
+    for content in ("P001", "Rosa", "38.73", "-120.79", "private prompt"):
+        assert content not in error_text
+        assert content not in caplog.text
+    sleep.assert_not_called()
+    assert len(caplog.records) == 1
 
 
 @pytest.mark.parametrize("tool_choice", [None, "lookup"])
