@@ -39,13 +39,14 @@ def translate(text, lang):
     return out["TranslatedText"]
 
 
-def speak(text, lang):
-    """{text, lang, voice, url, note} for English text in lang. The same lang and text reuse the saved translation and MP3."""
-    key = "speak/" + hashlib.sha256(f"{lang}\n{text}".encode()).hexdigest()
+def speak(text, lang, translated=False):
+    """{text, lang, voice, url, note} for English text in lang. The same lang and text reuse the saved translation and MP3.
+    translated=True: text is already in lang (a template translation), so Translate is skipped."""
+    key = "speak/" + hashlib.sha256((f"{lang}\npre\n{text}" if translated else f"{lang}\n{text}").encode()).hexdigest()
     saved = store.get_json(f"{key}.json")
     if saved is None:
         voice_id, language_code = VOICES.get(lang, (None, None))
-        saved = {"text": translate(text, lang), "lang": lang, "voice": voice_id,
+        saved = {"text": text if translated else translate(text, lang), "lang": lang, "voice": voice_id,
                  "note": None if voice_id else f"Polly has no {LANGS[lang]} voice"}
         if voice_id:
             speech = voice.polly().synthesize_speech(Engine=voice.ENGINE, OutputFormat="mp3", Text=saved["text"],

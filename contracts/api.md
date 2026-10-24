@@ -222,6 +222,7 @@ Request:
 
 * `text`: 1 to 600 characters of English.
 * `lang`: `en`, `es`, `zh`, `ko`, `vi`, `tl`, `yue`, `ja`, `ar`, `pt`, `fr`, `ru`, `hi` or `te`. Any other value returns `400`.
+* `translated` (optional, default `false`): `true` means `text` is already in `lang`, for example a template translation. The route skips Translate and only reads the text. Up to 600 characters in any script.
 
 Response `200` (fixture: `fixtures/speak.response.json`, schema: `speak.schema.json`):
 
